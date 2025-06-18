@@ -9,8 +9,8 @@ export class VenusClient extends EventEmitter {
     this.bus = null;
     this.ifaces = {};
     this.values = {};
-    this.OBJECT_PATH = '/com/victronenergy/battery/ttyVirtualBMV';
-    this.VBUS_SERVICE = 'com.victronenergy.battery.ttyVirtualBMV';
+    this.OBJECT_PATH = '/com/victronenergy/virtual/signalk-to-venus';
+    this.VBUS_SERVICE = 'com.victronenergy.virtual.signalk-to-venus';
     this.tankIndex = 0;
   }
 
@@ -31,7 +31,7 @@ export class VenusClient extends EventEmitter {
     };
 
     this.values = {
-      '/Mgmt/ProcessName': 'signalk-virtual-bmv',
+      '/Mgmt/ProcessName': 'signalk-to-venus',
       '/Mgmt/Connection': `tcp://${this.options.venusHost}`,
       '/Connected': 1,
       '/FirmwareVersion': '1.0',
