@@ -98,11 +98,7 @@ export default function(app) {
       }
 
       // Subscribe to Signal K delta stream using multiple approaches for compatibility
-      app.setPluginStatus('Setting up Signal K subscription...');
-      app.error('Plugin debug: Setting up subscription');
-      app.error('Plugin debug: app.streambundle available:', !!app.streambundle);
-      app.error('Plugin debug: app.signalk available:', !!app.signalk);
-      app.error('Plugin debug: app.registerDeltaInputHandler available:', !!app.registerDeltaInputHandler);
+      app.setPluginStatus('Setting up Signal K subscription');
       let deltaCount = 0;
       let lastDataTime = Date.now();
       
@@ -126,7 +122,7 @@ export default function(app) {
             };
             processDelta(delta);
           });
-          app.error('Plugin debug: Using streambundle getSelfBus method');
+          app.debug('Successfully subscribed to streambundle');
         } catch (err) {
           app.error('getSelfBus method failed:', err);
         }
@@ -142,7 +138,7 @@ export default function(app) {
           plugin.unsubscribe = app.signalk.subscribe(subscription, delta => {
             processDelta(delta);
           });
-          app.error('Plugin debug: Using signalk.subscribe method');
+          app.debug('Successfully subscribed to signalk.subscribe');
         } catch (err) {
           app.error('signalk.subscribe method failed:', err);
         }
@@ -155,7 +151,7 @@ export default function(app) {
             }
             next(delta);
           });
-          app.error('Plugin debug: Using registerDeltaInputHandler method');
+          app.debug('Successfully subscribed to registerDeltaInputHandler');
         } catch (err) {
           app.error('registerDeltaInputHandler method failed:', err);
         }
@@ -168,20 +164,13 @@ export default function(app) {
       function processDelta(delta) {
         deltaCount++;
         lastDataTime = Date.now();
-        if (deltaCount <= 3) {
-          app.error(`Plugin debug: Delta #${deltaCount} received with ${delta.updates?.length || 0} updates`);
-        }
         
         if (delta.updates) {
           delta.updates.forEach(update => {
             update.values.forEach(async pathValue => {
-              if (deltaCount <= 5) {
-                app.error(`Plugin debug: Processing path: ${pathValue.path}`);
-              }
               try {
                 const deviceType = identifyDeviceType(pathValue.path, config);
                 if (deviceType) {
-                  app.error(`Plugin debug: ✅ Matched ${pathValue.path} as ${deviceType} device`);
                   if (!plugin.clients[deviceType]) {
                     app.setPluginStatus(`Connecting to Venus OS at ${config.venusHost} for ${deviceTypeNames[deviceType]}`);
                     
@@ -209,10 +198,6 @@ export default function(app) {
                   } else {
                     await plugin.clients[deviceType].handleSignalKUpdate(pathValue.path, pathValue.value);
                   }
-                } else {
-                  if (deltaCount <= 5) {
-                    app.error(`Plugin debug: ❌ No device type match for path: ${pathValue.path}`);
-                  }
                 }
               } catch (err) {
                 app.error(`Error handling path ${pathValue.path}:`, err);
@@ -225,7 +210,6 @@ export default function(app) {
       // Monitor subscription health
       setTimeout(() => {
         if (deltaCount === 0) {
-          app.error('Plugin debug: No deltas received after 5 seconds - delta stream may not be working');
           app.setPluginStatus(`No Signal K data received - check server configuration`);
         }
       }, 5000);
