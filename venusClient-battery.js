@@ -58,7 +58,7 @@ export class VenusClient extends EventEmitter {
   _export(path, label, value, type = 'd') {
     if (this.interfaces[path]) return;
     
-    // Create a simple interface object
+    // Create a simple interface object that can be exported
     const interfaceObj = {
       _label: label,
       _value: value,
@@ -81,27 +81,7 @@ export class VenusClient extends EventEmitter {
     };
 
     this.interfaces[path] = interfaceObj;
-    
-    try {
-      this.bus.export(`${this.OBJECT_PATH}${path}`, this.interfaces[path]);
-    } catch (err) {
-      // If direct export fails, try creating a proper service interface
-      this.interfaces[path] = this.bus.interface('com.victronenergy.BusItem');
-      this.interfaces[path]._label = label;
-      this.interfaces[path]._value = value;
-      this.interfaces[path]._type = type;
-      this.interfaces[path]._parent = this;
-      
-      this.interfaces[path].GetValue = () => new dbus.Variant(type, this.interfaces[path]._value);
-      this.interfaces[path].SetValue = (val) => {
-        this.interfaces[path]._value = val.value;
-        this.emit('valueChanged', path, val.value);
-        return true;
-      };
-      this.interfaces[path].GetText = () => this.interfaces[path]._label || '';
-      
-      this.bus.export(`${this.OBJECT_PATH}${path}`, this.interfaces[path]);
-    }
+    this.bus.export(`${this.OBJECT_PATH}${path}`, this.interfaces[path]);
   }
 
   async handleSignalKUpdate(path, value) {
