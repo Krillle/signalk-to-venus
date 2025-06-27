@@ -264,6 +264,12 @@ export default function(app) {
 
   // Helper function to identify device type from Signal K path
   function identifyDeviceType(path, config) {
+    // Filter out Cerbo GX relays (venus-0, venus-1) to prevent feedback loops
+    if (path.match(/electrical\.switches\.venus-[01]\./)) {
+      app.debug(`Skipping Cerbo GX relay path: ${path}`);
+      return null;
+    }
+    
     if ((config.enabledDevices?.batteries !== false) && settings.batteryRegex.test(path)) return 'battery';
     if ((config.enabledDevices?.tanks !== false) && settings.tankRegex.test(path)) return 'tank';
     if ((config.enabledDevices?.environment !== false) && (settings.temperatureRegex.test(path) || settings.humidityRegex.test(path))) return 'env';
@@ -277,6 +283,12 @@ export default function(app) {
     // For switches/dimmers that support bidirectional updates
     if (venusPath.includes('/Switches/')) {
       const id = venusPath.match(/\/Switches\/([^\/]+)/)?.[1];
+      
+      // Filter out Cerbo GX relays to prevent feedback loops
+      if (id === 'venus-0' || id === 'venus-1') {
+        return null;
+      }
+      
       if (venusPath.endsWith('/State')) {
         return `electrical.switches.${id}.state`;
       } else if (venusPath.endsWith('/DimLevel')) {

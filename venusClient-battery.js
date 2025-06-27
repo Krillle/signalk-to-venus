@@ -16,26 +16,24 @@ export class VenusClient extends EventEmitter {
   async init() {
     try {
       // Set the D-Bus address to connect to Venus OS via TCP
-      const originalAddress = process.env.DBUS_SYSTEM_BUS_ADDRESS;
+      this.originalAddress = process.env.DBUS_SYSTEM_BUS_ADDRESS;
       process.env.DBUS_SYSTEM_BUS_ADDRESS = `tcp:host=${this.settings.venusHost},port=78`;
       
-      try {
-        // Create D-Bus connection using systemBus with TCP address
-        this.bus = dbus.systemBus();
-        
-        // Try to request a name to test the connection
-        await this.bus.requestName(this.VBUS_SERVICE);
-        this._exportMgmt();
-        
-      } finally {
-        // Restore original D-Bus address
-        if (originalAddress) {
-          process.env.DBUS_SYSTEM_BUS_ADDRESS = originalAddress;
-        } else {
-          delete process.env.DBUS_SYSTEM_BUS_ADDRESS;
-        }
-      }
+      // Create D-Bus connection using systemBus with TCP address
+      this.bus = dbus.systemBus();
+      
+      // Try to request a name to test the connection
+      await this.bus.requestName(this.VBUS_SERVICE);
+      this._exportMgmt();
+      
     } catch (err) {
+      // Restore original D-Bus address on error
+      if (this.originalAddress) {
+        process.env.DBUS_SYSTEM_BUS_ADDRESS = this.originalAddress;
+      } else {
+        delete process.env.DBUS_SYSTEM_BUS_ADDRESS;
+      }
+      
       // Convert dbus errors to more user-friendly messages
       if (err.code === 'ENOTFOUND' || err.code === 'ECONNREFUSED') {
         throw new Error(`Cannot connect to Venus OS at ${this.settings.venusHost}:78 - ${err.code}`);
@@ -160,6 +158,13 @@ export class VenusClient extends EventEmitter {
       await this.bus.disconnect();
       this.bus = null;
       this.interfaces = {};
+    }
+    
+    // Restore original D-Bus address
+    if (this.originalAddress) {
+      process.env.DBUS_SYSTEM_BUS_ADDRESS = this.originalAddress;
+    } else {
+      delete process.env.DBUS_SYSTEM_BUS_ADDRESS;
     }
   }
 }

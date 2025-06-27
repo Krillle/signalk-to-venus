@@ -93,7 +93,7 @@ Regex-based auto-mapping is used:
 - Tanks: `tanks.*.(currentLevel|name)`
 - Temperature: `environment.*.temperature`, `propulsion.*.temperature`
 - Humidity: `environment.*.humidity|relativeHumidity`
-- Switches & dimmers: `electrical.switches.*`
+- Switches & dimmers: `electrical.switches.*` (excludes `venus-0` and `venus-1` internal relays)
 
 ---
 
@@ -157,6 +157,8 @@ Switches & Dimmers:
 Changes on the Cerbo (touchscreen or VRM) will be sent back to Signal K. Works for:
 - Switch state
 - Dimmer level
+
+**Note**: The plugin automatically filters out Cerbo GX internal relays (`venus-0` and `venus-1`) to prevent feedback loops. These relays are managed directly by Venus OS and should not be bridged back through Signal K.
 
 ---
 
