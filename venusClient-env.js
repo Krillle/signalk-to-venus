@@ -91,13 +91,35 @@ export class VenusClient extends EventEmitter {
   }
 
   async handleSignalKUpdate(path, value) {
-    if (!this.bus) await this.init();
-    const toCelsius = v => v - 273.15;
-    const toPercent = v => v * 100;
-    const label = path.split('/').slice(-2).join(' ');
-    const valueFinal = path.includes('temperature') ? toCelsius(value) : toPercent(value);
-    const topic = path.includes('temperature') ? 'Temperature' : 'Humidity';
-    this._export(`/Environment/${topic}/${label}`, `${label}`, valueFinal);
+    try {
+      if (!this.bus) await this.init();
+      
+      const toCelsius = v => v - 273.15;
+      const toPercent = v => v * 100;
+      const label = path.split('/').slice(-2).join(' ');
+      
+      let valueFinal, topic;
+      if (path.includes('temperature')) {
+        valueFinal = toCelsius(value);
+        topic = 'Temperature';
+      } else if (path.includes('humidity') || path.includes('relativeHumidity')) {
+        valueFinal = toPercent(value);
+        topic = 'Humidity';
+      } else {
+        // Silently ignore unknown environment paths instead of throwing errors
+        console.debug(`Ignoring unknown environment path: ${path}`);
+        return;
+      }
+      
+      const exportPath = `/Environment/${topic}/${label}`;
+      this._export(exportPath, label, valueFinal);
+      
+      // Emit data updated event for status tracking
+      this.emit('dataUpdated', topic, valueFinal);
+      
+    } catch (err) {
+      throw new Error(`Environment client error for ${path}: ${err.message}`);
+    }
   }
 
   async disconnect() {

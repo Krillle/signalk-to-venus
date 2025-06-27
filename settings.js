@@ -8,10 +8,10 @@ export default {
     environment: true,
     switches: true
   },
-  batteryRegex: /^electrical\.batteries\.\d+\.(voltage|current|capacity\.stateOfCharge|capacity\.timeRemaining|name)$/, 
-  tankRegex: /^tanks\.(fuel|freshWater|wasteWater|blackWater|lubrication|liveWell|baitWell|gas|ballast)\.\d+\.(currentLevel|capacity|name)$/, 
-  temperatureRegex: /^environment\.(water|outside|inside(\/(engineRoom|mainCabin|refrigerator|freezer|heating))?)\.temperature$|^propulsion\.(port|starboard)\.temperature$/, 
-  humidityRegex: /^environment\.outside\.(humidity|relativeHumidity)$|^environment\.inside(\/(engineRoom|mainCabin|refrigerator|freezer|heating))?\.relativeHumidity$/, 
+  batteryRegex: /^electrical\.batteries\.\d+\./, 
+  tankRegex: /^tanks\.(fuel|freshWater|wasteWater|blackWater|lubrication|liveWell|baitWell|gas|ballast)\.\d+\./, 
+  temperatureRegex: /^environment\..*\.temperature$|^propulsion\..*\.temperature$/, 
+  humidityRegex: /^environment\..*\.(humidity|relativeHumidity)$/, 
   switchRegex: /^electrical\.switches\.\d+\.state$/, 
   dimmerRegex: /^electrical\.switches\.\d+\.dimmingLevel$/
 };

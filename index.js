@@ -171,6 +171,9 @@ export default function(app) {
               try {
                 const deviceType = identifyDeviceType(pathValue.path, config);
                 if (deviceType) {
+                  // Temporary debug log to see what paths are being processed
+                  console.log(`Processing ${deviceType} path: ${pathValue.path} = ${pathValue.value}`);
+                  
                   if (!plugin.clients[deviceType]) {
                     app.setPluginStatus(`Connecting to Venus OS at ${config.venusHost} for ${deviceTypeNames[deviceType]}`);
                     
@@ -200,7 +203,8 @@ export default function(app) {
                   }
                 }
               } catch (err) {
-                app.error(`Error handling path ${pathValue.path}:`, err);
+                app.error(`Error handling path ${pathValue.path}:`, err.message || err);
+                app.debug(`Full error for ${pathValue.path}:`, err);
               }
             });
           });

@@ -92,24 +92,53 @@ export class VenusClient extends EventEmitter {
   }
 
   async handleSignalKUpdate(path, value) {
-    if (!this.bus) await this.init();
-    if (path.includes('voltage')) {
-      this._export('/Dc/0/Voltage', 'Battery Voltage', value);
-      this.emit('dataUpdated', 'Battery Voltage', `${value.toFixed(2)}V`);
+    try {
+      if (!this.bus) await this.init();
+      
+      if (path.includes('voltage')) {
+        this._export('/Dc/0/Voltage', 'Battery Voltage', value);
+        this.emit('dataUpdated', 'Battery Voltage', `${value.toFixed(2)}V`);
+      }
+      else if (path.includes('current')) {
+        this._export('/Dc/0/Current', 'Battery Current', value);
+        this.emit('dataUpdated', 'Battery Current', `${value.toFixed(1)}A`);
+      }
+      else if (path.includes('stateOfCharge') || (path.includes('capacity') && path.includes('state'))) {
+        this._export('/Soc', 'State of Charge', value);
+        this.emit('dataUpdated', 'State of Charge', `${Math.round(value * 100)}%`);
+      }
+      else if (path.includes('consumed') || (path.includes('capacity') && path.includes('consumed'))) {
+        this._export('/ConsumedAmphours', 'Consumed Ah', value);
+        this.emit('dataUpdated', 'Consumed Ah', `${value.toFixed(1)}Ah`);
+      }
+      else if (path.includes('timeRemaining') || (path.includes('capacity') && path.includes('time'))) {
+        if (value !== null) {
+          this._export('/TimeToGo', 'Time Remaining', value);
+          this.emit('dataUpdated', 'Time Remaining', `${Math.round(value/60)}min`);
+        }
+      }
+      else if (path.includes('relay')) {
+        this._export('/Relay/0/State', 'Relay', value);
+        this.emit('dataUpdated', 'Relay', value ? 'On' : 'Off');
+      }
+      else if (path.includes('temperature')) {
+        this._export('/Dc/0/Temperature', 'Battery Temp', value);
+        this.emit('dataUpdated', 'Battery Temp', `${value.toFixed(1)}°C`);
+      }
+      else if (path.includes('name')) {
+        // Handle battery name/label
+        this._export('/CustomName', 'Battery Name', value);
+        this.emit('dataUpdated', 'Battery Name', value);
+      }
+      else {
+        // Silently ignore unknown battery paths instead of throwing errors
+        console.debug(`Ignoring unknown battery path: ${path}`);
+        return;
+      }
+      
+    } catch (err) {
+      throw new Error(`Battery client error for ${path}: ${err.message}`);
     }
-    else if (path.includes('current')) {
-      this._export('/Dc/0/Current', 'Battery Current', value);
-      this.emit('dataUpdated', 'Battery Current', `${value.toFixed(1)}A`);
-    }
-    else if (path.includes('stateOfCharge')) {
-      this._export('/Soc', 'State of Charge', value);
-      this.emit('dataUpdated', 'State of Charge', `${Math.round(value * 100)}%`);
-    }
-    else if (path.includes('consumed')) this._export('/ConsumedAmphours', 'Consumed Ah', value);
-    else if (path.includes('timeRemaining')) this._export('/TimeToGo', 'Time Remaining', value);
-    else if (path.includes('relay')) this._export('/Relay/0/State', 'Relay', value);
-    else if (path.includes('temperature')) this._export('/Dc/0/Temperature', 'Battery Temp', value);
-    else if (path.includes('voltage') && path.includes('1')) this._export('/Dc/1/Voltage', 'Starter Voltage', value);
   }
 
   async disconnect() {
