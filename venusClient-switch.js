@@ -96,8 +96,10 @@ export class VenusClient extends EventEmitter {
     const id = path.match(/switches\.([^.]+)\./)?.[1] || '0';
     if (path.endsWith('state')) {
       this._export(`/Switches/${id}/State`, `Switch ${id}`, value ? 1 : 0);
+      this.emit('dataUpdated', `Switch ${id}`, value ? 'ON' : 'OFF');
     } else if (path.endsWith('dimmingLevel')) {
       this._export(`/Switches/${id}/DimLevel`, `Dimmer ${id}`, value * 100);
+      this.emit('dataUpdated', `Dimmer ${id}`, `${Math.round(value * 100)}%`);
     }
   }
 

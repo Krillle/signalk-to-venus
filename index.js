@@ -19,30 +19,85 @@ export default function(app) {
         productName: {
           type: 'string', 
           title: 'Product Name',
-          default: 'SignalK Virtual BMV'
+          default: 'SignalK Virtual Device'
         },
         interval: {
           type: 'number',
           title: 'Update Interval (ms)',
           default: 1000
+        },
+        enabledDevices: {
+          type: 'object',
+          title: 'Device Types to Bridge',
+          description: 'Select which types of devices should be sent to Venus OS',
+          properties: {
+            batteries: {
+              type: 'boolean',
+              title: 'Batteries',
+              description: 'Bridge battery voltage, current, SoC, etc.',
+              default: true
+            },
+            tanks: {
+              type: 'boolean',
+              title: 'Tanks',
+              description: 'Bridge tank levels and names',
+              default: true
+            },
+            environment: {
+              type: 'boolean',
+              title: 'Environment',
+              description: 'Bridge temperature and humidity sensors',
+              default: true
+            },
+            switches: {
+              type: 'boolean',
+              title: 'Switches & Dimmers',
+              description: 'Bridge switches and dimmers (bidirectional)',
+              default: true
+            }
+          }
         }
       }
     },
 
     start: function(options) {
+      app.setPluginStatus('Starting Signal K to Venus OS bridge');
       app.debug('Starting Signal K to Venus OS bridge');
       const config = { ...settings, ...options };
       const clients = {};
+      const activeClientTypes = new Set();
+      let dataUpdateCount = 0;
+      
+      const deviceTypeNames = {
+        'battery': 'Batteries',
+        'tank': 'Tanks', 
+        'env': 'Environment',
+        'switch': 'Switches'
+      };
 
       // Subscribe to Signal K updates using proper plugin API
+      const subscriptions = [];
+      if (config.enabledDevices?.batteries !== false) {
+        subscriptions.push({ path: 'electrical.batteries.*', period: config.interval });
+      }
+      if (config.enabledDevices?.tanks !== false) {
+        subscriptions.push({ path: 'tanks.*', period: config.interval });
+      }
+      if (config.enabledDevices?.environment !== false) {
+        subscriptions.push({ path: 'environment.*', period: config.interval });
+      }
+      if (config.enabledDevices?.switches !== false) {
+        subscriptions.push({ path: 'electrical.switches.*', period: config.interval });
+      }
+
+      if (subscriptions.length === 0) {
+        app.setPluginStatus('No device types enabled - check plugin configuration');
+        return;
+      }
+
       const subscription = {
         context: 'vessels.self',
-        subscribe: [
-          { path: 'electrical.batteries.*', period: config.interval },
-          { path: 'tanks.*', period: config.interval },
-          { path: 'environment.*', period: config.interval },
-          { path: 'electrical.switches.*', period: config.interval }
-        ]
+        subscribe: subscriptions
       };
 
       app.subscriptionmanager.subscribe(subscription, 
@@ -52,12 +107,35 @@ export default function(app) {
             delta.updates.forEach(update => {
               update.values.forEach(async pathValue => {
                 try {
-                  const deviceType = identifyDeviceType(pathValue.path);
+                  const deviceType = identifyDeviceType(pathValue.path, config);
                   if (deviceType) {
                     if (!clients[deviceType]) {
-                      clients[deviceType] = VenusClientFactory(config, deviceType);
+                      app.setPluginStatus(`Connecting to Venus OS at ${config.venusHost} for ${deviceTypeNames[deviceType]}`);
+                      
+                      try {
+                        clients[deviceType] = VenusClientFactory(config, deviceType);
+                        
+                        // Listen for data updates to show activity
+                        clients[deviceType].on('dataUpdated', (dataType, value) => {
+                          dataUpdateCount++;
+                          const activeList = Array.from(activeClientTypes).sort().join(', ');
+                          app.setPluginStatus(`Connected to Venus OS at ${config.venusHost} for [${activeList}] - ${dataUpdateCount} updates`);
+                        });
+                        
+                        await clients[deviceType].handleSignalKUpdate(pathValue.path, pathValue.value);
+                        
+                        activeClientTypes.add(deviceTypeNames[deviceType]);
+                        const activeList = Array.from(activeClientTypes).sort().join(', ');
+                        app.setPluginStatus(`Connected to Venus OS at ${config.venusHost} for [${activeList}]`);
+                        
+                      } catch (err) {
+                        app.setPluginError(`Venus OS not reachable: ${err.message}`);
+                        app.error(`Error connecting to Venus OS for ${deviceType}:`, err);
+                        return;
+                      }
+                    } else {
+                      await clients[deviceType].handleSignalKUpdate(pathValue.path, pathValue.value);
                     }
-                    await clients[deviceType].handleSignalKUpdate(pathValue.path, pathValue.value);
                   }
                 } catch (err) {
                   app.error(`Error handling path ${pathValue.path}:`, err);
@@ -86,9 +164,18 @@ export default function(app) {
 
       plugin.clients = clients;
       plugin.subscription = subscription;
+      plugin.activeClientTypes = activeClientTypes;
+      
+      // Set initial status if no data comes in
+      setTimeout(() => {
+        if (activeClientTypes.size === 0) {
+          app.setPluginStatus(`Waiting for Signal K data (${config.venusHost})`);
+        }
+      }, 2000);
     },
 
     stop: function() {
+      app.setPluginStatus('Stopping Signal K to Venus OS bridge');
       app.debug('Stopping Signal K to Venus OS bridge');
       if (plugin.subscription) {
         app.subscriptionmanager.unsubscribe(plugin.subscription);
@@ -100,15 +187,16 @@ export default function(app) {
           }
         });
       }
+      app.setPluginStatus('Stopped');
     }
   };
 
   // Helper function to identify device type from Signal K path
-  function identifyDeviceType(path) {
-    if (settings.batteryRegex.test(path)) return 'battery';
-    if (settings.tankRegex.test(path)) return 'tank';
-    if (settings.temperatureRegex.test(path) || settings.humidityRegex.test(path)) return 'env';
-    if (settings.switchRegex.test(path) || settings.dimmerRegex.test(path)) return 'switch';
+  function identifyDeviceType(path, config) {
+    if ((config.enabledDevices?.batteries !== false) && settings.batteryRegex.test(path)) return 'battery';
+    if ((config.enabledDevices?.tanks !== false) && settings.tankRegex.test(path)) return 'tank';
+    if ((config.enabledDevices?.environment !== false) && (settings.temperatureRegex.test(path) || settings.humidityRegex.test(path))) return 'env';
+    if ((config.enabledDevices?.switches !== false) && (settings.switchRegex.test(path) || settings.dimmerRegex.test(path))) return 'switch';
     return null;
   }
 

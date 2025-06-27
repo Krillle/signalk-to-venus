@@ -93,9 +93,18 @@ export class VenusClient extends EventEmitter {
 
   async handleSignalKUpdate(path, value) {
     if (!this.bus) await this.init();
-    if (path.includes('voltage')) this._export('/Dc/0/Voltage', 'Battery Voltage', value);
-    else if (path.includes('current')) this._export('/Dc/0/Current', 'Battery Current', value);
-    else if (path.includes('stateOfCharge')) this._export('/Soc', 'State of Charge', value);
+    if (path.includes('voltage')) {
+      this._export('/Dc/0/Voltage', 'Battery Voltage', value);
+      this.emit('dataUpdated', 'Battery Voltage', `${value.toFixed(2)}V`);
+    }
+    else if (path.includes('current')) {
+      this._export('/Dc/0/Current', 'Battery Current', value);
+      this.emit('dataUpdated', 'Battery Current', `${value.toFixed(1)}A`);
+    }
+    else if (path.includes('stateOfCharge')) {
+      this._export('/Soc', 'State of Charge', value);
+      this.emit('dataUpdated', 'State of Charge', `${Math.round(value * 100)}%`);
+    }
     else if (path.includes('consumed')) this._export('/ConsumedAmphours', 'Consumed Ah', value);
     else if (path.includes('timeRemaining')) this._export('/TimeToGo', 'Time Remaining', value);
     else if (path.includes('relay')) this._export('/Relay/0/State', 'Relay', value);

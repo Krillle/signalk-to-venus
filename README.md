@@ -7,10 +7,13 @@ Injects Signal K battery, tank, temperature, humidity, and switch data into Venu
 ## Features
 
 - Registers as full Victron D-Bus services
-- Simulates battery monitors, tank level sensors, temperature sensors, humiditysensors, switches, and dimmers
+- Simulates battery monitors, tank level sensors, temperature sensors, humidity sensors, switches, and dimmers
 - Bidirectional sync of switches and dimmers (Signal K ⇄ Cerbo GX)
 - Sends `/Name` for tanks to Cerbo
 - D-Bus compliant, works with VRM, GX Touch
+- Real-time status monitoring and error reporting
+- Automatic connection retry and timeout handling
+- Uses Signal K's internal APIs for optimal performance
 
 ---
 
@@ -57,17 +60,23 @@ netstat -tuln | grep :78
 
 **3. Install the plugin**
 
-Look for `signalk-to-venus`in the Signal K app store.  
+Look for `signalk-to-venus` in the Signal K App Store and install it directly.
 
-To install manually, clone or copy the plugin folder into `~/.signalk/node_modules/signalk-to-venus` and install dependecies with `npm install` inside the plugin folder.
+To install manually:
+```bash
+cd ~/.signalk/node_modules/
+git clone https://github.com/YOUR_USERNAME/signalk-to-venus
+cd signalk-to-venus
+npm install
+```
 
 **4. Restart Signal K server**
 
-The plug in is enabled by default and should work right away with default settings. 
+The plugin is enabled by default and should work right away with default settings.
 
 **Error "Venus OS not reachable: Connection timeout to Venus OS at venus.local:78"**
 
-If you find **signalk-virtual-bmv** getting a timeout connecting to Venus OS, your Cerbo GX is not reachable at **venus.local**. Open the **Plugin Config** section in the Signal K web UI and configure the connection settings.
+If you see **signalk-to-venus** getting a timeout connecting to Venus OS, your Cerbo GX is not reachable at **venus.local**. Open the **Plugin Config** section in the Signal K web UI and configure the connection settings.
 
 ---
 
@@ -76,7 +85,7 @@ If you find **signalk-virtual-bmv** getting a timeout connecting to Venus OS, yo
 | Key                  | Description                                      | Default                   |
 |----------------------|--------------------------------------------------|---------------------------|
 | `venusHost`          | Hostname or IP of Cerbo GX                       | `venus.local`             |
-| `productName`        | Name shown in VRM / Venus OS                     | `SignalK Virtual Devices` |
+| `productName`        | Name shown in VRM / Venus OS                     | `SignalK Virtual Device`     |
 | `interval`           | Update interval in milliseconds                  | `1000`                    |
 
 Regex-based auto-mapping is used:
@@ -85,6 +94,22 @@ Regex-based auto-mapping is used:
 - Temperature: `environment.*.temperature`, `propulsion.*.temperature`
 - Humidity: `environment.*.humidity|relativeHumidity`
 - Switches & dimmers: `electrical.switches.*`
+
+---
+
+## Status Monitoring
+
+The plugin provides real-time status updates in the Signal K web interface:
+
+- **Starting**: `Starting Signal K to Venus OS bridge`
+- **Connecting**: `Connecting to Venus OS at venus.local for Batteries...`
+- **Connected**: `Connected to Venus OS at venus.local for [Batteries, Environment, Tanks, Switches]`
+- **Activity**: Shows update counter when data is flowing
+- **Waiting**: `Waiting for Signal K data (venus.local)` if no compatible paths are found
+- **Error**: `Venus OS not reachable: [error details]` if connection fails
+- **No devices**: `No device types enabled - check plugin configuration` if all types are disabled
+
+The status shows which device types are actively connected and how many data updates have been processed.
 
 ---
 
