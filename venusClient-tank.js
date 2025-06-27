@@ -80,9 +80,25 @@ export class VenusClient extends EventEmitter {
       }
       
       SetValue(val) {
-        interfaceData._value = val.value;
-        parent.emit('valueChanged', path, val.value);
-        return true;
+        try {
+          if (val === undefined || val === null) {
+            // Method called without parameters, likely during introspection
+            return true;
+          }
+          
+          if (val && typeof val === 'object' && 'value' in val) {
+            interfaceData._value = val.value;
+            parent.emit('valueChanged', path, val.value);
+          } else {
+            // Handle direct value assignment
+            interfaceData._value = val;
+            parent.emit('valueChanged', path, val);
+          }
+          return true;
+        } catch (err) {
+          console.error(`SetValue error for ${path}:`, err);
+          return false;
+        }
       }
       
       GetText() {
@@ -91,9 +107,9 @@ export class VenusClient extends EventEmitter {
     }
 
     // Add method signatures
-    BusItemInterface.prototype.GetValue = dbus.interface.method({ signature: 'v' })(BusItemInterface.prototype.GetValue);
-    BusItemInterface.prototype.SetValue = dbus.interface.method({ signature: 'v', returns: 'b' })(BusItemInterface.prototype.SetValue);
-    BusItemInterface.prototype.GetText = dbus.interface.method({ signature: 's' })(BusItemInterface.prototype.GetText);
+    BusItemInterface.prototype.GetValue = dbus.interface.method({ outSignature: 'v' })(BusItemInterface.prototype.GetValue);
+    BusItemInterface.prototype.SetValue = dbus.interface.method({ inSignature: 'v', outSignature: 'b' })(BusItemInterface.prototype.SetValue);
+    BusItemInterface.prototype.GetText = dbus.interface.method({ outSignature: 's' })(BusItemInterface.prototype.GetText);
 
     const interfaceInstance = new BusItemInterface();
     interfaceData._interface = interfaceInstance;
