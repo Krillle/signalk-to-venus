@@ -41,7 +41,7 @@ export class VenusClient extends EventEmitter {
       
       this._exportMgmt();
     } catch (err) {
-      throw new Error(`Failed to initialize environment client: ${err.message}`);
+      throw new Error(err.message);
     }
   }
 
@@ -129,7 +129,7 @@ export class VenusClient extends EventEmitter {
       this.emit('dataUpdated', topic, valueFinal);
       
     } catch (err) {
-      throw new Error(`Environment client error for ${path}: ${err.message}`);
+      throw new Error(err.message);
     }
   }
 

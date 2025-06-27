@@ -200,9 +200,14 @@ export default function(app) {
                   }
                 }
               } catch (err) {
-                app.debug(`${pathValue.path}:`, err);
-                // app.error(`Error handling path ${pathValue.path}:`, err.message || err);
-                // app.debug(`Full error for ${pathValue.path}:`, err);
+                // Clean up connection timeout messages
+                let cleanMessage = err.message || err.toString();
+                if (cleanMessage.includes('Connection timeout to Venus OS')) {
+                  cleanMessage = `Venus OS connection timeout (${config.venusHost}:78)`;
+                } else if (cleanMessage.includes('Cannot connect to Venus OS')) {
+                  cleanMessage = `Cannot reach Venus OS (${config.venusHost}:78)`;
+                }
+                app.error(`${pathValue.path}: ${cleanMessage}`);
               }
             });
           });

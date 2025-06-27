@@ -42,7 +42,7 @@ export class VenusClient extends EventEmitter {
       
       this._exportMgmt();
     } catch (err) {
-      throw new Error(`Failed to initialize switch client: ${err.message}`);
+      throw new Error(err.message);
     }
   }
 
