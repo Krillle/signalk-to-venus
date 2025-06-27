@@ -58,37 +58,45 @@ export class VenusClient extends EventEmitter {
   _export(path, label, value, type = 'd') {
     if (this.interfaces[path]) return;
     
-    // Store the interface data first
+    // Store the interface data
     const interfaceData = {
       _label: label,
       _value: value,
       _type: type
     };
     
-    // Create a D-Bus service object directly using the bus
-    const service = this.bus.export(`${this.OBJECT_PATH}${path}`, {
-      'com.victronenergy.BusItem': {
-        GetValue: {
-          signature: 'v',
-          method: () => new dbus.Variant(type, interfaceData._value)
-        },
-        SetValue: {
-          signature: 'v',
-          returns: 'b',
-          method: (val) => {
-            interfaceData._value = val.value;
-            this.emit('valueChanged', path, val.value);
-            return true;
-          }
-        },
-        GetText: {
-          signature: 's',
-          method: () => interfaceData._label || ''
-        }
+    const parent = this; // Capture parent context
+    
+    // Create a D-Bus interface class
+    class BusItemInterface extends dbus.interface.Interface {
+      constructor() {
+        super('com.victronenergy.BusItem');
       }
-    });
+      
+      GetValue() {
+        return new dbus.Variant(type, interfaceData._value);
+      }
+      
+      SetValue(val) {
+        interfaceData._value = val.value;
+        parent.emit('valueChanged', path, val.value);
+        return true;
+      }
+      
+      GetText() {
+        return interfaceData._label || '';
+      }
+    }
 
-    interfaceData._service = service;
+    // Add method signatures
+    BusItemInterface.prototype.GetValue = dbus.interface.method({ signature: 'v' })(BusItemInterface.prototype.GetValue);
+    BusItemInterface.prototype.SetValue = dbus.interface.method({ signature: 'v', returns: 'b' })(BusItemInterface.prototype.SetValue);
+    BusItemInterface.prototype.GetText = dbus.interface.method({ signature: 's' })(BusItemInterface.prototype.GetText);
+
+    const interfaceInstance = new BusItemInterface();
+    interfaceData._interface = interfaceInstance;
+    
+    this.bus.export(`${this.OBJECT_PATH}${path}`, interfaceInstance);
     this.interfaces[path] = interfaceData;
   }
 
