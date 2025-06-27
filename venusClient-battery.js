@@ -56,7 +56,11 @@ export class VenusClient extends EventEmitter {
   }
 
   _export(path, label, value, type = 'd') {
-    if (this.interfaces[path]) return;
+    if (this.interfaces[path]) {
+      // Update existing value
+      this.interfaces[path]._value = value;
+      return;
+    }
     
     // Store the interface data
     const interfaceData = {
@@ -67,53 +71,31 @@ export class VenusClient extends EventEmitter {
     
     const parent = this; // Capture parent context
     
-    // Create a D-Bus interface class
-    class BusItemInterface extends dbus.interface.Interface {
-      constructor() {
-        super('com.victronenergy.BusItem');
-      }
-      
+    // Simple approach: create a minimal object that Venus OS expects
+    const busItem = {
       GetValue() {
-        return new dbus.Variant(type, interfaceData._value);
-      }
-      
+        return new dbus.Variant(type, interfaceData._value || 0);
+      },
       SetValue(val) {
-        try {
-          if (val === undefined || val === null) {
-            // Method called without parameters, likely during introspection
-            return true;
-          }
-          
-          if (val && typeof val === 'object' && 'value' in val) {
-            interfaceData._value = val.value;
-            parent.emit('valueChanged', path, val.value);
-          } else {
-            // Handle direct value assignment
-            interfaceData._value = val;
-            parent.emit('valueChanged', path, val);
-          }
-          return true;
-        } catch (err) {
-          console.error(`SetValue error for ${path}:`, err);
-          return false;
-        }
-      }
-      
+        const actualValue = (val && typeof val === 'object' && 'value' in val) ? val.value : val;
+        interfaceData._value = actualValue;
+        parent.emit('valueChanged', path, actualValue);
+        return true;
+      },
       GetText() {
         return interfaceData._label || '';
       }
+    };
+
+    // Add interface to the bus
+    try {
+      const iface = this.bus.export(`${this.OBJECT_PATH}${path}`, busItem);
+      interfaceData._interface = iface;
+      this.interfaces[path] = interfaceData;
+    } catch (err) {
+      console.error(`Failed to export ${path}:`, err);
+      throw err;
     }
-
-    // Add method signatures
-    BusItemInterface.prototype.GetValue = dbus.interface.method({ outSignature: 'v' })(BusItemInterface.prototype.GetValue);
-    BusItemInterface.prototype.SetValue = dbus.interface.method({ inSignature: 'v', outSignature: 'b' })(BusItemInterface.prototype.SetValue);
-    BusItemInterface.prototype.GetText = dbus.interface.method({ outSignature: 's' })(BusItemInterface.prototype.GetText);
-
-    const interfaceInstance = new BusItemInterface();
-    interfaceData._interface = interfaceInstance;
-    
-    this.bus.export(`${this.OBJECT_PATH}${path}`, interfaceInstance);
-    this.interfaces[path] = interfaceData;
   }
 
   _updateValue(path, value) {

@@ -76,7 +76,15 @@ export class VenusClient extends EventEmitter {
       }
       
       GetValue() {
-        return new dbus.Variant(type, interfaceData._value);
+        try {
+          if (interfaceData._value === undefined || interfaceData._value === null) {
+            return new dbus.Variant(type, 0); // Return a default value
+          }
+          return new dbus.Variant(type, interfaceData._value);
+        } catch (err) {
+          console.error(`GetValue error for ${path}:`, err);
+          return new dbus.Variant(type, 0);
+        }
       }
       
       SetValue(val) {

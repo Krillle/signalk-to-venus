@@ -169,6 +169,12 @@ export default function(app) {
           delta.updates.forEach(update => {
             update.values.forEach(async pathValue => {
               try {
+                // Debug the incoming Signal K data
+                if (pathValue.value === undefined || pathValue.value === null) {
+                  app.debug(`Skipping ${pathValue.path} - value is ${pathValue.value}`);
+                  return;
+                }
+                
                 const deviceType = identifyDeviceType(pathValue.path, config);
                 if (deviceType) {
                   if (!plugin.clients[deviceType]) {
