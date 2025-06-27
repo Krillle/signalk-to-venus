@@ -1,8 +1,5 @@
-// venusClient-battery.js
 import dbus from 'dbus-next';
 import EventEmitter from 'events';
-const { Variant, MessageBus } = dbus;
-const DBusInterface = dbus.interface;
 
 export class VenusClient extends EventEmitter {
   constructor(settings, deviceType) {
@@ -18,31 +15,34 @@ export class VenusClient extends EventEmitter {
 
   async init() {
     try {
-      // Create TCP connection to Venus OS D-Bus with improved error handling
-      const net = await import('net');
-      const socket = net.default.createConnection(78, this.settings.venusHost);
+      // Set the D-Bus address to connect to Venus OS via TCP
+      const originalAddress = process.env.DBUS_SYSTEM_BUS_ADDRESS;
+      process.env.DBUS_SYSTEM_BUS_ADDRESS = `tcp:host=${this.settings.venusHost},port=78`;
       
-      // Set connection timeout
-      socket.setTimeout(5000);
-      
-      // Wait for socket to connect
-      await new Promise((resolve, reject) => {
-        socket.on('connect', resolve);
-        socket.on('error', (err) => {
-          reject(new Error(`Cannot connect to Venus OS at ${this.settings.venusHost}:78 - ${err.code || err.message}`));
-        });
-        socket.on('timeout', () => {
-          socket.destroy();
-          reject(new Error(`Connection timeout to Venus OS at ${this.settings.venusHost}:78`));
-        });
-      });
-
-      this.bus = new MessageBus(socket);
-      await this.bus.requestName(this.VBUS_SERVICE);
-      
-      this._exportMgmt();
+      try {
+        // Create D-Bus connection using systemBus with TCP address
+        this.bus = dbus.systemBus();
+        
+        // Try to request a name to test the connection
+        await this.bus.requestName(this.VBUS_SERVICE);
+        this._exportMgmt();
+        
+      } finally {
+        // Restore original D-Bus address
+        if (originalAddress) {
+          process.env.DBUS_SYSTEM_BUS_ADDRESS = originalAddress;
+        } else {
+          delete process.env.DBUS_SYSTEM_BUS_ADDRESS;
+        }
+      }
     } catch (err) {
-      throw new Error(err.message);
+      // Convert dbus errors to more user-friendly messages
+      if (err.code === 'ENOTFOUND' || err.code === 'ECONNREFUSED') {
+        throw new Error(`Cannot connect to Venus OS at ${this.settings.venusHost}:78 - ${err.code}`);
+      } else if (err.message && err.message.includes('timeout')) {
+        throw new Error(`Connection timeout to Venus OS at ${this.settings.venusHost}:78`);
+      }
+      throw new Error(err.message || err.toString());
     }
   }
 
@@ -73,11 +73,11 @@ export class VenusClient extends EventEmitter {
       }
     };
 
-    this.interfaces[path] = DBusInterface(ifaceDesc, {
+    this.interfaces[path] = dbus.interface(ifaceDesc, {
       _label: label,
       _value: value,
       GetValue() {
-        return new Variant(type, this._value);
+        return new dbus.Variant(type, this._value);
       },
       SetValue: (val) => {
         this._value = val.value;
