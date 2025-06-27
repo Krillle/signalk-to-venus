@@ -11,6 +11,7 @@ export class VenusClient extends EventEmitter {
     this.bus = null;
     this.interfaces = {};
     this.index = 0;
+    this.lastInitAttempt = 0;
     this.OBJECT_PATH = `/com/victronenergy/virtual/${deviceType}`;
     this.VBUS_SERVICE = `com.victronenergy.virtual.${deviceType}`;
   }
@@ -92,7 +93,17 @@ export class VenusClient extends EventEmitter {
   }
 
   async handleSignalKUpdate(path, value) {
-    if (!this.bus) await this.init();
+    if (!this.bus) {
+      // Only try to initialize once every 30 seconds to avoid spam
+      const now = Date.now();
+      if (!this.lastInitAttempt || (now - this.lastInitAttempt) > 30000) {
+        this.lastInitAttempt = now;
+        await this.init();
+      } else {
+        // Skip silently if we recently failed to connect
+        return;
+      }
+    }
     const index = this.index++;
     if (path.includes('currentLevel')) this._export(`/Tank/${index}/Level`, `Tank ${index}`, value);
     else if (path.includes('name')) this._export(`/Tank/${index}/Name`, `Tank ${index} Name`, value, 's');

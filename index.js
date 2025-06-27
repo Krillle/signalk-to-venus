@@ -171,9 +171,6 @@ export default function(app) {
               try {
                 const deviceType = identifyDeviceType(pathValue.path, config);
                 if (deviceType) {
-                  // Temporary debug log to see what paths are being processed
-                  console.log(`Processing ${deviceType} path: ${pathValue.path} = ${pathValue.value}`);
-                  
                   if (!plugin.clients[deviceType]) {
                     app.setPluginStatus(`Connecting to Venus OS at ${config.venusHost} for ${deviceTypeNames[deviceType]}`);
                     
