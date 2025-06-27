@@ -97,63 +97,125 @@ export default function(app) {
         return;
       }
 
-      // Subscribe to Signal K delta stream using the most basic approach
+      // Subscribe to Signal K delta stream using multiple approaches for compatibility
       app.setPluginStatus('Setting up Signal K subscription...');
+      app.error('Plugin debug: Setting up subscription'); // Use error level to ensure it shows
+      app.error('Plugin debug: app.streambundle available:', !!app.streambundle);
+      app.error('Plugin debug: getSelfStream available:', !!app.streambundle?.getSelfStream);
       let deltaCount = 0;
-      plugin.unsubscribe = app.streambundle.getSelfStream('delta').subscribe(delta => {
-        deltaCount++;
-        if (deltaCount <= 3) {
-          app.debug(`Delta #${deltaCount} received with ${delta.updates?.length || 0} updates`);
-        }
-        if (delta.updates) {
-          delta.updates.forEach(update => {
-            update.values.forEach(async pathValue => {
-              if (deltaCount <= 5) {
-                app.debug(`Processing path: ${pathValue.path}`);
-              }
-              try {
-                const deviceType = identifyDeviceType(pathValue.path, config);
-                if (deviceType) {
-                  app.debug(`✅ Matched ${pathValue.path} as ${deviceType} device`);
-                  if (!plugin.clients[deviceType]) {
-                    app.setPluginStatus(`Connecting to Venus OS at ${config.venusHost} for ${deviceTypeNames[deviceType]}`);
-                    
-                    try {
-                      plugin.clients[deviceType] = VenusClientFactory(config, deviceType);
+      let lastDataTime = Date.now();
+      
+      // Try the primary subscription method
+      try {
+        plugin.unsubscribe = app.streambundle.getSelfStream('delta').subscribe(delta => {
+          deltaCount++;
+          lastDataTime = Date.now();
+          if (deltaCount <= 3) {
+            app.error(`Plugin debug: Delta #${deltaCount} received with ${delta.updates?.length || 0} updates`);
+          }
+          
+          if (delta.updates) {
+            delta.updates.forEach(update => {
+              update.values.forEach(async pathValue => {
+                if (deltaCount <= 5) {
+                  app.error(`Plugin debug: Processing path: ${pathValue.path}`);
+                }
+                try {
+                  const deviceType = identifyDeviceType(pathValue.path, config);
+                  if (deviceType) {
+                    app.error(`Plugin debug: ✅ Matched ${pathValue.path} as ${deviceType} device`);
+                    if (!plugin.clients[deviceType]) {
+                      app.setPluginStatus(`Connecting to Venus OS at ${config.venusHost} for ${deviceTypeNames[deviceType]}`);
                       
-                      // Listen for data updates to show activity
-                      plugin.clients[deviceType].on('dataUpdated', (dataType, value) => {
-                        dataUpdateCount++;
+                      try {
+                        plugin.clients[deviceType] = VenusClientFactory(config, deviceType);
+                        
+                        // Listen for data updates to show activity
+                        plugin.clients[deviceType].on('dataUpdated', (dataType, value) => {
+                          dataUpdateCount++;
+                          const activeList = Array.from(activeClientTypes).sort().join(', ');
+                          app.setPluginStatus(`Connected to Venus OS at ${config.venusHost} for [${activeList}] - ${dataUpdateCount} updates`);
+                        });
+                        
+                        await plugin.clients[deviceType].handleSignalKUpdate(pathValue.path, pathValue.value);
+                        
+                        activeClientTypes.add(deviceTypeNames[deviceType]);
                         const activeList = Array.from(activeClientTypes).sort().join(', ');
-                        app.setPluginStatus(`Connected to Venus OS at ${config.venusHost} for [${activeList}] - ${dataUpdateCount} updates`);
-                      });
-                      
+                        app.setPluginStatus(`Connected to Venus OS at ${config.venusHost} for [${activeList}]`);
+                        
+                      } catch (err) {
+                        app.setPluginError(`Venus OS not reachable: ${err.message}`);
+                        app.error(`Error connecting to Venus OS for ${deviceType}:`, err);
+                        return;
+                      }
+                    } else {
                       await plugin.clients[deviceType].handleSignalKUpdate(pathValue.path, pathValue.value);
-                      
-                      activeClientTypes.add(deviceTypeNames[deviceType]);
-                      const activeList = Array.from(activeClientTypes).sort().join(', ');
-                      app.setPluginStatus(`Connected to Venus OS at ${config.venusHost} for [${activeList}]`);
-                      
-                    } catch (err) {
-                      app.setPluginError(`Venus OS not reachable: ${err.message}`);
-                      app.error(`Error connecting to Venus OS for ${deviceType}:`, err);
-                      return;
                     }
                   } else {
-                    await plugin.clients[deviceType].handleSignalKUpdate(pathValue.path, pathValue.value);
+                    if (deltaCount <= 5) {
+                      app.error(`Plugin debug: ❌ No device type match for path: ${pathValue.path}`);
+                    }
                   }
-                } else {
-                  if (deltaCount <= 5) {
-                    app.debug(`❌ No device type match for path: ${pathValue.path}`);
-                  }
+                } catch (err) {
+                  app.error(`Error handling path ${pathValue.path}:`, err);
                 }
-              } catch (err) {
-                app.error(`Error handling path ${pathValue.path}:`, err);
-              }
+              });
             });
-          });
+          }
+        });
+        app.error('Plugin debug: Successfully subscribed to delta stream');
+        
+        // Monitor subscription health
+        setTimeout(() => {
+          if (deltaCount === 0) {
+            app.error('Plugin debug: No deltas received after 5 seconds - delta stream may not be working');
+            app.setPluginStatus(`No Signal K data received - check server configuration`);
+          }
+        }, 5000);
+        
+      } catch (err) {
+        app.error('Failed to subscribe to delta stream:', err);
+        app.error('Plugin debug: Trying alternative subscription method...');
+        
+        // Try alternative subscription method
+        try {
+          if (app.registerDeltaInputHandler) {
+            app.registerDeltaInputHandler((delta, next) => {
+              if (delta.context === 'vessels.self') {
+                deltaCount++;
+                lastDataTime = Date.now();
+                if (deltaCount <= 3) {
+                  app.error(`Plugin debug: Alt method - Delta #${deltaCount} received with ${delta.updates?.length || 0} updates`);
+                }
+                // Process the same way as above
+                if (delta.updates) {
+                  delta.updates.forEach(update => {
+                    update.values.forEach(async pathValue => {
+                      try {
+                        const deviceType = identifyDeviceType(pathValue.path, config);
+                        if (deviceType) {
+                          app.error(`Plugin debug: Alt ✅ Matched ${pathValue.path} as ${deviceType} device`);
+                          // Handle the same way as main subscription
+                        }
+                      } catch (err) {
+                        app.error(`Error in alt handler:`, err);
+                      }
+                    });
+                  });
+                }
+              }
+              next(delta);
+            });
+            app.error('Plugin debug: Alternative subscription method set up');
+          } else {
+            app.setPluginError(`No compatible subscription method available`);
+          }
+        } catch (altErr) {
+          app.error('Alternative subscription also failed:', altErr);
+          app.setPluginError(`Subscription failed: ${err.message}`);
+          return;
         }
-      });
+      }
 
       // Handle venus client value changes by setting values back to Signal K
       Object.values(plugin.clients).forEach(client => {
