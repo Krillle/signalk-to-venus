@@ -72,21 +72,26 @@ export class VenusClient extends EventEmitter {
       }
     };
 
-    this.interfaces[path] = dbus.interface(ifaceDesc, {
-      _label: label,
-      _value: value,
-      GetValue() {
-        return new dbus.Variant(type, this._value);
-      },
-      SetValue: (val) => {
-        this._value = val.value;
-        this.emit('valueChanged', path, val.value);
-        return true;
-      },
-      GetText() {
-        return this._label || '';
-      }
+    this.interfaces[path] = new dbus.interface.Interface(ifaceDesc.name);
+    
+    // Add methods to the interface
+    this.interfaces[path].addMethod('GetValue', '()', 'v', () => {
+      return new dbus.Variant(type, this.interfaces[path]._value);
     });
+    
+    this.interfaces[path].addMethod('SetValue', 'v', 'b', (val) => {
+      this.interfaces[path]._value = val.value;
+      this.emit('valueChanged', path, val.value);
+      return true;
+    });
+    
+    this.interfaces[path].addMethod('GetText', '()', 's', () => {
+      return this.interfaces[path]._label || '';
+    });
+    
+    // Store the label and value on the interface object
+    this.interfaces[path]._label = label;
+    this.interfaces[path]._value = value;
     
     this.bus.export(`${this.OBJECT_PATH}${path}`, this.interfaces[path]);
   }
