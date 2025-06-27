@@ -58,38 +58,44 @@ export class VenusClient extends EventEmitter {
   _export(path, label, value, type = 'd') {
     if (this.interfaces[path]) return;
     
-    // Create a proper D-Bus interface using the class-based approach
-    class BusItemInterface extends dbus.interface.Interface {
-      constructor(label, value, type, parent) {
-        super('com.victronenergy.BusItem');
-        this._label = label;
-        this._value = value;
-        this._type = type;
-        this._parent = parent;
+    // Store the interface data first
+    const interfaceData = {
+      _label: label,
+      _value: value,
+      _type: type
+    };
+    
+    // Create a D-Bus service object directly using the bus
+    const service = this.bus.export(`${this.OBJECT_PATH}${path}`, {
+      'com.victronenergy.BusItem': {
+        GetValue: {
+          signature: 'v',
+          method: () => new dbus.Variant(type, interfaceData._value)
+        },
+        SetValue: {
+          signature: 'v',
+          returns: 'b',
+          method: (val) => {
+            interfaceData._value = val.value;
+            this.emit('valueChanged', path, val.value);
+            return true;
+          }
+        },
+        GetText: {
+          signature: 's',
+          method: () => interfaceData._label || ''
+        }
       }
-      
-      GetValue() {
-        return new dbus.Variant(this._type, this._value);
-      }
-      
-      SetValue(val) {
-        this._value = val.value;
-        this._parent.emit('valueChanged', path, val.value);
-        return true;
-      }
-      
-      GetText() {
-        return this._label || '';
-      }
+    });
+
+    interfaceData._service = service;
+    this.interfaces[path] = interfaceData;
+  }
+
+  _updateValue(path, value) {
+    if (this.interfaces[path]) {
+      this.interfaces[path]._value = value;
     }
-
-    // Add method definitions to the interface
-    dbus.interface.method('GetValue', { inSignature: '', outSignature: 'v' })(BusItemInterface.prototype, 'GetValue');
-    dbus.interface.method('SetValue', { inSignature: 'v', outSignature: 'b' })(BusItemInterface.prototype, 'SetValue');
-    dbus.interface.method('GetText', { inSignature: '', outSignature: 's' })(BusItemInterface.prototype, 'GetText');
-
-    this.interfaces[path] = new BusItemInterface(label, value, type, this);
-    this.bus.export(`${this.OBJECT_PATH}${path}`, this.interfaces[path]);
   }
 
   async handleSignalKUpdate(path, value) {
