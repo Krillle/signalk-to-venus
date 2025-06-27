@@ -58,29 +58,37 @@ export class VenusClient extends EventEmitter {
   _export(path, label, value, type = 'd') {
     if (this.interfaces[path]) return;
     
-    // Create a simple interface object that can be exported
-    const interfaceObj = {
-      _label: label,
-      _value: value,
-      _type: type,
-      _parent: this,
+    // Create a proper D-Bus interface using the class-based approach
+    class BusItemInterface extends dbus.interface.Interface {
+      constructor(label, value, type, parent) {
+        super('com.victronenergy.BusItem');
+        this._label = label;
+        this._value = value;
+        this._type = type;
+        this._parent = parent;
+      }
       
-      GetValue: function() {
+      GetValue() {
         return new dbus.Variant(this._type, this._value);
-      },
+      }
       
-      SetValue: function(val) {
+      SetValue(val) {
         this._value = val.value;
         this._parent.emit('valueChanged', path, val.value);
         return true;
-      },
+      }
       
-      GetText: function() {
+      GetText() {
         return this._label || '';
       }
-    };
+    }
 
-    this.interfaces[path] = interfaceObj;
+    // Add method definitions to the interface
+    dbus.interface.method('GetValue', { inSignature: '', outSignature: 'v' })(BusItemInterface.prototype, 'GetValue');
+    dbus.interface.method('SetValue', { inSignature: 'v', outSignature: 'b' })(BusItemInterface.prototype, 'SetValue');
+    dbus.interface.method('GetText', { inSignature: '', outSignature: 's' })(BusItemInterface.prototype, 'GetText');
+
+    this.interfaces[path] = new BusItemInterface(label, value, type, this);
     this.bus.export(`${this.OBJECT_PATH}${path}`, this.interfaces[path]);
   }
 
@@ -100,7 +108,10 @@ export class VenusClient extends EventEmitter {
       
       const toCelsius = v => v - 273.15;
       const toPercent = v => v * 100;
-      const label = path.split('/').slice(-2).join(' ');
+      
+      // Create a clean label from the path - remove dots and use last segments
+      const pathParts = path.split('.');
+      const cleanLabel = pathParts.slice(-2).join('_').replace(/[^a-zA-Z0-9_]/g, '_');
       
       let valueFinal, topic;
       if (path.includes('temperature')) {
@@ -115,8 +126,8 @@ export class VenusClient extends EventEmitter {
         return;
       }
       
-      const exportPath = `/Environment/${topic}/${label}`;
-      this._export(exportPath, label, valueFinal);
+      const exportPath = `/Environment/${topic}/${cleanLabel}`;
+      this._export(exportPath, cleanLabel, valueFinal);
       
       // Emit data updated event for status tracking
       this.emit('dataUpdated', topic, valueFinal);
