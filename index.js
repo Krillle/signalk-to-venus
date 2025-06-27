@@ -97,59 +97,54 @@ export default function(app) {
         return;
       }
 
-      // Subscribe using the correct Signal K plugin API
-      plugin.unsubscribe = app.subscriptionmanager.subscribe(
-        {
-          context: 'vessels.self',
-          subscribe: subscriptions
-        },
-        subscriptions,
-        delta => {
-          if (delta.updates) {
-            delta.updates.forEach(update => {
-              update.values.forEach(async pathValue => {
-                try {
-                  const deviceType = identifyDeviceType(pathValue.path, config);
-                  if (deviceType) {
-                    if (!plugin.clients[deviceType]) {
-                      app.setPluginStatus(`Connecting to Venus OS at ${config.venusHost} for ${deviceTypeNames[deviceType]}`);
+      // Subscribe to Signal K delta stream using the most basic approach
+      app.setPluginStatus('Setting up Signal K subscription...');
+      plugin.unsubscribe = app.streambundle.getSelfStream('delta').subscribe(delta => {
+        app.debug('Received delta:', JSON.stringify(delta, null, 2));
+        if (delta.updates) {
+          delta.updates.forEach(update => {
+            update.values.forEach(async pathValue => {
+              try {
+                const deviceType = identifyDeviceType(pathValue.path, config);
+                if (deviceType) {
+                  if (!plugin.clients[deviceType]) {
+                    app.setPluginStatus(`Connecting to Venus OS at ${config.venusHost} for ${deviceTypeNames[deviceType]}`);
+                    
+                    try {
+                      plugin.clients[deviceType] = VenusClientFactory(config, deviceType);
                       
-                      try {
-                        plugin.clients[deviceType] = VenusClientFactory(config, deviceType);
-                        
-                        // Listen for data updates to show activity
-                        plugin.clients[deviceType].on('dataUpdated', (dataType, value) => {
-                          dataUpdateCount++;
-                          const activeList = Array.from(activeClientTypes).sort().join(', ');
-                          app.setPluginStatus(`Connected to Venus OS at ${config.venusHost} for [${activeList}] - ${dataUpdateCount} updates`);
-                        });
-                        
-                        await plugin.clients[deviceType].handleSignalKUpdate(pathValue.path, pathValue.value);
-                        
-                        activeClientTypes.add(deviceTypeNames[deviceType]);
+                      // Listen for data updates to show activity
+                      plugin.clients[deviceType].on('dataUpdated', (dataType, value) => {
+                        dataUpdateCount++;
                         const activeList = Array.from(activeClientTypes).sort().join(', ');
-                        app.setPluginStatus(`Connected to Venus OS at ${config.venusHost} for [${activeList}]`);
-                        
-                      } catch (err) {
-                        app.setPluginError(`Venus OS not reachable: ${err.message}`);
-                        app.error(`Error connecting to Venus OS for ${deviceType}:`, err);
-                        return;
-                      }
-                    } else {
+                        app.setPluginStatus(`Connected to Venus OS at ${config.venusHost} for [${activeList}] - ${dataUpdateCount} updates`);
+                      });
+                      
                       await plugin.clients[deviceType].handleSignalKUpdate(pathValue.path, pathValue.value);
+                      
+                      activeClientTypes.add(deviceTypeNames[deviceType]);
+                      const activeList = Array.from(activeClientTypes).sort().join(', ');
+                      app.setPluginStatus(`Connected to Venus OS at ${config.venusHost} for [${activeList}]`);
+                      
+                    } catch (err) {
+                      app.setPluginError(`Venus OS not reachable: ${err.message}`);
+                      app.error(`Error connecting to Venus OS for ${deviceType}:`, err);
+                      return;
                     }
+                  } else {
+                    await plugin.clients[deviceType].handleSignalKUpdate(pathValue.path, pathValue.value);
                   }
-                } catch (err) {
-                  app.error(`Error handling path ${pathValue.path}:`, err);
                 }
-              });
+              } catch (err) {
+                app.error(`Error handling path ${pathValue.path}:`, err);
+              }
             });
-          }
+          });
         }
-      );
+      });
 
       // Handle venus client value changes by setting values back to Signal K
-      Object.values(clients).forEach(client => {
+      Object.values(plugin.clients).forEach(client => {
         client.on('valueChanged', async (venusPath, value) => {
           try {
             const signalKPath = mapVenusToSignalKPath(venusPath);
@@ -163,10 +158,6 @@ export default function(app) {
           }
         });
       });
-
-      plugin.clients = clients;
-      plugin.subscription = subscription;
-      plugin.activeClientTypes = activeClientTypes;
       
       // Set initial status if no data comes in
       setTimeout(() => {
