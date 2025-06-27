@@ -21,12 +21,11 @@
   "author": "Christian Wegerhoff",
   "license": "MIT",
   "main": "index.js",
+  "type": "module",
   "engines": {
     "node": ">=16.0.0"
   },
   "dependencies": {
-    "dbus-next": "^0.10.2",
-    "node-fetch": "^2.6.7",
-    "ws": "^8.13.0"
+    "dbus-next": "^0.10.2"
   }
 }
