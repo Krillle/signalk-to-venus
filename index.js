@@ -200,8 +200,9 @@ export default function(app) {
                   }
                 }
               } catch (err) {
-                app.error(`Error handling path ${pathValue.path}:`, err.message || err);
-                app.debug(`Full error for ${pathValue.path}:`, err);
+                app.error(`${pathValue.path}:`, err);
+                // app.error(`Error handling path ${pathValue.path}:`, err.message || err);
+                // app.debug(`Full error for ${pathValue.path}:`, err);
               }
             });
           });
