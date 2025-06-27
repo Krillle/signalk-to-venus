@@ -59,38 +59,50 @@ export class VenusClient extends EventEmitter {
   _export(path, label, value, type = 'd') {
     if (this.interfaces[path]) return;
     
-    // Create interface class with decorators
-    class BusItemInterface extends dbus.interface.Interface {
-      constructor() {
-        super('com.victronenergy.BusItem');
-        this._label = label;
-        this._value = value;
-        this._type = type;
-        this._parent = this;
-      }
-
-      @dbus.interface.method({ inSignature: '', outSignature: 'v' })
-      GetValue() {
+    // Create a simple interface object
+    const interfaceObj = {
+      _label: label,
+      _value: value,
+      _type: type,
+      _parent: this,
+      
+      GetValue: function() {
         return new dbus.Variant(this._type, this._value);
-      }
-
-      @dbus.interface.method({ inSignature: 'v', outSignature: 'b' })
-      SetValue(val) {
+      },
+      
+      SetValue: function(val) {
         this._value = val.value;
         this._parent.emit('valueChanged', path, val.value);
         return true;
-      }
-
-      @dbus.interface.method({ inSignature: '', outSignature: 's' })
-      GetText() {
+      },
+      
+      GetText: function() {
         return this._label || '';
       }
-    }
+    };
 
-    this.interfaces[path] = new BusItemInterface();
-    this.interfaces[path]._parent = this;
+    this.interfaces[path] = interfaceObj;
     
-    this.bus.export(`${this.OBJECT_PATH}${path}`, this.interfaces[path]);
+    try {
+      this.bus.export(`${this.OBJECT_PATH}${path}`, this.interfaces[path]);
+    } catch (err) {
+      // If direct export fails, try creating a proper service interface
+      this.interfaces[path] = this.bus.interface('com.victronenergy.BusItem');
+      this.interfaces[path]._label = label;
+      this.interfaces[path]._value = value;
+      this.interfaces[path]._type = type;
+      this.interfaces[path]._parent = this;
+      
+      this.interfaces[path].GetValue = () => new dbus.Variant(type, this.interfaces[path]._value);
+      this.interfaces[path].SetValue = (val) => {
+        this.interfaces[path]._value = val.value;
+        this.emit('valueChanged', path, val.value);
+        return true;
+      };
+      this.interfaces[path].GetText = () => this.interfaces[path]._label || '';
+      
+      this.bus.export(`${this.OBJECT_PATH}${path}`, this.interfaces[path]);
+    }
   }
 
   async handleSignalKUpdate(path, value) {
