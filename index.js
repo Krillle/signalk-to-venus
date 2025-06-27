@@ -99,14 +99,19 @@ export default function(app) {
 
       // Subscribe to Signal K delta stream using the most basic approach
       app.setPluginStatus('Setting up Signal K subscription...');
+      let deltaCount = 0;
       plugin.unsubscribe = app.streambundle.getSelfStream('delta').subscribe(delta => {
-        app.debug('Received delta:', JSON.stringify(delta, null, 2));
+        deltaCount++;
+        if (deltaCount <= 3) {
+          app.debug(`Delta #${deltaCount} received with ${delta.updates?.length || 0} updates`);
+        }
         if (delta.updates) {
           delta.updates.forEach(update => {
             update.values.forEach(async pathValue => {
               try {
                 const deviceType = identifyDeviceType(pathValue.path, config);
                 if (deviceType) {
+                  app.debug(`Matched ${pathValue.path} as ${deviceType} device`);
                   if (!plugin.clients[deviceType]) {
                     app.setPluginStatus(`Connecting to Venus OS at ${config.venusHost} for ${deviceTypeNames[deviceType]}`);
                     
