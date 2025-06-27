@@ -7,6 +7,8 @@ export default function(app) {
     id: 'signalk-to-venus',
     name: 'Signal K to Venus OS Bridge',
     description: 'Bridges Signal K data to Victron Venus OS via D-Bus',
+    unsubscribe: null,
+    clients: {},
     
     schema: {
       type: 'object',
@@ -64,7 +66,7 @@ export default function(app) {
       app.setPluginStatus('Starting Signal K to Venus OS bridge');
       app.debug('Starting Signal K to Venus OS bridge');
       const config = { ...settings, ...options };
-      const clients = {};
+      plugin.clients = {};
       const activeClientTypes = new Set();
       let dataUpdateCount = 0;
       
@@ -95,13 +97,13 @@ export default function(app) {
         return;
       }
 
-      const subscription = {
-        context: 'vessels.self',
-        subscribe: subscriptions
-      };
-
-      app.subscriptionmanager.subscribe(subscription, 
-        null, // no err callback
+      // Subscribe using the correct Signal K plugin API
+      plugin.unsubscribe = app.subscriptionmanager.subscribe(
+        {
+          context: 'vessels.self',
+          subscribe: subscriptions
+        },
+        subscriptions,
         delta => {
           if (delta.updates) {
             delta.updates.forEach(update => {
@@ -109,20 +111,20 @@ export default function(app) {
                 try {
                   const deviceType = identifyDeviceType(pathValue.path, config);
                   if (deviceType) {
-                    if (!clients[deviceType]) {
+                    if (!plugin.clients[deviceType]) {
                       app.setPluginStatus(`Connecting to Venus OS at ${config.venusHost} for ${deviceTypeNames[deviceType]}`);
                       
                       try {
-                        clients[deviceType] = VenusClientFactory(config, deviceType);
+                        plugin.clients[deviceType] = VenusClientFactory(config, deviceType);
                         
                         // Listen for data updates to show activity
-                        clients[deviceType].on('dataUpdated', (dataType, value) => {
+                        plugin.clients[deviceType].on('dataUpdated', (dataType, value) => {
                           dataUpdateCount++;
                           const activeList = Array.from(activeClientTypes).sort().join(', ');
                           app.setPluginStatus(`Connected to Venus OS at ${config.venusHost} for [${activeList}] - ${dataUpdateCount} updates`);
                         });
                         
-                        await clients[deviceType].handleSignalKUpdate(pathValue.path, pathValue.value);
+                        await plugin.clients[deviceType].handleSignalKUpdate(pathValue.path, pathValue.value);
                         
                         activeClientTypes.add(deviceTypeNames[deviceType]);
                         const activeList = Array.from(activeClientTypes).sort().join(', ');
@@ -134,7 +136,7 @@ export default function(app) {
                         return;
                       }
                     } else {
-                      await clients[deviceType].handleSignalKUpdate(pathValue.path, pathValue.value);
+                      await plugin.clients[deviceType].handleSignalKUpdate(pathValue.path, pathValue.value);
                     }
                   }
                 } catch (err) {
@@ -177,8 +179,8 @@ export default function(app) {
     stop: function() {
       app.setPluginStatus('Stopping Signal K to Venus OS bridge');
       app.debug('Stopping Signal K to Venus OS bridge');
-      if (plugin.subscription) {
-        app.subscriptionmanager.unsubscribe(plugin.subscription);
+      if (plugin.unsubscribe) {
+        plugin.unsubscribe();
       }
       if (plugin.clients) {
         Object.values(plugin.clients).forEach(async client => {
