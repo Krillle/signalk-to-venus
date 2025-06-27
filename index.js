@@ -108,10 +108,13 @@ export default function(app) {
         if (delta.updates) {
           delta.updates.forEach(update => {
             update.values.forEach(async pathValue => {
+              if (deltaCount <= 5) {
+                app.debug(`Processing path: ${pathValue.path}`);
+              }
               try {
                 const deviceType = identifyDeviceType(pathValue.path, config);
                 if (deviceType) {
-                  app.debug(`Matched ${pathValue.path} as ${deviceType} device`);
+                  app.debug(`✅ Matched ${pathValue.path} as ${deviceType} device`);
                   if (!plugin.clients[deviceType]) {
                     app.setPluginStatus(`Connecting to Venus OS at ${config.venusHost} for ${deviceTypeNames[deviceType]}`);
                     
@@ -138,6 +141,10 @@ export default function(app) {
                     }
                   } else {
                     await plugin.clients[deviceType].handleSignalKUpdate(pathValue.path, pathValue.value);
+                  }
+                } else {
+                  if (deltaCount <= 5) {
+                    app.debug(`❌ No device type match for path: ${pathValue.path}`);
                   }
                 }
               } catch (err) {
