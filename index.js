@@ -108,18 +108,25 @@ export default function(app) {
         try {
           // Subscribe to all paths and filter in the callback
           plugin.unsubscribe = app.streambundle.getSelfBus().onValue(data => {
+            // Validate the streambundle data before conversion
+            if (!data || typeof data !== 'object' || !data.path) {
+              app.debug(`Invalid streambundle data:`, data);
+              return;
+            }
+            
             // Convert the normalized delta format to standard delta format
             const delta = {
-              context: data.context,
+              context: data.context || 'vessels.self',
               updates: [{
-                source: data.source,
-                timestamp: data.timestamp,
+                source: data.source || { label: 'streambundle' },
+                timestamp: data.timestamp || new Date().toISOString(),
                 values: [{
                   path: data.path,
                   value: data.value
                 }]
               }]
             };
+            
             processDelta(delta);
           });
           app.debug('Successfully subscribed to streambundle');
@@ -162,18 +169,31 @@ export default function(app) {
       
       // Function to process delta messages
       function processDelta(delta) {
-        deltaCount++;
-        lastDataTime = Date.now();
-        
-        if (delta.updates) {
-          delta.updates.forEach(update => {
-            update.values.forEach(async pathValue => {
-              try {
-                // Debug the incoming Signal K data
-                if (pathValue.value === undefined || pathValue.value === null) {
-                  app.debug(`Skipping ${pathValue.path} - value is ${pathValue.value}`);
-                  return;
-                }
+        try {
+          deltaCount++;
+          lastDataTime = Date.now();
+          
+          if (delta.updates) {
+            delta.updates.forEach(update => {
+              // Check if update and update.values are valid
+              if (!update || !Array.isArray(update.values)) {
+                app.debug(`Skipping invalid update:`, update);
+                return;
+              }
+              
+              update.values.forEach(async pathValue => {
+                try {
+                  // Check if pathValue exists
+                  if (!pathValue || typeof pathValue !== 'object') {
+                    app.debug(`Skipping invalid pathValue:`, pathValue);
+                    return;
+                  }
+                  
+                  // Debug the incoming Signal K data
+                  if (pathValue.value === undefined || pathValue.value === null) {
+                    app.debug(`Skipping ${pathValue.path} - value is ${pathValue.value}`);
+                    return;
+                  }
                 
                 const deviceType = identifyDeviceType(pathValue.path, config);
                 if (deviceType) {
@@ -198,11 +218,15 @@ export default function(app) {
                       
                     } catch (err) {
                       app.setPluginError(`Venus OS not reachable: ${err.message}`);
-                      app.error(`Error connecting to Venus OS for ${deviceType}:`, err);
+                      app.error(`Error connecting to Venus OS for ${deviceType} (${pathValue.path}):`, err);
                       return;
                     }
                   } else {
-                    await plugin.clients[deviceType].handleSignalKUpdate(pathValue.path, pathValue.value);
+                    try {
+                      await plugin.clients[deviceType].handleSignalKUpdate(pathValue.path, pathValue.value);
+                    } catch (err) {
+                      app.error(`Error updating ${deviceType} client for ${pathValue.path}:`, err);
+                    }
                   }
                 }
               } catch (err) {
@@ -217,6 +241,9 @@ export default function(app) {
               }
             });
           });
+        }
+        } catch (err) {
+          app.error('Error processing delta:', err);
         }
       }
 
