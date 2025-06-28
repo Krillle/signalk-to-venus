@@ -196,24 +196,33 @@ export default function(app) {
               
               update.values.forEach(async pathValue => {
                 try {
-                  // Check if pathValue exists
+                  // Check if pathValue exists and has required properties
                   if (!pathValue || typeof pathValue !== 'object') {
                     app.debug(`Skipping invalid pathValue:`, pathValue);
+                    return;
+                  }
+                  
+                  if (!pathValue.path) {
+                    app.debug(`Skipping pathValue without path:`, pathValue);
                     return;
                   }
                   
                   // Debug the incoming Signal K data - this should be rare if streambundle filtering works
                   if (pathValue.value === undefined || pathValue.value === null) {
                     app.debug(`DELTA PROCESSING: Still receiving null/undefined for ${pathValue.path} - value is ${pathValue.value}`);
+                    app.debug(`Full pathValue object:`, pathValue);
                     return;
                   }
                 
                 const deviceType = identifyDeviceType(pathValue.path, config);
                 if (deviceType) {
+                  app.debug(`Processing ${pathValue.path} as ${deviceType} with value:`, pathValue.value);
+                  
                   if (!plugin.clients[deviceType]) {
                     app.setPluginStatus(`Connecting to Venus OS at ${config.venusHost} for ${deviceTypeNames[deviceType]}`);
                     
                     try {
+                      app.debug(`Creating new ${deviceType} client for Venus OS`);
                       plugin.clients[deviceType] = VenusClientFactory(config, deviceType);
                       
                       // Listen for data updates to show activity
@@ -223,6 +232,8 @@ export default function(app) {
                         app.setPluginStatus(`Connected to Venus OS at ${config.venusHost} for [${activeList}] - ${dataUpdateCount} updates`);
                       });
                       
+                      app.debug(`Calling handleSignalKUpdate on new ${deviceType} client`);
+                      app.debug(`Arguments: path="${pathValue.path}", value=`, pathValue.value);
                       await plugin.clients[deviceType].handleSignalKUpdate(pathValue.path, pathValue.value);
                       
                       activeClientTypes.add(deviceTypeNames[deviceType]);
@@ -230,6 +241,7 @@ export default function(app) {
                       app.setPluginStatus(`Connected to Venus OS at ${config.venusHost} for [${activeList}]`);
                       
                     } catch (err) {
+                      app.error(`ERROR CREATING CLIENT: ${err.message}`, err.stack);
                       // Clean up connection error messages for better user experience
                       let cleanMessage = err.message || err.toString();
                       if (cleanMessage.includes('ENOTFOUND')) {
@@ -242,6 +254,9 @@ export default function(app) {
                       
                       app.setPluginError(`Venus OS not reachable: ${cleanMessage}`);
                       
+                      // Mark this client as failed to prevent retries
+                      plugin.clients[deviceType] = null;
+                      
                       // Only log the first connection error per device type to avoid spam
                       if (!plugin.clients[`${deviceType}_error_logged`]) {
                         app.error(`Cannot connect to Venus OS for ${deviceTypeNames[deviceType]}: ${cleanMessage}`);
@@ -250,13 +265,25 @@ export default function(app) {
                       return;
                     }
                   } else {
+                    // Client already exists - but check if it's null (failed connection)
+                    if (plugin.clients[deviceType] === null) {
+                      app.debug(`Skipping ${pathValue.path} - client marked as failed`);
+                      return;
+                    }
+                    
+                    app.debug(`Calling handleSignalKUpdate on existing ${deviceType} client`);
+                    app.debug(`Arguments: path="${pathValue.path}", value=`, pathValue.value);
                     try {
                       await plugin.clients[deviceType].handleSignalKUpdate(pathValue.path, pathValue.value);
                     } catch (err) {
+                      app.error(`ERROR ON EXISTING CLIENT: ${err.message}`, err.stack);
                       // Only log detailed errors if it's not a connection issue
                       if (err.message && (err.message.includes('ENOTFOUND') || err.message.includes('ECONNREFUSED'))) {
                         // Suppress frequent connection errors when Venus OS is not available
                         // The main connection error is already logged during client creation
+                        
+                        // Mark client as failed
+                        plugin.clients[deviceType] = null;
                       } else {
                         app.error(`Error updating ${deviceType} client for ${pathValue.path}: ${err.message}`);
                       }
