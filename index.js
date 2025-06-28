@@ -77,12 +77,10 @@ export default function(app) {
 
       // Add dynamic path configuration if paths have been discovered
       if (hasDiscoveredPaths()) {
-        // baseSchema.properties.pathConfiguration = {
-        //   type: 'object',
-        //   title: 'Individual Signal K Path Configuration',
-        //   description: 'Configure individual Signal K paths discovered on your boat',
-        //   properties: {}
-        // };
+        baseSchema.properties.pathConfiguration = {
+          type: 'object',
+          properties: {}
+        };
 
         // Add each device type with discovered paths
         Object.entries(discoveredPaths).forEach(([deviceType, pathMap]) => {
@@ -99,18 +97,14 @@ export default function(app) {
               const safePathKey = devicePath.replace(/[^a-zA-Z0-9]/g, '_');
               baseSchema.properties.pathConfiguration.properties[deviceType].properties[safePathKey] = {
                 type: 'object',
-                description: devicePath,
                 properties: {
                   enabled: {
                     type: 'boolean',
-                    title: 'Send to Venus OS',
                     default: pathInfo.enabled !== false
                   },
                   customName: {
                     type: 'string',
-                    title: 'Optional custom name for this device in Venus OS',
-                    default: pathInfo.customName || pathInfo.displayName || '',
-                    placeholder: pathInfo.displayName
+                    default: pathInfo.customName || pathInfo.displayName || ''
                   }
                 }
               };
@@ -159,13 +153,14 @@ export default function(app) {
             discoveredPaths[deviceType].forEach((pathInfo, devicePath) => {
               const safePathKey = devicePath.replace(/[^a-zA-Z0-9]/g, '_');
               uiSchema.pathConfiguration[deviceType][safePathKey] = {
-                'ui:description': devicePath,
+                'ui:title': pathInfo.displayName,
                 enabled: {
-                  'ui:widget': 'checkbox'
+                  'ui:widget': 'checkbox',
+                  'ui:title': 'Enable'
                 },
                 customName: {
-                  'ui:placeholder': pathInfo.displayName,
-                  'ui:description': ''
+                  'ui:title': 'Custom name',
+                  'ui:placeholder': pathInfo.displayName
                 }
               };
             });
