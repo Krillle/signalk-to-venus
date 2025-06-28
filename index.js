@@ -4,6 +4,15 @@ import dbus from 'dbus-next';
 
 // Signal K plugin entry point
 export default function(app) {
+  // Dynamic tracking of discovered Signal K paths
+  let discoveredPaths = {
+    batteries: new Map(),
+    tanks: new Map(), 
+    environment: new Map(),
+    switches: new Map()
+  };
+  let lastSchemaUpdate = 0;
+  
   const plugin = {
     id: 'signalk-to-venus',
     name: 'Signal K to Venus OS Bridge',
@@ -12,56 +21,178 @@ export default function(app) {
     clients: {},
     connectivityInterval: null,
     
-    schema: {
-      type: 'object',
-      properties: {
-        venusHost: {
-          type: 'string',
-          title: 'Venus OS Host',
-          default: 'venus.local'
-        },
-        productName: {
-          type: 'string', 
-          title: 'Product Name',
-          default: 'SignalK Virtual Device'
-        },
-        interval: {
-          type: 'number',
-          title: 'Update Interval (ms)',
-          default: 1000
-        },
-        enabledDevices: {
-          type: 'object',
-          title: 'Device Types to Bridge',
-          description: 'Select which types of devices should be sent to Venus OS',
-          properties: {
-            batteries: {
-              type: 'boolean',
-              title: 'Batteries',
-              description: 'Bridge battery voltage, current, SoC, etc.',
-              default: true
-            },
-            tanks: {
-              type: 'boolean',
-              title: 'Tanks',
-              description: 'Bridge tank levels and names',
-              default: true
-            },
-            environment: {
-              type: 'boolean',
-              title: 'Environment',
-              description: 'Bridge temperature and humidity sensors',
-              default: true
-            },
-            switches: {
-              type: 'boolean',
-              title: 'Switches & Dimmers',
-              description: 'Bridge switches and dimmers (bidirectional)',
-              default: true
+    // Function to generate dynamic schema based on discovered paths
+    schema: function() {
+      const baseSchema = {
+        type: 'object',
+        properties: {
+          venusHost: {
+            type: 'string',
+            title: 'Venus OS Host',
+            default: 'venus.local'
+          },
+          productName: {
+            type: 'string', 
+            title: 'Product Name',
+            default: 'SignalK Virtual Device'
+          },
+          interval: {
+            type: 'number',
+            title: 'Update Interval (ms)',
+            default: 1000
+          },
+          enabledDevices: {
+            type: 'object',
+            title: 'Device Types to Bridge',
+            description: 'Select which types of devices should be sent to Venus OS',
+            properties: {
+              batteries: {
+                type: 'boolean',
+                title: 'Batteries',
+                description: 'Bridge battery voltage, current, SoC, etc.',
+                default: true
+              },
+              tanks: {
+                type: 'boolean',
+                title: 'Tanks', 
+                description: 'Bridge tank levels and names',
+                default: true
+              },
+              environment: {
+                type: 'boolean',
+                title: 'Environment',
+                description: 'Bridge temperature and humidity sensors',
+                default: true
+              },
+              switches: {
+                type: 'boolean',
+                title: 'Switches & Dimmers',
+                description: 'Bridge switches and dimmers (bidirectional)',
+                default: true
+              }
             }
           }
         }
+      };
+
+      // Add dynamic path configuration if paths have been discovered
+      if (hasDiscoveredPaths()) {
+        baseSchema.properties.pathConfiguration = {
+          type: 'object',
+          title: 'Individual Signal K Path Configuration',
+          description: 'Configure individual Signal K paths discovered on your boat',
+          properties: {}
+        };
+
+        // Add each device type with discovered paths
+        Object.entries(discoveredPaths).forEach(([deviceType, pathMap]) => {
+          if (pathMap.size > 0) {
+            const deviceTitle = deviceType.charAt(0).toUpperCase() + deviceType.slice(1);
+            baseSchema.properties.pathConfiguration.properties[deviceType] = {
+              type: 'object',
+              title: `${deviceTitle} Paths`,
+              description: `Configure individual ${deviceType} found on your boat`,
+              properties: {}
+            };
+
+            // Add each discovered path
+            pathMap.forEach((pathInfo, path) => {
+              const safePathKey = path.replace(/[^a-zA-Z0-9]/g, '_');
+              baseSchema.properties.pathConfiguration.properties[deviceType].properties[safePathKey] = {
+                type: 'object',
+                title: pathInfo.displayName || path,
+                properties: {
+                  enabled: {
+                    type: 'boolean',
+                    title: 'Enabled',
+                    description: `Bridge this ${deviceType.slice(0, -1)} to Venus OS`,
+                    default: pathInfo.enabled !== false
+                  },
+                  customName: {
+                    type: 'string',
+                    title: 'Custom Name',
+                    description: 'Optional custom name for this device in Venus OS',
+                    default: pathInfo.customName || ''
+                  },
+                  _pathInfo: {
+                    type: 'string',
+                    title: 'Signal K Path',
+                    description: 'The actual Signal K path (read-only)',
+                    default: path,
+                    readOnly: true
+                  }
+                }
+              };
+            });
+          }
+        });
       }
+
+      return baseSchema;
+    },
+
+    // UI Schema to enhance the configuration interface
+    uiSchema: function() {
+      const uiSchema = {
+        enabledDevices: {
+          'ui:field': 'collapsible',
+          collapse: {
+            field: 'ObjectField',
+            wrapClassName: 'panel-group'
+          }
+        }
+      };
+
+      // Add UI enhancements for path configuration if it exists
+      if (hasDiscoveredPaths()) {
+        uiSchema.pathConfiguration = {
+          'ui:field': 'collapsible',
+          collapse: {
+            field: 'ObjectField',
+            wrapClassName: 'panel-group'
+          }
+        };
+
+        // Make each device type collapsible
+        Object.keys(discoveredPaths).forEach(deviceType => {
+          if (discoveredPaths[deviceType].size > 0) {
+            uiSchema.pathConfiguration[deviceType] = {
+              'ui:field': 'collapsible',
+              collapse: {
+                field: 'ObjectField',
+                wrapClassName: 'panel-group'
+              }
+            };
+
+            // Make individual path configurations more compact
+            discoveredPaths[deviceType].forEach((pathInfo, path) => {
+              const safePathKey = path.replace(/[^a-zA-Z0-9]/g, '_');
+              uiSchema.pathConfiguration[deviceType][safePathKey] = {
+                'ui:field': 'collapsible',
+                collapse: {
+                  field: 'ObjectField',
+                  wrapClassName: 'panel-group'
+                },
+                enabled: {
+                  'ui:widget': 'checkbox'
+                },
+                customName: {
+                  'ui:placeholder': 'Enter custom name (optional)'
+                },
+                _pathInfo: {
+                  'ui:readonly': true,
+                  'ui:widget': 'textarea',
+                  'ui:options': {
+                    rows: 1
+                  }
+                }
+              };
+            });
+          }
+        });
+      }
+
+      return uiSchema;
     },
 
     start: function(options) {
@@ -301,6 +432,13 @@ export default function(app) {
                 
                 const deviceType = identifyDeviceType(pathValue.path, config);
                 if (deviceType) {
+                  // Track this discovered path
+                  addDiscoveredPath(deviceType, pathValue.path, pathValue.value);
+                  
+                  // Check if this specific path is enabled
+                  if (!isPathEnabled(deviceType, pathValue.path, config)) {
+                    return; // Skip disabled paths
+                  }
                   
                   if (!plugin.clients[deviceType]) {
                     app.setPluginStatus(`Connecting to Venus OS at ${config.venusHost} for ${deviceTypeNames[deviceType]}`);
@@ -317,7 +455,7 @@ export default function(app) {
                         app.setPluginStatus(`Connected to Venus OS at ${config.venusHost} for [${activeList}] ${heartbeat}`);
                       });
                       
-                      await plugin.clients[deviceType].handleSignalKUpdate(pathValue.path, pathValue.value);
+                      await plugin.clients[deviceType].handleSignalKUpdate(pathValue.path, pathValue.value, getCustomName(deviceType, pathValue.path, config));
                       
                       activeClientTypes.add(deviceTypeNames[deviceType]);
                       const activeList = Array.from(activeClientTypes).sort().join(', ');
@@ -353,7 +491,7 @@ export default function(app) {
                     }
                     
                     try {
-                      await plugin.clients[deviceType].handleSignalKUpdate(pathValue.path, pathValue.value);
+                      await plugin.clients[deviceType].handleSignalKUpdate(pathValue.path, pathValue.value, getCustomName(deviceType, pathValue.path, config));
                     } catch (err) {
                       // Only log detailed errors if it's not a connection issue
                       if (err.message && (err.message.includes('ENOTFOUND') || err.message.includes('ECONNREFUSED'))) {
@@ -466,6 +604,134 @@ export default function(app) {
         return `electrical.switches.${id}.state`;
       } else if (venusPath.endsWith('/DimLevel')) {
         return `electrical.switches.${id}.dimmingLevel`;
+      }
+    }
+    return null;
+  }
+
+  // Helper function to check if any paths have been discovered
+  function hasDiscoveredPaths() {
+    return Object.values(discoveredPaths).some(pathMap => pathMap.size > 0);
+  }
+
+  // Function to add a discovered path to tracking
+  function addDiscoveredPath(deviceType, path, value) {
+    const pathMap = discoveredPaths[deviceType];
+    if (!pathMap) return;
+
+    if (!pathMap.has(path)) {
+      // Generate a human-readable display name
+      let displayName = generateDisplayName(deviceType, path);
+      
+      pathMap.set(path, {
+        displayName: displayName,
+        enabled: true, // Default to enabled
+        customName: '',
+        firstSeen: new Date().toISOString(),
+        lastValue: value,
+        sampleValue: value
+      });
+
+      // Trigger schema update if enough time has passed
+      const now = Date.now();
+      if (now - lastSchemaUpdate > 5000) { // Throttle updates to every 5 seconds
+        lastSchemaUpdate = now;
+        
+        // Notify Signal K that the schema has changed (if supported)
+        if (app.handleMessage && typeof app.handleMessage === 'function') {
+          try {
+            app.handleMessage(plugin.id, {
+              type: 'schema-update',
+              timestamp: new Date().toISOString()
+            });
+          } catch (err) {
+            // Schema update notification not supported, ignore
+          }
+        }
+      }
+      
+      app.debug(`Discovered new ${deviceType} path: ${path} (${displayName})`);
+    } else {
+      // Update last seen value
+      pathMap.get(path).lastValue = value;
+    }
+  }
+
+  // Function to generate human-readable display names
+  function generateDisplayName(deviceType, path) {
+    switch (deviceType) {
+      case 'batteries':
+        const batteryMatch = path.match(/electrical\.batteries\.(\d+|[^.]+)\./);
+        if (batteryMatch) {
+          return `Battery ${batteryMatch[1]}`;
+        }
+        break;
+        
+      case 'tanks':
+        const tankMatch = path.match(/tanks\.([^.]+)\.(\d+|[^.]+)\./);
+        if (tankMatch) {
+          const tankType = tankMatch[1].replace(/([A-Z])/g, ' $1').toLowerCase();
+          const tankId = tankMatch[2];
+          return `${tankType.charAt(0).toUpperCase() + tankType.slice(1)} Tank ${tankId}`;
+        }
+        break;
+        
+      case 'environment':
+        if (path.includes('temperature')) {
+          const tempMatch = path.match(/environment\.([^.]+)\.temperature|propulsion\.([^.]+)\.temperature/);
+          if (tempMatch) {
+            const sensor = tempMatch[1] || tempMatch[2];
+            return `Temperature - ${sensor.charAt(0).toUpperCase() + sensor.slice(1)}`;
+          }
+        } else if (path.includes('humidity') || path.includes('relativeHumidity')) {
+          const humMatch = path.match(/environment\.([^.]+)\.(humidity|relativeHumidity)/);
+          if (humMatch) {
+            const sensor = humMatch[1];
+            return `Humidity - ${sensor.charAt(0).toUpperCase() + sensor.slice(1)}`;
+          }
+        }
+        break;
+        
+      case 'switches':
+        const switchMatch = path.match(/electrical\.switches\.([^.]+)\.(state|dimmingLevel)/);
+        if (switchMatch) {
+          const switchId = switchMatch[1];
+          const type = switchMatch[2] === 'dimmingLevel' ? 'Dimmer' : 'Switch';
+          return `${type} ${switchId}`;
+        }
+        break;
+    }
+    
+    // Fallback to path-based name
+    return path.split('.').pop() || path;
+  }
+
+  // Function to check if a path is enabled in configuration
+  function isPathEnabled(deviceType, path, config) {
+    // Check if device type is enabled
+    if (config.enabledDevices?.[deviceType] === false) {
+      return false;
+    }
+
+    // Check individual path configuration if it exists
+    if (config.pathConfiguration?.[deviceType]) {
+      const safePathKey = path.replace(/[^a-zA-Z0-9]/g, '_');
+      const pathConfig = config.pathConfiguration[deviceType][safePathKey];
+      if (pathConfig && pathConfig.enabled === false) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  // Function to get custom name for a path
+  function getCustomName(deviceType, path, config) {
+    if (config.pathConfiguration?.[deviceType]) {
+      const safePathKey = path.replace(/[^a-zA-Z0-9]/g, '_');
+      const pathConfig = config.pathConfiguration[deviceType][safePathKey];
+      if (pathConfig && pathConfig.customName) {
+        return pathConfig.customName;
       }
     }
     return null;

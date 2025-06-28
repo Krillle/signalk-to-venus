@@ -125,7 +125,7 @@ export class VenusClient extends EventEmitter {
     }
   }
 
-  async handleSignalKUpdate(path, value) {
+  async handleSignalKUpdate(path, value, customName = null) {
     try {
       // Validate input parameters
       if (typeof value !== 'number' || value === null || value === undefined || isNaN(value)) {

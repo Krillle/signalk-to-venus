@@ -1,0 +1,16 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Test Dynamic Schema Plugin",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"-e",
+				"console.log('Testing plugin schema generation...'); const plugin = (await import('./index.js')).default({debug: console.log, setPluginStatus: console.log, setPluginError: console.error}); console.log('Static schema:', JSON.stringify(plugin.schema(), null, 2)); console.log('UI Schema:', JSON.stringify(plugin.uiSchema(), null, 2)); console.log('Plugin schema test completed successfully.');"
+			],
+			"group": "test",
+			"isBackground": false
+		}
+	]
+}

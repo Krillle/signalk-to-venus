@@ -166,7 +166,7 @@ export class VenusClient extends EventEmitter {
     }
   }
 
-  async handleSignalKUpdate(path, value) {
+  async handleSignalKUpdate(path, value, customName = null) {
     // Validate input parameters
     if (value === null || value === undefined) {
       console.debug(`Skipping invalid tank value for ${path}: ${value}`);
@@ -185,7 +185,8 @@ export class VenusClient extends EventEmitter {
       }
     }
     
-    const tankName = this._getTankName(path);
+    // Use custom name if provided, otherwise use generated name
+    const tankName = customName || this._getTankName(path);
     const index = this.index++;
     
     if (path.includes('currentLevel')) {

@@ -125,7 +125,7 @@ export class VenusClient extends EventEmitter {
     }
   }
 
-  async handleSignalKUpdate(path, value) {
+  async handleSignalKUpdate(path, value, customName = null) {
     try {
       // Validate input parameters
       if (typeof value !== 'number' || value === null || value === undefined || isNaN(value)) {
@@ -150,7 +150,7 @@ export class VenusClient extends EventEmitter {
       
       // Create a clean label from the path - remove dots and use last segments
       const pathParts = path.split('.');
-      const cleanLabel = pathParts.slice(-2).join('_').replace(/[^a-zA-Z0-9_]/g, '_');
+      let cleanLabel = customName || pathParts.slice(-2).join('_').replace(/[^a-zA-Z0-9_]/g, '_');
       
       let valueFinal, topic;
       if (path.includes('temperature')) {
