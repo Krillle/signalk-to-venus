@@ -75,132 +75,58 @@ export default function(app) {
         }
       };
 
-      // Always show common path examples and any discovered paths
-      baseSchema.properties.pathConfiguration = {
-        type: 'object',
-        title: 'Individual Signal K Path Configuration',
-        description: 'Configure individual Signal K paths. Common paths are shown by default, discovered paths appear automatically.',
-        properties: {}
-      };
-
-      // Add common/expected paths that users typically have
-      const commonPaths = {
-        batteries: [
-          'electrical.batteries.0.voltage',
-          'electrical.batteries.0.current', 
-          'electrical.batteries.0.stateOfCharge',
-          'electrical.batteries.1.voltage',
-          'electrical.batteries.1.current',
-          'electrical.batteries.1.stateOfCharge'
-        ],
-        tanks: [
-          'tanks.freshWater.0.currentLevel',
-          'tanks.fuel.0.currentLevel',
-          'tanks.wasteWater.0.currentLevel'
-        ],
-        environment: [
-          'environment.inside.temperature',
-          'environment.outside.temperature',
-          'environment.inside.humidity'
-        ],
-        switches: [
-          'electrical.switches.nav.state',
-          'electrical.switches.anchor.state',
-          'electrical.switches.cabin.dimmingLevel'
-        ]
-      };
-
-      // Add each device type with common paths and any discovered paths
-      Object.entries(discoveredPaths).forEach(([deviceType, pathMap]) => {
-        const deviceTitle = deviceType.charAt(0).toUpperCase() + deviceType.slice(1);
-        baseSchema.properties.pathConfiguration.properties[deviceType] = {
+      // Add dynamic path configuration if paths have been discovered
+      if (hasDiscoveredPaths()) {
+        baseSchema.properties.pathConfiguration = {
           type: 'object',
-          title: `${deviceTitle} Paths`,
-          description: `Configure individual ${deviceType}. Gray entries are common paths, others are discovered on your boat.`,
+          title: 'Individual Signal K Path Configuration',
+          description: 'Configure individual Signal K paths discovered on your boat',
           properties: {}
         };
 
-        // Add common paths for this device type
-        if (commonPaths[deviceType]) {
-          commonPaths[deviceType].forEach(path => {
-            const safePathKey = path.replace(/[^a-zA-Z0-9]/g, '_');
-            const isDiscovered = pathMap.has(path);
-            baseSchema.properties.pathConfiguration.properties[deviceType].properties[safePathKey] = {
+        // Add each device type with discovered paths
+        Object.entries(discoveredPaths).forEach(([deviceType, pathMap]) => {
+          if (pathMap.size > 0) {
+            const deviceTitle = deviceType.charAt(0).toUpperCase() + deviceType.slice(1);
+            baseSchema.properties.pathConfiguration.properties[deviceType] = {
               type: 'object',
-              title: isDiscovered ? pathMap.get(path).displayName : generateDisplayName(deviceType, path) + ' (common)',
-              description: isDiscovered ? 'Active on your boat' : 'Common path - will activate when detected',
-              properties: {
-                enabled: {
-                  type: 'boolean',
-                  title: 'Enabled',
-                  description: `Bridge this ${deviceType.slice(0, -1)} to Venus OS`,
-                  default: isDiscovered ? pathMap.get(path).enabled : false
-                },
-                customName: {
-                  type: 'string',
-                  title: 'Custom Name',
-                  description: 'Optional custom name for this device in Venus OS',
-                  default: isDiscovered ? pathMap.get(path).customName : ''
-                },
-                _pathInfo: {
-                  type: 'string',
-                  title: 'Signal K Path',
-                  description: 'The actual Signal K path (read-only)',
-                  default: path,
-                  readOnly: true
-                },
-                _status: {
-                  type: 'string',
-                  title: 'Status',
-                  description: 'Path status',
-                  default: isDiscovered ? '✓ Active' : '⚪ Common path',
-                  readOnly: true
-                }
-              }
+              title: `${deviceTitle} Paths`,
+              description: `Configure individual ${deviceType} found on your boat`,
+              properties: {}
             };
-          });
-        }
 
-        // Add discovered paths that aren't in common paths
-        pathMap.forEach((pathInfo, path) => {
-          const safePathKey = path.replace(/[^a-zA-Z0-9]/g, '_');
-          if (!baseSchema.properties.pathConfiguration.properties[deviceType].properties[safePathKey]) {
-            baseSchema.properties.pathConfiguration.properties[deviceType].properties[safePathKey] = {
-              type: 'object',
-              title: pathInfo.displayName || path,
-              description: 'Discovered on your boat',
-              properties: {
-                enabled: {
-                  type: 'boolean',
-                  title: 'Enabled',
-                  description: `Bridge this ${deviceType.slice(0, -1)} to Venus OS`,
-                  default: pathInfo.enabled !== false
-                },
-                customName: {
-                  type: 'string',
-                  title: 'Custom Name',
-                  description: 'Optional custom name for this device in Venus OS',
-                  default: pathInfo.customName || ''
-                },
-                _pathInfo: {
-                  type: 'string',
-                  title: 'Signal K Path',
-                  description: 'The actual Signal K path (read-only)',
-                  default: path,
-                  readOnly: true
-                },
-                _status: {
-                  type: 'string',
-                  title: 'Status',
-                  description: 'Path status',
-                  default: '✓ Active',
-                  readOnly: true
+            // Add each discovered path
+            pathMap.forEach((pathInfo, path) => {
+              const safePathKey = path.replace(/[^a-zA-Z0-9]/g, '_');
+              baseSchema.properties.pathConfiguration.properties[deviceType].properties[safePathKey] = {
+                type: 'object',
+                title: pathInfo.displayName || path,
+                properties: {
+                  enabled: {
+                    type: 'boolean',
+                    title: 'Enabled',
+                    description: `Bridge this ${deviceType.slice(0, -1)} to Venus OS`,
+                    default: pathInfo.enabled !== false
+                  },
+                  customName: {
+                    type: 'string',
+                    title: 'Custom Name',
+                    description: 'Optional custom name for this device in Venus OS',
+                    default: pathInfo.customName || ''
+                  },
+                  _pathInfo: {
+                    type: 'string',
+                    title: 'Signal K Path',
+                    description: 'The actual Signal K path (read-only)',
+                    default: path,
+                    readOnly: true
+                  }
                 }
-              }
-            };
+              };
+            });
           }
         });
-      });
+      }
 
       return baseSchema;
     },
@@ -214,19 +140,12 @@ export default function(app) {
             field: 'ObjectField',
             wrapClassName: 'panel-group'
           }
-        },
-        pathConfiguration: {
-          'ui:field': 'collapsible',
-          collapse: {
-            field: 'ObjectField',
-            wrapClassName: 'panel-group'
-          }
         }
       };
 
-      // Make each device type collapsible
-      Object.keys(discoveredPaths).forEach(deviceType => {
-        uiSchema.pathConfiguration[deviceType] = {
+      // Add UI enhancements for path configuration if it exists
+      if (hasDiscoveredPaths()) {
+        uiSchema.pathConfiguration = {
           'ui:field': 'collapsible',
           collapse: {
             field: 'ObjectField',
@@ -234,17 +153,44 @@ export default function(app) {
           }
         };
 
-        // Apply UI schema to both common and discovered paths
-        const pathConfig = uiSchema.pathConfiguration[deviceType];
-        
-        // For each path in this device type (both common and discovered)
-        // We'll create a placeholder structure that gets filled dynamically
-        uiSchema.pathConfiguration[deviceType]['ui:options'] = {
-          addable: false,
-          orderable: false,
-          removable: false
-        };
-      });
+        // Make each device type collapsible
+        Object.keys(discoveredPaths).forEach(deviceType => {
+          if (discoveredPaths[deviceType].size > 0) {
+            uiSchema.pathConfiguration[deviceType] = {
+              'ui:field': 'collapsible',
+              collapse: {
+                field: 'ObjectField',
+                wrapClassName: 'panel-group'
+              }
+            };
+
+            // Make individual path configurations more compact
+            discoveredPaths[deviceType].forEach((pathInfo, path) => {
+              const safePathKey = path.replace(/[^a-zA-Z0-9]/g, '_');
+              uiSchema.pathConfiguration[deviceType][safePathKey] = {
+                'ui:field': 'collapsible',
+                collapse: {
+                  field: 'ObjectField',
+                  wrapClassName: 'panel-group'
+                },
+                enabled: {
+                  'ui:widget': 'checkbox'
+                },
+                customName: {
+                  'ui:placeholder': 'Enter custom name (optional)'
+                },
+                _pathInfo: {
+                  'ui:readonly': true,
+                  'ui:widget': 'textarea',
+                  'ui:options': {
+                    rows: 1
+                  }
+                }
+              };
+            });
+          }
+        });
+      }
 
       return uiSchema;
     },
@@ -303,16 +249,17 @@ export default function(app) {
           
           app.setPluginError(errorMsg);
           
+          // TEMPORARY: Don't clear clients when testing dynamic schema discovery
           // Clear all existing clients when Venus becomes unreachable
-          Object.keys(plugin.clients).forEach(key => {
-            if (plugin.clients[key] && typeof plugin.clients[key] === 'object') {
-              // Disconnect existing clients gracefully
-              if (plugin.clients[key].disconnect) {
-                plugin.clients[key].disconnect().catch(() => {});
-              }
-            }
-            delete plugin.clients[key];
-          });
+          // Object.keys(plugin.clients).forEach(key => {
+          //   if (plugin.clients[key] && typeof plugin.clients[key] === 'object') {
+          //     // Disconnect existing clients gracefully
+          //     if (plugin.clients[key].disconnect) {
+          //       plugin.clients[key].disconnect().catch(() => {});
+          //     }
+          //   }
+          //   delete plugin.clients[key];
+          // });
           
           return false;
         } finally {
@@ -446,7 +393,7 @@ export default function(app) {
       }
       
       runConnectivityTest(); // Run initial test
-      plugin.connectivityInterval = setInterval(runConnectivityTest, 60000); // Check every 60 seconds (reduced frequency)
+      plugin.connectivityInterval = setInterval(runConnectivityTest, 120000); // Check every 2 minutes when testing (reduced frequency)
       
       // Function to process delta messages
       function processDelta(delta) {
@@ -454,11 +401,12 @@ export default function(app) {
           deltaCount++;
           lastDataTime = Date.now();
           
+          // TEMPORARY: Process paths even when Venus is not connected (for testing dynamic schema)
           // Check Venus reachability before processing any data
-          if (venusReachable === false) {
-            // Venus OS is known to be unreachable, skip all processing
-            return;
-          }
+          // if (venusReachable === false) {
+          //   // Venus OS is known to be unreachable, skip all processing
+          //   return;
+          // }
           
           if (delta.updates) {
             delta.updates.forEach(update => {
@@ -492,6 +440,13 @@ export default function(app) {
                   // Check if this specific path is enabled
                   if (!isPathEnabled(deviceType, pathValue.path, config)) {
                     return; // Skip disabled paths
+                  }
+                  
+                  // TEMPORARY: Skip Venus client creation when testing dynamic schema
+                  if (venusReachable === false) {
+                    // Just log that we would process this path
+                    app.debug(`Would process ${deviceType} path: ${pathValue.path} = ${pathValue.value}`);
+                    return;
                   }
                   
                   if (!plugin.clients[deviceType]) {
@@ -600,7 +555,11 @@ export default function(app) {
       // Set initial status if no data comes in
       setTimeout(() => {
         if (activeClientTypes.size === 0) {
-          app.setPluginStatus(`Waiting for Signal K data (${config.venusHost})`);
+          if (venusReachable === false) {
+            app.setPluginStatus(`TESTING MODE: Discovering Signal K paths (Venus OS not connected)`);
+          } else {
+            app.setPluginStatus(`Waiting for Signal K data (${config.venusHost})`);
+          }
         }
       }, 2000);
     },
