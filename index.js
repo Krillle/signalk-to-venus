@@ -77,12 +77,12 @@ export default function(app) {
 
       // Add dynamic path configuration if paths have been discovered
       if (hasDiscoveredPaths()) {
-        baseSchema.properties.pathConfiguration = {
-          type: 'object',
-          title: 'Individual Signal K Path Configuration',
-          description: 'Configure individual Signal K paths discovered on your boat',
-          properties: {}
-        };
+        // baseSchema.properties.pathConfiguration = {
+        //   type: 'object',
+        //   title: 'Individual Signal K Path Configuration',
+        //   description: 'Configure individual Signal K paths discovered on your boat',
+        //   properties: {}
+        // };
 
         // Add each device type with discovered paths
         Object.entries(discoveredPaths).forEach(([deviceType, pathMap]) => {
@@ -90,8 +90,7 @@ export default function(app) {
             const deviceTitle = deviceType.charAt(0).toUpperCase() + deviceType.slice(1);
             baseSchema.properties.pathConfiguration.properties[deviceType] = {
               type: 'object',
-              title: `${deviceTitle} Paths`,
-              description: `Configure individual ${deviceType} found on your boat`,
+              title: `${deviceTitle}`,
               properties: {}
             };
 
@@ -100,7 +99,7 @@ export default function(app) {
               const safePathKey = devicePath.replace(/[^a-zA-Z0-9]/g, '_');
               baseSchema.properties.pathConfiguration.properties[deviceType].properties[safePathKey] = {
                 type: 'object',
-                title: devicePath,
+                description: devicePath,
                 properties: {
                   enabled: {
                     type: 'boolean',
@@ -160,8 +159,7 @@ export default function(app) {
             discoveredPaths[deviceType].forEach((pathInfo, devicePath) => {
               const safePathKey = devicePath.replace(/[^a-zA-Z0-9]/g, '_');
               uiSchema.pathConfiguration[deviceType][safePathKey] = {
-                'ui:title': devicePath,
-                'ui:description': `${pathInfo.displayName} (${pathInfo.properties ? pathInfo.properties.size : 1} properties)`,
+                'ui:description': devicePath,
                 enabled: {
                   'ui:widget': 'checkbox'
                 },
