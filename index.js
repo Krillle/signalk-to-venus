@@ -96,30 +96,22 @@ export default function(app) {
             };
 
             // Add each discovered path
-            pathMap.forEach((pathInfo, path) => {
-              const safePathKey = path.replace(/[^a-zA-Z0-9]/g, '_');
+            pathMap.forEach((pathInfo, devicePath) => {
+              const safePathKey = devicePath.replace(/[^a-zA-Z0-9]/g, '_');
               baseSchema.properties.pathConfiguration.properties[deviceType].properties[safePathKey] = {
                 type: 'object',
-                title: pathInfo.displayName || path,
+                title: devicePath,
                 properties: {
                   enabled: {
                     type: 'boolean',
-                    title: 'Enabled',
-                    description: `Bridge this ${deviceType.slice(0, -1)} to Venus OS`,
+                    title: 'Send to Venus OS',
                     default: pathInfo.enabled !== false
                   },
                   customName: {
                     type: 'string',
-                    title: 'Custom Name',
-                    description: 'Optional custom name for this device in Venus OS',
-                    default: pathInfo.customName || ''
-                  },
-                  _pathInfo: {
-                    type: 'string',
-                    title: 'Signal K Path',
-                    description: 'The actual Signal K path (read-only)',
-                    default: path,
-                    readOnly: true
+                    title: 'Optional custom name for this device in Venus OS',
+                    default: pathInfo.customName || pathInfo.displayName || '',
+                    placeholder: pathInfo.displayName
                   }
                 }
               };
@@ -165,26 +157,17 @@ export default function(app) {
             };
 
             // Make individual path configurations more compact
-            discoveredPaths[deviceType].forEach((pathInfo, path) => {
-              const safePathKey = path.replace(/[^a-zA-Z0-9]/g, '_');
+            discoveredPaths[deviceType].forEach((pathInfo, devicePath) => {
+              const safePathKey = devicePath.replace(/[^a-zA-Z0-9]/g, '_');
               uiSchema.pathConfiguration[deviceType][safePathKey] = {
-                'ui:field': 'collapsible',
-                collapse: {
-                  field: 'ObjectField',
-                  wrapClassName: 'panel-group'
-                },
+                'ui:title': devicePath,
+                'ui:description': `${pathInfo.displayName} (${pathInfo.properties ? pathInfo.properties.size : 1} properties)`,
                 enabled: {
                   'ui:widget': 'checkbox'
                 },
                 customName: {
-                  'ui:placeholder': 'Enter custom name (optional)'
-                },
-                _pathInfo: {
-                  'ui:readonly': true,
-                  'ui:widget': 'textarea',
-                  'ui:options': {
-                    rows: 1
-                  }
+                  'ui:placeholder': pathInfo.displayName,
+                  'ui:description': ''
                 }
               };
             });
@@ -632,17 +615,22 @@ export default function(app) {
     const pathMap = discoveredPaths[deviceType];
     if (!pathMap) return;
 
-    if (!pathMap.has(path)) {
+    // Extract the device/sensor path (one level up from the property)
+    const devicePath = getDevicePath(deviceType, path);
+    if (!devicePath) return;
+
+    if (!pathMap.has(devicePath)) {
       // Generate a human-readable display name
-      let displayName = generateDisplayName(deviceType, path);
+      let displayName = generateDisplayName(deviceType, devicePath);
       
-      pathMap.set(path, {
+      pathMap.set(devicePath, {
         displayName: displayName,
         enabled: true, // Default to enabled
         customName: '',
         firstSeen: new Date().toISOString(),
         lastValue: value,
-        sampleValue: value
+        sampleValue: value,
+        properties: new Set([path]) // Track which properties we've seen
       });
 
       // Trigger schema update if enough time has passed
@@ -668,29 +656,60 @@ export default function(app) {
         }
       }
       
-      app.debug(`Discovered new ${deviceType} path: ${path} (${displayName}) - Total ${deviceType}: ${pathMap.size}`);
+      app.debug(`Discovered new ${deviceType} device: ${devicePath} (${displayName}) - Total ${deviceType}: ${pathMap.size}`);
       
       // Update status with discovered paths count
       const totalPaths = Object.values(discoveredPaths).reduce((sum, map) => sum + map.size, 0);
-      app.setPluginStatus(`TESTING MODE: Discovered ${totalPaths} Signal K paths (Venus OS not connected)`);
+      app.setPluginStatus(`TESTING MODE: Discovered ${totalPaths} Signal K devices (Venus OS not connected)`);
     } else {
-      // Update last seen value
-      pathMap.get(path).lastValue = value;
+      // Update last seen value and add this property to the set
+      const deviceInfo = pathMap.get(devicePath);
+      deviceInfo.lastValue = value;
+      deviceInfo.properties.add(path);
     }
   }
 
-  // Function to generate human-readable display names
-  function generateDisplayName(deviceType, path) {
+  // Function to extract device path from full property path
+  function getDevicePath(deviceType, fullPath) {
     switch (deviceType) {
       case 'batteries':
-        const batteryMatch = path.match(/electrical\.batteries\.(\d+|[^.]+)\./);
+        // electrical.batteries.0.voltage -> electrical.batteries.0
+        const batteryMatch = fullPath.match(/^(electrical\.batteries\.[^.]+)/);
+        return batteryMatch ? batteryMatch[1] : null;
+        
+      case 'tanks':
+        // tanks.blackWater.0.currentLevel -> tanks.blackWater.0
+        const tankMatch = fullPath.match(/^(tanks\.[^.]+\.[^.]+)/);
+        return tankMatch ? tankMatch[1] : null;
+        
+      case 'environment':
+        // environment.water.temperature -> environment.water.temperature (keep specific for single properties)
+        // propulsion.main.temperature -> propulsion.main.temperature
+        return fullPath;
+        
+      case 'switches':
+        // electrical.switches.nav.state -> electrical.switches.nav
+        const switchMatch = fullPath.match(/^(electrical\.switches\.[^.]+)/);
+        return switchMatch ? switchMatch[1] : null;
+    }
+    
+    return null;
+  }
+
+  // Function to generate human-readable display names
+  function generateDisplayName(deviceType, devicePath) {
+    switch (deviceType) {
+      case 'batteries':
+        // electrical.batteries.0 -> Battery 0
+        const batteryMatch = devicePath.match(/electrical\.batteries\.(\d+|[^.]+)/);
         if (batteryMatch) {
           return `Battery ${batteryMatch[1]}`;
         }
         break;
         
       case 'tanks':
-        const tankMatch = path.match(/tanks\.([^.]+)\.(\d+|[^.]+)\./);
+        // tanks.blackWater.0 -> Black Water Tank 0
+        const tankMatch = devicePath.match(/tanks\.([^.]+)\.(\d+|[^.]+)/);
         if (tankMatch) {
           const tankType = tankMatch[1].replace(/([A-Z])/g, ' $1').toLowerCase();
           const tankId = tankMatch[2];
@@ -699,14 +718,16 @@ export default function(app) {
         break;
         
       case 'environment':
-        if (path.includes('temperature')) {
-          const tempMatch = path.match(/environment\.([^.]+)\.temperature|propulsion\.([^.]+)\.temperature/);
+        // environment.water.temperature -> Temperature - Water
+        // propulsion.main.temperature -> Temperature - Main
+        if (devicePath.includes('temperature')) {
+          const tempMatch = devicePath.match(/environment\.([^.]+)\.temperature|propulsion\.([^.]+)\.temperature/);
           if (tempMatch) {
             const sensor = tempMatch[1] || tempMatch[2];
             return `Temperature - ${sensor.charAt(0).toUpperCase() + sensor.slice(1)}`;
           }
-        } else if (path.includes('humidity') || path.includes('relativeHumidity')) {
-          const humMatch = path.match(/environment\.([^.]+)\.(humidity|relativeHumidity)/);
+        } else if (devicePath.includes('humidity') || devicePath.includes('relativeHumidity')) {
+          const humMatch = devicePath.match(/environment\.([^.]+)\.(humidity|relativeHumidity)/);
           if (humMatch) {
             const sensor = humMatch[1];
             return `Humidity - ${sensor.charAt(0).toUpperCase() + sensor.slice(1)}`;
@@ -715,29 +736,33 @@ export default function(app) {
         break;
         
       case 'switches':
-        const switchMatch = path.match(/electrical\.switches\.([^.]+)\.(state|dimmingLevel)/);
+        // electrical.switches.nav -> Switch nav
+        const switchMatch = devicePath.match(/electrical\.switches\.([^.]+)/);
         if (switchMatch) {
           const switchId = switchMatch[1];
-          const type = switchMatch[2] === 'dimmingLevel' ? 'Dimmer' : 'Switch';
-          return `${type} ${switchId}`;
+          return `Switch ${switchId}`;
         }
         break;
     }
     
     // Fallback to path-based name
-    return path.split('.').pop() || path;
+    return devicePath.split('.').pop() || devicePath;
   }
 
   // Function to check if a path is enabled in configuration
-  function isPathEnabled(deviceType, path, config) {
+  function isPathEnabled(deviceType, fullPath, config) {
     // Check if device type is enabled
     if (config.enabledDevices?.[deviceType] === false) {
       return false;
     }
 
+    // Get the device path for checking individual configuration
+    const devicePath = getDevicePath(deviceType, fullPath);
+    if (!devicePath) return true;
+
     // Check individual path configuration if it exists
     if (config.pathConfiguration?.[deviceType]) {
-      const safePathKey = path.replace(/[^a-zA-Z0-9]/g, '_');
+      const safePathKey = devicePath.replace(/[^a-zA-Z0-9]/g, '_');
       const pathConfig = config.pathConfiguration[deviceType][safePathKey];
       if (pathConfig && pathConfig.enabled === false) {
         return false;
@@ -748,9 +773,13 @@ export default function(app) {
   }
 
   // Function to get custom name for a path
-  function getCustomName(deviceType, path, config) {
+  function getCustomName(deviceType, fullPath, config) {
+    // Get the device path for checking individual configuration
+    const devicePath = getDevicePath(deviceType, fullPath);
+    if (!devicePath) return null;
+
     if (config.pathConfiguration?.[deviceType]) {
-      const safePathKey = path.replace(/[^a-zA-Z0-9]/g, '_');
+      const safePathKey = devicePath.replace(/[^a-zA-Z0-9]/g, '_');
       const pathConfig = config.pathConfiguration[deviceType][safePathKey];
       if (pathConfig && pathConfig.customName) {
         return pathConfig.customName;
