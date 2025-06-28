@@ -206,10 +206,10 @@ export default function(app) {
       let venusReachable = null; // Track Venus OS reachability
       
       const deviceTypeNames = {
-        'battery': 'Batteries',
-        'tank': 'Tanks', 
-        'env': 'Environment',
-        'switch': 'Switches'
+        'batteries': 'Batteries',
+        'tanks': 'Tanks', 
+        'environment': 'Environment',
+        'switches': 'Switches'
       };
 
       // Test Venus OS connectivity before processing any data
@@ -594,10 +594,10 @@ export default function(app) {
       return null;
     }
     
-    if ((config.enabledDevices?.batteries !== false) && settings.batteryRegex.test(path)) return 'battery';
-    if ((config.enabledDevices?.tanks !== false) && settings.tankRegex.test(path)) return 'tank';
-    if ((config.enabledDevices?.environment !== false) && (settings.temperatureRegex.test(path) || settings.humidityRegex.test(path))) return 'env';
-    if ((config.enabledDevices?.switches !== false) && (settings.switchRegex.test(path) || settings.dimmerRegex.test(path))) return 'switch';
+    if ((config.enabledDevices?.batteries !== false) && settings.batteryRegex.test(path)) return 'batteries';
+    if ((config.enabledDevices?.tanks !== false) && settings.tankRegex.test(path)) return 'tanks';
+    if ((config.enabledDevices?.environment !== false) && (settings.temperatureRegex.test(path) || settings.humidityRegex.test(path))) return 'environment';
+    if ((config.enabledDevices?.switches !== false) && (settings.switchRegex.test(path) || settings.dimmerRegex.test(path))) return 'switches';
     return null;
   }
 
@@ -647,8 +647,10 @@ export default function(app) {
 
       // Trigger schema update if enough time has passed
       const now = Date.now();
-      if (now - lastSchemaUpdate > 5000) { // Throttle updates to every 5 seconds
+      if (now - lastSchemaUpdate > 2000) { // Throttle updates to every 2 seconds (reduced for testing)
         lastSchemaUpdate = now;
+        
+        app.debug(`Schema update triggered - total discovered paths: ${Object.values(discoveredPaths).reduce((sum, map) => sum + map.size, 0)}`);
         
         // Notify Signal K that the schema has changed (if supported)
         if (app.handleMessage && typeof app.handleMessage === 'function') {
@@ -657,13 +659,20 @@ export default function(app) {
               type: 'schema-update',
               timestamp: new Date().toISOString()
             });
+            app.debug('Schema update notification sent');
           } catch (err) {
-            // Schema update notification not supported, ignore
+            app.debug('Schema update notification not supported:', err.message);
           }
+        } else {
+          app.debug('No handleMessage function available for schema updates');
         }
       }
       
-      app.debug(`Discovered new ${deviceType} path: ${path} (${displayName})`);
+      app.debug(`Discovered new ${deviceType} path: ${path} (${displayName}) - Total ${deviceType}: ${pathMap.size}`);
+      
+      // Update status with discovered paths count
+      const totalPaths = Object.values(discoveredPaths).reduce((sum, map) => sum + map.size, 0);
+      app.setPluginStatus(`TESTING MODE: Discovered ${totalPaths} Signal K paths (Venus OS not connected)`);
     } else {
       // Update last seen value
       pathMap.get(path).lastValue = value;
