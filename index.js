@@ -82,11 +82,14 @@ export default function(app) {
 
       // Test Venus OS connectivity before processing any data
       async function testVenusConnectivity() {
+        app.debug('Running Venus OS connectivity test...');
         try {
           // Simple connectivity test using dbus-next connection test
           const testBus = dbus.systemBus();
           const originalAddress = process.env.DBUS_SYSTEM_BUS_ADDRESS;
           process.env.DBUS_SYSTEM_BUS_ADDRESS = `tcp:host=${config.venusHost},port=78`;
+          
+          app.debug(`Testing connection to ${config.venusHost}:78`);
           
           // Try to connect with a short timeout
           const testPromise = testBus.requestName('com.victronenergy.test.connectivity');
@@ -185,11 +188,15 @@ export default function(app) {
               return;
             }
             
+            app.debug(`STREAMBUNDLE: Found matching path ${data.path} for ${deviceType}`);
+            
             // Skip null/undefined values at the source - don't process them at all
             if (data.value === null || data.value === undefined) {
               app.debug(`STREAMBUNDLE: Filtered out null/undefined value for ${data.path} (value: ${data.value})`);
               return;
             }
+            
+            app.debug(`STREAMBUNDLE: Processing valid value for ${data.path}:`, data.value);
             
             // Convert the normalized delta format to standard delta format
             const delta = {
@@ -245,8 +252,17 @@ export default function(app) {
       }
       
       // Test Venus OS connectivity initially and periodically
-      testVenusConnectivity();
-      plugin.connectivityInterval = setInterval(testVenusConnectivity, 30000); // Check every 30 seconds
+      async function runConnectivityTest() {
+        try {
+          const isReachable = await testVenusConnectivity();
+          app.debug(`Venus connectivity test result: ${isReachable}`);
+        } catch (err) {
+          app.error('Connectivity test error:', err);
+        }
+      }
+      
+      runConnectivityTest(); // Run initial test
+      plugin.connectivityInterval = setInterval(runConnectivityTest, 30000); // Check every 30 seconds
       
       // Function to process delta messages
       function processDelta(delta) {
