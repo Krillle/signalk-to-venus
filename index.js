@@ -196,15 +196,10 @@ export default function(app) {
               return;
             }
             
-            app.debug(`STREAMBUNDLE: Found matching path ${data.path} for ${deviceType}`);
-            
             // Skip null/undefined values at the source - don't process them at all
             if (data.value === null || data.value === undefined) {
-              app.debug(`STREAMBUNDLE: Filtered out null/undefined value for ${data.path} (value: ${data.value})`);
               return;
             }
-            
-            app.debug(`STREAMBUNDLE: Processing valid value for ${data.path}:`, data.value);
             
             // Convert the normalized delta format to standard delta format
             const delta = {
