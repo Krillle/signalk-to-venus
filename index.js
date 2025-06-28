@@ -114,6 +114,19 @@ export default function(app) {
               return;
             }
             
+            // Filter paths early - only process paths we care about
+            const deviceType = identifyDeviceType(data.path, config);
+            if (!deviceType) {
+              // Path doesn't match any enabled device types, skip silently
+              return;
+            }
+            
+            // Skip null/undefined values at the source - don't process them at all
+            if (data.value === null || data.value === undefined) {
+              app.debug(`STREAMBUNDLE: Filtered out null/undefined value for ${data.path} (value: ${data.value})`);
+              return;
+            }
+            
             // Convert the normalized delta format to standard delta format
             const delta = {
               context: data.context || 'vessels.self',
@@ -129,7 +142,7 @@ export default function(app) {
             
             processDelta(delta);
           });
-          app.debug('Successfully subscribed to streambundle');
+          app.debug('Successfully subscribed to streambundle - null values filtered at source');
         } catch (err) {
           app.error('getSelfBus method failed:', err);
         }
@@ -189,9 +202,9 @@ export default function(app) {
                     return;
                   }
                   
-                  // Debug the incoming Signal K data
+                  // Debug the incoming Signal K data - this should be rare if streambundle filtering works
                   if (pathValue.value === undefined || pathValue.value === null) {
-                    app.debug(`Skipping ${pathValue.path} - value is ${pathValue.value}`);
+                    app.debug(`DELTA PROCESSING: Still receiving null/undefined for ${pathValue.path} - value is ${pathValue.value}`);
                     return;
                   }
                 
