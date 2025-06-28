@@ -74,21 +74,12 @@ npm install
 
 The plugin is enabled by default and should work right away with default settings.
 
-**Error "Venus OS not reachable" or "Error updating [client] for [path]"**
+**"Venus OS not reachable at venus.local"**
 
 If you see **signalk-to-venus** getting connection errors, this means:
-- Your Cerbo GX is not reachable at **venus.local** 
+- Your Cerbo GX is not reachable at **venus.local**. Set the correct host or IP in the plugin settings.
+- The D-Bus over TCP is not enabled on the Cerbo GX. See step 1 and 2
 - You don't have a Venus OS device on your network
-- The D-Bus over TCP is not enabled on the Cerbo GX
-
-**For testing without Venus OS hardware:**
-- The plugin will show connection errors but will continue to process Signal K data
-- You'll see messages like "Error updating battery client for electrical.batteries.0.voltage"
-- This is normal behavior - the plugin detects and processes Signal K data correctly
-- Change the `venusHost` setting to a non-existent address if you want to test this condition
-- To fully test the D-Bus functionality, you need actual Venus OS hardware (Cerbo GX, etc.) on your network
-
-Open the **Plugin Config** section in the Signal K web UI and configure the connection settings if you have Venus OS hardware available.
 
 ---
 
@@ -116,12 +107,12 @@ The plugin provides real-time status updates in the Signal K web interface:
 - **Starting**: `Starting Signal K to Venus OS bridge`
 - **Connecting**: `Connecting to Venus OS at venus.local for Batteries...`
 - **Connected**: `Connected to Venus OS at venus.local for [Batteries, Environment, Tanks, Switches]`
-- **Activity**: Shows update counter when data is flowing
+- **Activity**: Shows alternating heartbeat ♥︎ when data is flowing to Venus OS
 - **Waiting**: `Waiting for Signal K data (venus.local)` if no compatible paths are found
 - **Error**: `Venus OS not reachable: [error details]` if connection fails
 - **No devices**: `No device types enabled - check plugin configuration` if all types are disabled
 
-The status shows which device types are actively connected and how many data updates have been processed.
+The status shows which device types are actively connected and displays a heartbeat indicator when data is successfully being sent to Venus OS.
 
 ---
 
