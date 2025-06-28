@@ -2,8 +2,6 @@
 
 Injects Signal K battery, tank, temperature, humidity, and switch data into Venus OS D-Bus, enabling full integration with the Cerbo GX, GX Touch, and VRM.
 
----
-
 ## Features
 
 - Registers as full Victron D-Bus services
@@ -15,7 +13,6 @@ Injects Signal K battery, tank, temperature, humidity, and switch data into Venu
 - Automatic connection retry and timeout handling
 - Uses Signal K's internal APIs for optimal performance
 
----
 
 ## Requirements
 
@@ -24,7 +21,6 @@ Injects Signal K battery, tank, temperature, humidity, and switch data into Venu
 - SSH access to the Cerbo GX (see step 1)
 - D-Bus over TCP must be enabled (see step 2)
 
----
 
 ## Installation
 
@@ -81,7 +77,6 @@ If you see **signalk-to-venus** getting connection errors, this means:
 - The D-Bus over TCP is not enabled on the Cerbo GX. See step 1 and 2
 - You don't have a Venus OS device on your network
 
----
 
 ## Configuration
 
@@ -98,7 +93,6 @@ Regex-based auto-mapping is used:
 - Humidity: `environment.*.humidity|relativeHumidity`
 - Switches & dimmers: `electrical.switches.*` (excludes `venus-0` and `venus-1` internal relays)
 
----
 
 ## Status Monitoring
 
@@ -114,7 +108,6 @@ The plugin provides real-time status updates in the Signal K web interface:
 
 The status shows which device types are actively connected and displays a heartbeat indicator when data is successfully being sent to Venus OS.
 
----
 
 ## Output (on Venus OS D-Bus)
 
@@ -153,17 +146,17 @@ Switches & Dimmers:
 /Switches/<id>/DimLevel
 ```
 
----
-
 ## Bidirectional
 
 Changes on the Cerbo (touchscreen or VRM) will be sent back to Signal K. Works for:
 - Switch state
 - Dimmer level
 
-**Note**: The plugin automatically filters out Cerbo GX internal relays (`venus-0` and `venus-1`) to prevent feedback loops. These relays are managed directly by Venus OS and should not be bridged back through Signal K.
+## Loop Prevention
 
----
+- The plugin ignores the Signal K standard paths for Cerbo GX internal relay switches (`venus-0` and `venus-1`) to prevent feedback loops. These relays are controlled by Venus OS itself and should not be injected back from Signal K.
+
+- All virtual devices created by this plugin are marked with `ProcessName: 'signalk-virtual-device'` on the D-Bus. This helps other plugins (like signalk-venus-plugin) identify and ignore these devices to avoid circular data loops
 
 ## Testing
 
@@ -173,7 +166,5 @@ dbus-spy --host=venus.local --port=78
 ```
 Or on Cerbo GX:
 > Settings → Services → Battery Monitor / Tanks / Environment
-
----
 
 MIT © Christian Wegerhoff
