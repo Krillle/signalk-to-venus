@@ -167,6 +167,12 @@ export class VenusClient extends EventEmitter {
   }
 
   async handleSignalKUpdate(path, value) {
+    // Validate input parameters
+    if (value === null || value === undefined) {
+      console.debug(`Skipping invalid tank value for ${path}: ${value}`);
+      return;
+    }
+    
     if (!this.bus) {
       // Only try to initialize once every 30 seconds to avoid spam
       const now = Date.now();
@@ -183,14 +189,23 @@ export class VenusClient extends EventEmitter {
     const index = this.index++;
     
     if (path.includes('currentLevel')) {
-      this._export(`/Tank/${index}/Level`, tankName, value);
-      this.emit('dataUpdated', 'Tank Level', `${tankName}: ${(value * 100).toFixed(1)}%`);
+      // Validate numeric value before using
+      if (typeof value === 'number' && !isNaN(value)) {
+        this._export(`/Tank/${index}/Level`, tankName, value);
+        this.emit('dataUpdated', 'Tank Level', `${tankName}: ${(value * 100).toFixed(1)}%`);
+      }
     } else if (path.includes('capacity')) {
-      this._export(`/Tank/${index}/Capacity`, `${tankName} Capacity`, value);
-      this.emit('dataUpdated', 'Tank Capacity', `${tankName}: ${value}L`);
+      // Validate numeric value before using
+      if (typeof value === 'number' && !isNaN(value)) {
+        this._export(`/Tank/${index}/Capacity`, `${tankName} Capacity`, value);
+        this.emit('dataUpdated', 'Tank Capacity', `${tankName}: ${value}L`);
+      }
     } else if (path.includes('name')) {
-      this._export(`/Tank/${index}/Name`, `${tankName} Name`, value, 's');
-      this.emit('dataUpdated', 'Tank Name', `${tankName}: ${value}`);
+      // Name can be a string
+      if (typeof value === 'string') {
+        this._export(`/Tank/${index}/Name`, `${tankName} Name`, value, 's');
+        this.emit('dataUpdated', 'Tank Name', `${tankName}: ${value}`);
+      }
     }
   }
 

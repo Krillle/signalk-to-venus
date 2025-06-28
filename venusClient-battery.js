@@ -127,6 +127,12 @@ export class VenusClient extends EventEmitter {
 
   async handleSignalKUpdate(path, value) {
     try {
+      // Validate input parameters
+      if (typeof value !== 'number' || value === null || value === undefined || isNaN(value)) {
+        console.debug(`Skipping invalid battery value for ${path}: ${value}`);
+        return;
+      }
+      
       if (!this.bus) {
         // Only try to initialize once every 30 seconds to avoid spam
         const now = Date.now();

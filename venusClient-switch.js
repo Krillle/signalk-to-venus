@@ -127,6 +127,12 @@ export class VenusClient extends EventEmitter {
   }
 
   async handleSignalKUpdate(path, value) {
+    // Validate input parameters
+    if (value === null || value === undefined) {
+      console.debug(`Skipping invalid switch value for ${path}: ${value}`);
+      return;
+    }
+    
     if (!this.bus) {
       // Only try to initialize once every 30 seconds to avoid spam
       const now = Date.now();
@@ -140,11 +146,17 @@ export class VenusClient extends EventEmitter {
     }
     const id = path.match(/switches\.([^.]+)\./)?.[1] || '0';
     if (path.endsWith('state')) {
-      this._export(`/Switches/${id}/State`, `Switch ${id}`, value ? 1 : 0);
-      this.emit('dataUpdated', `Switch ${id}`, value ? 'ON' : 'OFF');
+      // Validate boolean-like value
+      if (typeof value === 'boolean' || typeof value === 'number') {
+        this._export(`/Switches/${id}/State`, `Switch ${id}`, value ? 1 : 0);
+        this.emit('dataUpdated', `Switch ${id}`, value ? 'ON' : 'OFF');
+      }
     } else if (path.endsWith('dimmingLevel')) {
-      this._export(`/Switches/${id}/DimLevel`, `Dimmer ${id}`, value * 100);
-      this.emit('dataUpdated', `Dimmer ${id}`, `${Math.round(value * 100)}%`);
+      // Validate numeric value before using
+      if (typeof value === 'number' && !isNaN(value)) {
+        this._export(`/Switches/${id}/DimLevel`, `Dimmer ${id}`, value * 100);
+        this.emit('dataUpdated', `Dimmer ${id}`, `${Math.round(value * 100)}%`);
+      }
     }
   }
 
