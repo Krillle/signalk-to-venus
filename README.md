@@ -77,6 +77,8 @@ If you see **signalk-to-venus** getting connection errors, this means:
 - The D-Bus over TCP is not enabled on the Cerbo GX. See step 1 and 2
 - You don't have a Venus OS device on your network
 
+**Important**: The plugin automatically tests connectivity every 60 seconds. If you see D-Bus connection limit errors, restart the Signal K server to clear stale connections.
+
 
 ## Configuration
 

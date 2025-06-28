@@ -84,13 +84,17 @@ export default function(app) {
       // Test Venus OS connectivity before processing any data
       async function testVenusConnectivity() {
         app.debug('Running Venus OS connectivity test...');
+        let testBus = null;
+        let originalAddress = null;
+        
         try {
           // Simple connectivity test using dbus-next connection test
-          const testBus = dbus.systemBus();
-          const originalAddress = process.env.DBUS_SYSTEM_BUS_ADDRESS;
+          originalAddress = process.env.DBUS_SYSTEM_BUS_ADDRESS;
           process.env.DBUS_SYSTEM_BUS_ADDRESS = `tcp:host=${config.venusHost},port=78`;
           
           app.debug(`Testing connection to ${config.venusHost}:78`);
+          
+          testBus = dbus.systemBus();
           
           // Try to connect with a short timeout
           const testPromise = testBus.requestName('com.victronenergy.test.connectivity');
@@ -99,24 +103,11 @@ export default function(app) {
           );
           
           await Promise.race([testPromise, timeoutPromise]);
-          await testBus.disconnect();
-          
-          // Restore original address
-          if (originalAddress) {
-            process.env.DBUS_SYSTEM_BUS_ADDRESS = originalAddress;
-          } else {
-            delete process.env.DBUS_SYSTEM_BUS_ADDRESS;
-          }
           
           venusReachable = true;
           app.setPluginStatus(`Venus OS reachable at ${config.venusHost}`);
           return true;
         } catch (err) {
-          // Restore original address on error
-          if (process.env.DBUS_SYSTEM_BUS_ADDRESS.includes('tcp:')) {
-            delete process.env.DBUS_SYSTEM_BUS_ADDRESS;
-          }
-          
           venusReachable = false;
           let errorMsg = `Venus OS not reachable at ${config.venusHost}`;
           
@@ -142,6 +133,22 @@ export default function(app) {
           });
           
           return false;
+        } finally {
+          // Always disconnect the test bus and restore environment
+          if (testBus) {
+            try {
+              await testBus.disconnect();
+            } catch (disconnectErr) {
+              app.debug('Error disconnecting test bus:', disconnectErr.message);
+            }
+          }
+          
+          // Restore original D-Bus address
+          if (originalAddress) {
+            process.env.DBUS_SYSTEM_BUS_ADDRESS = originalAddress;
+          } else {
+            delete process.env.DBUS_SYSTEM_BUS_ADDRESS;
+          }
         }
       }
 
@@ -263,7 +270,7 @@ export default function(app) {
       }
       
       runConnectivityTest(); // Run initial test
-      plugin.connectivityInterval = setInterval(runConnectivityTest, 30000); // Check every 30 seconds
+      plugin.connectivityInterval = setInterval(runConnectivityTest, 60000); // Check every 60 seconds (reduced frequency)
       
       // Function to process delta messages
       function processDelta(delta) {
