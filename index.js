@@ -217,27 +217,44 @@ export default function(app) {
                       app.setPluginStatus(`Connected to Venus OS at ${config.venusHost} for [${activeList}]`);
                       
                     } catch (err) {
-                      app.setPluginError(`Venus OS not reachable: ${err.message}`);
-                      app.error(`Error connecting to Venus OS for ${deviceType} (${pathValue.path}):`, err);
+                      // Clean up connection error messages for better user experience
+                      let cleanMessage = err.message || err.toString();
+                      if (cleanMessage.includes('ENOTFOUND')) {
+                        cleanMessage = `Venus OS device not found at ${config.venusHost} (DNS resolution failed)`;
+                      } else if (cleanMessage.includes('ECONNREFUSED')) {
+                        cleanMessage = `Venus OS device refused connection at ${config.venusHost}:78 (check D-Bus TCP setting)`;
+                      } else if (cleanMessage.includes('timeout')) {
+                        cleanMessage = `Venus OS connection timeout (${config.venusHost}:78)`;
+                      }
+                      
+                      app.setPluginError(`Venus OS not reachable: ${cleanMessage}`);
+                      
+                      // Only log the first connection error per device type to avoid spam
+                      if (!plugin.clients[`${deviceType}_error_logged`]) {
+                        app.error(`Cannot connect to Venus OS for ${deviceTypeNames[deviceType]}: ${cleanMessage}`);
+                        plugin.clients[`${deviceType}_error_logged`] = true;
+                      }
                       return;
                     }
                   } else {
                     try {
                       await plugin.clients[deviceType].handleSignalKUpdate(pathValue.path, pathValue.value);
                     } catch (err) {
-                      app.error(`Error updating ${deviceType} client for ${pathValue.path}:`, err);
+                      // Only log detailed errors if it's not a connection issue
+                      if (err.message && (err.message.includes('ENOTFOUND') || err.message.includes('ECONNREFUSED'))) {
+                        // Suppress frequent connection errors when Venus OS is not available
+                        // The main connection error is already logged during client creation
+                      } else {
+                        app.error(`Error updating ${deviceType} client for ${pathValue.path}: ${err.message}`);
+                      }
                     }
                   }
                 }
               } catch (err) {
-                // Clean up connection timeout messages
-                let cleanMessage = err.message || err.toString();
-                if (cleanMessage.includes('Connection timeout to Venus OS')) {
-                  cleanMessage = `Venus OS connection timeout (${config.venusHost}:78)`;
-                } else if (cleanMessage.includes('Cannot connect to Venus OS')) {
-                  cleanMessage = `Cannot reach Venus OS (${config.venusHost}:78)`;
+                // Only log unexpected errors, suppress common connection errors
+                if (!err.message || (!err.message.includes('ENOTFOUND') && !err.message.includes('ECONNREFUSED'))) {
+                  app.error(`Unexpected error processing ${pathValue.path}: ${err.message}`);
                 }
-                app.error(`${pathValue.path}: ${cleanMessage}`);
               }
             });
           });

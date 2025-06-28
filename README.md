@@ -74,17 +74,19 @@ npm install
 
 The plugin is enabled by default and should work right away with default settings.
 
-**Error "Venus OS not reachable: Connection timeout to Venus OS at venus.local:78"**
+**Error "Venus OS not reachable" or "Error updating [client] for [path]"**
 
-If you see **signalk-to-venus** getting a timeout connecting to Venus OS, this means:
+If you see **signalk-to-venus** getting connection errors, this means:
 - Your Cerbo GX is not reachable at **venus.local** 
 - You don't have a Venus OS device on your network
 - The D-Bus over TCP is not enabled on the Cerbo GX
 
 **For testing without Venus OS hardware:**
 - The plugin will show connection errors but will continue to process Signal K data
-- You can change the `venusHost` setting to a non-existent address to simulate this condition
-- To fully test the plugin, you need actual Venus OS hardware (Cerbo GX, etc.) on your network
+- You'll see messages like "Error updating battery client for electrical.batteries.0.voltage"
+- This is normal behavior - the plugin detects and processes Signal K data correctly
+- Change the `venusHost` setting to a non-existent address if you want to test this condition
+- To fully test the D-Bus functionality, you need actual Venus OS hardware (Cerbo GX, etc.) on your network
 
 Open the **Plugin Config** section in the Signal K web UI and configure the connection settings if you have Venus OS hardware available.
 
