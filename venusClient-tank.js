@@ -58,7 +58,11 @@ export class VenusClient extends EventEmitter {
   }
 
   _export(path, label, value, type = 'd') {
-    if (this.interfaces[path]) return;
+    if (this.interfaces[path]) {
+      // Update existing value
+      this.interfaces[path]._value = value;
+      return;
+    }
     
     // Store the interface data
     const interfaceData = {
@@ -69,66 +73,57 @@ export class VenusClient extends EventEmitter {
     
     const parent = this; // Capture parent context
     
-    // Create a D-Bus interface class
-    class BusItemInterface extends dbus.interface.Interface {
+    // Create interface class following dbus-next examples
+    const { Interface, method } = dbus.interface;
+    
+    class BusItemInterface extends Interface {
       constructor() {
         super('com.victronenergy.BusItem');
+        this._value = value;
+        this._label = label;
+        this._type = type;
       }
       
       GetValue() {
-        try {
-          if (interfaceData._value === undefined || interfaceData._value === null) {
-            return new dbus.Variant(type, 0); // Return a default value
-          }
-          return new dbus.Variant(type, interfaceData._value);
-        } catch (err) {
-          console.error(`GetValue error for ${path}:`, err);
-          return new dbus.Variant(type, 0);
-        }
+        return new dbus.Variant(this._type, this._value || 0);
       }
       
       SetValue(val) {
-        try {
-          if (val === undefined || val === null) {
-            // Method called without parameters, likely during introspection
-            return true;
-          }
-          
-          if (val && typeof val === 'object' && 'value' in val) {
-            interfaceData._value = val.value;
-            parent.emit('valueChanged', path, val.value);
-          } else {
-            // Handle direct value assignment
-            interfaceData._value = val;
-            parent.emit('valueChanged', path, val);
-          }
-          return true;
-        } catch (err) {
-          console.error(`SetValue error for ${path}:`, err);
-          return false;
-        }
+        const actualValue = (val && typeof val === 'object' && 'value' in val) ? val.value : val;
+        this._value = actualValue;
+        interfaceData._value = actualValue;
+        parent.emit('valueChanged', path, actualValue);
+        return true;
       }
       
       GetText() {
-        return interfaceData._label || '';
+        return this._label || '';
       }
     }
 
-    // Add method signatures
-    BusItemInterface.prototype.GetValue = dbus.interface.method({ outSignature: 'v' })(BusItemInterface.prototype.GetValue);
-    BusItemInterface.prototype.SetValue = dbus.interface.method({ inSignature: 'v', outSignature: 'b' })(BusItemInterface.prototype.SetValue);
-    BusItemInterface.prototype.GetText = dbus.interface.method({ outSignature: 's' })(BusItemInterface.prototype.GetText);
+    // Add method decorators
+    BusItemInterface.prototype.GetValue = method({ outSignature: 'v' })(BusItemInterface.prototype.GetValue);
+    BusItemInterface.prototype.SetValue = method({ inSignature: 'v', outSignature: 'b' })(BusItemInterface.prototype.SetValue);
+    BusItemInterface.prototype.GetText = method({ outSignature: 's' })(BusItemInterface.prototype.GetText);
 
-    const interfaceInstance = new BusItemInterface();
-    interfaceData._interface = interfaceInstance;
-    
-    this.bus.export(`${this.OBJECT_PATH}${path}`, interfaceInstance);
-    this.interfaces[path] = interfaceData;
+    try {
+      const interfaceInstance = new BusItemInterface();
+      this.bus.export(`${this.OBJECT_PATH}${path}`, interfaceInstance);
+      interfaceData._interface = interfaceInstance;
+      this.interfaces[path] = interfaceData;
+    } catch (err) {
+      console.error(`Failed to export ${path}:`, err);
+      throw err;
+    }
   }
 
   _updateValue(path, value) {
     if (this.interfaces[path]) {
       this.interfaces[path]._value = value;
+      // Also update the interface instance if it exists
+      if (this.interfaces[path]._interface) {
+        this.interfaces[path]._interface._value = value;
+      }
     }
   }
 
