@@ -1,5 +1,6 @@
 import { VenusClientFactory } from './venusClientFactory.js';
 import settings from './settings.js';
+import dbus from 'dbus-next';
 
 // Signal K plugin entry point
 export default function(app) {
@@ -9,6 +10,7 @@ export default function(app) {
     description: 'Bridges Signal K data to Victron Venus OS via D-Bus',
     unsubscribe: null,
     clients: {},
+    connectivityInterval: null,
     
     schema: {
       type: 'object',
@@ -69,6 +71,7 @@ export default function(app) {
       plugin.clients = {};
       const activeClientTypes = new Set();
       let dataUpdateCount = 0;
+      let venusReachable = null; // Track Venus OS reachability
       
       const deviceTypeNames = {
         'battery': 'Batteries',
@@ -76,6 +79,67 @@ export default function(app) {
         'env': 'Environment',
         'switch': 'Switches'
       };
+
+      // Test Venus OS connectivity before processing any data
+      async function testVenusConnectivity() {
+        try {
+          // Simple connectivity test using dbus-next connection test
+          const testBus = dbus.systemBus();
+          const originalAddress = process.env.DBUS_SYSTEM_BUS_ADDRESS;
+          process.env.DBUS_SYSTEM_BUS_ADDRESS = `tcp:host=${config.venusHost},port=78`;
+          
+          // Try to connect with a short timeout
+          const testPromise = testBus.requestName('com.victronenergy.test.connectivity');
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Connection timeout')), 3000)
+          );
+          
+          await Promise.race([testPromise, timeoutPromise]);
+          await testBus.disconnect();
+          
+          // Restore original address
+          if (originalAddress) {
+            process.env.DBUS_SYSTEM_BUS_ADDRESS = originalAddress;
+          } else {
+            delete process.env.DBUS_SYSTEM_BUS_ADDRESS;
+          }
+          
+          venusReachable = true;
+          app.setPluginStatus(`Venus OS reachable at ${config.venusHost}`);
+          return true;
+        } catch (err) {
+          // Restore original address on error
+          if (process.env.DBUS_SYSTEM_BUS_ADDRESS.includes('tcp:')) {
+            delete process.env.DBUS_SYSTEM_BUS_ADDRESS;
+          }
+          
+          venusReachable = false;
+          let errorMsg = `Venus OS not reachable at ${config.venusHost}`;
+          
+          if (err.code === 'ENOTFOUND') {
+            errorMsg += ' (DNS resolution failed)';
+          } else if (err.code === 'ECONNREFUSED') {
+            errorMsg += ' (connection refused - check D-Bus TCP setting)';
+          } else if (err.message.includes('timeout')) {
+            errorMsg += ' (connection timeout)';
+          }
+          
+          app.setPluginError(errorMsg);
+          
+          // Clear all existing clients when Venus becomes unreachable
+          Object.keys(plugin.clients).forEach(key => {
+            if (plugin.clients[key] && typeof plugin.clients[key] === 'object') {
+              // Disconnect existing clients gracefully
+              if (plugin.clients[key].disconnect) {
+                plugin.clients[key].disconnect().catch(() => {});
+              }
+            }
+            delete plugin.clients[key];
+          });
+          
+          return false;
+        }
+      }
 
       // Subscribe to Signal K updates using proper plugin API
       const subscriptions = [];
@@ -180,11 +244,21 @@ export default function(app) {
         return;
       }
       
+      // Test Venus OS connectivity initially and periodically
+      testVenusConnectivity();
+      plugin.connectivityInterval = setInterval(testVenusConnectivity, 30000); // Check every 30 seconds
+      
       // Function to process delta messages
       function processDelta(delta) {
         try {
           deltaCount++;
           lastDataTime = Date.now();
+          
+          // Check Venus reachability before processing any data
+          if (venusReachable === false) {
+            // Venus OS is known to be unreachable, skip all processing
+            return;
+          }
           
           if (delta.updates) {
             delta.updates.forEach(update => {
@@ -338,12 +412,18 @@ export default function(app) {
     stop: function() {
       app.setPluginStatus('Stopping Signal K to Venus OS bridge');
       app.debug('Stopping Signal K to Venus OS bridge');
+      
+      // Clear connectivity interval
+      if (plugin.connectivityInterval) {
+        clearInterval(plugin.connectivityInterval);
+      }
+      
       if (plugin.unsubscribe) {
         plugin.unsubscribe();
       }
       if (plugin.clients) {
         Object.values(plugin.clients).forEach(async client => {
-          if (client.disconnect) {
+          if (client && client.disconnect) {
             await client.disconnect();
           }
         });
