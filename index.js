@@ -83,7 +83,6 @@ export default function(app) {
 
       // Test Venus OS connectivity before processing any data
       async function testVenusConnectivity() {
-        app.debug('Running Venus OS connectivity test...');
         let testBus = null;
         let originalAddress = null;
         
@@ -91,8 +90,6 @@ export default function(app) {
           // Simple connectivity test using dbus-next connection test
           originalAddress = process.env.DBUS_SYSTEM_BUS_ADDRESS;
           process.env.DBUS_SYSTEM_BUS_ADDRESS = `tcp:host=${config.venusHost},port=78`;
-          
-          app.debug(`Testing connection to ${config.venusHost}:78`);
           
           testBus = dbus.systemBus();
           
@@ -139,7 +136,7 @@ export default function(app) {
             try {
               await testBus.disconnect();
             } catch (disconnectErr) {
-              app.debug('Error disconnecting test bus:', disconnectErr.message);
+              // Silent disconnect error handling
             }
           }
           
@@ -258,7 +255,6 @@ export default function(app) {
       async function runConnectivityTest() {
         try {
           const isReachable = await testVenusConnectivity();
-          app.debug(`Venus connectivity test result: ${isReachable}`);
         } catch (err) {
           app.error('Connectivity test error:', err);
         }
@@ -291,31 +287,25 @@ export default function(app) {
                 try {
                   // Check if pathValue exists and has required properties
                   if (!pathValue || typeof pathValue !== 'object') {
-                    app.debug(`Skipping invalid pathValue:`, pathValue);
                     return;
                   }
                   
                   if (!pathValue.path) {
-                    app.debug(`Skipping pathValue without path:`, pathValue);
                     return;
                   }
                   
-                  // Debug the incoming Signal K data - this should be rare if streambundle filtering works
+                  // Skip null/undefined values - this should be rare if streambundle filtering works
                   if (pathValue.value === undefined || pathValue.value === null) {
-                    app.debug(`DELTA PROCESSING: Still receiving null/undefined for ${pathValue.path} - value is ${pathValue.value}`);
-                    app.debug(`Full pathValue object:`, pathValue);
                     return;
                   }
                 
                 const deviceType = identifyDeviceType(pathValue.path, config);
                 if (deviceType) {
-                  app.debug(`Processing ${pathValue.path} as ${deviceType} with value:`, pathValue.value);
                   
                   if (!plugin.clients[deviceType]) {
                     app.setPluginStatus(`Connecting to Venus OS at ${config.venusHost} for ${deviceTypeNames[deviceType]}`);
                     
                     try {
-                      app.debug(`Creating new ${deviceType} client for Venus OS`);
                       plugin.clients[deviceType] = VenusClientFactory(config, deviceType);
                       
                       // Listen for data updates to show activity with heartbeat
@@ -327,8 +317,6 @@ export default function(app) {
                         app.setPluginStatus(`Connected to Venus OS at ${config.venusHost} for [${activeList}] ${heartbeat}`);
                       });
                       
-                      app.debug(`Calling handleSignalKUpdate on new ${deviceType} client`);
-                      app.debug(`Arguments: path="${pathValue.path}", value=`, pathValue.value);
                       await plugin.clients[deviceType].handleSignalKUpdate(pathValue.path, pathValue.value);
                       
                       activeClientTypes.add(deviceTypeNames[deviceType]);
@@ -336,7 +324,6 @@ export default function(app) {
                       app.setPluginStatus(`Connected to Venus OS at ${config.venusHost} for [${activeList}]`);
                       
                     } catch (err) {
-                      app.error(`ERROR CREATING CLIENT: ${err.message}`, err.stack);
                       // Clean up connection error messages for better user experience
                       let cleanMessage = err.message || err.toString();
                       if (cleanMessage.includes('ENOTFOUND')) {
@@ -362,16 +349,12 @@ export default function(app) {
                   } else {
                     // Client already exists - but check if it's null (failed connection)
                     if (plugin.clients[deviceType] === null) {
-                      app.debug(`Skipping ${pathValue.path} - client marked as failed`);
                       return;
                     }
                     
-                    app.debug(`Calling handleSignalKUpdate on existing ${deviceType} client`);
-                    app.debug(`Arguments: path="${pathValue.path}", value=`, pathValue.value);
                     try {
                       await plugin.clients[deviceType].handleSignalKUpdate(pathValue.path, pathValue.value);
                     } catch (err) {
-                      app.error(`ERROR ON EXISTING CLIENT: ${err.message}`, err.stack);
                       // Only log detailed errors if it's not a connection issue
                       if (err.message && (err.message.includes('ENOTFOUND') || err.message.includes('ECONNREFUSED'))) {
                         // Suppress frequent connection errors when Venus OS is not available
@@ -457,7 +440,6 @@ export default function(app) {
   function identifyDeviceType(path, config) {
     // Filter out Cerbo GX relays (venus-0, venus-1) to prevent feedback loops
     if (path.match(/electrical\.switches\.venus-[01]\./)) {
-      app.debug(`Skipping Cerbo GX relay path: ${path}`);
       return null;
     }
     
