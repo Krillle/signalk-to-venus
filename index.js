@@ -40,73 +40,35 @@ export default function(app) {
             type: 'number',
             title: 'Update Interval (ms)',
             default: 1000
-          },
-          enabledDevices: {
-            type: 'object',
-            title: 'Device Types to Bridge',
-            description: 'Select which types of devices should be sent to Venus OS',
-            properties: {
-              batteries: {
-                type: 'boolean',
-                title: 'Batteries',
-                description: 'Bridge battery voltage, current, SoC, etc.',
-                default: true
-              },
-              tanks: {
-                type: 'boolean',
-                title: 'Tanks', 
-                description: 'Bridge tank levels and names',
-                default: true
-              },
-              environment: {
-                type: 'boolean',
-                title: 'Environment',
-                description: 'Bridge temperature and humidity sensors',
-                default: true
-              },
-              switches: {
-                type: 'boolean',
-                title: 'Switches & Dimmers',
-                description: 'Bridge switches and dimmers (bidirectional)',
-                default: true
-              }
-            }
           }
         }
       };
 
-      // Add dynamic path configuration if paths have been discovered
+      // Add discovered devices grouped by type if any have been found
       if (hasDiscoveredPaths()) {
-        baseSchema.properties.pathConfiguration = {
-          type: 'object',
-          properties: {}
-        };
-
         // Add each device type with discovered paths
         Object.entries(discoveredPaths).forEach(([deviceType, pathMap]) => {
           if (pathMap.size > 0) {
-            const deviceTitle = deviceType.charAt(0).toUpperCase() + deviceType.slice(1);
-            baseSchema.properties.pathConfiguration.properties[deviceType] = {
+            const deviceTitles = {
+              'batteries': 'Batteries',
+              'tanks': 'Tanks',
+              'environment': 'Environment',
+              'switches': 'Switches & Dimmers'
+            };
+            
+            baseSchema.properties[deviceType] = {
               type: 'object',
-              description: `${deviceTitle}`,
+              title: deviceTitles[deviceType],
               properties: {}
             };
 
-            // Add each discovered path
+            // Add each discovered path as a simple checkbox
             pathMap.forEach((pathInfo, devicePath) => {
               const safePathKey = devicePath.replace(/[^a-zA-Z0-9]/g, '_');
-              baseSchema.properties.pathConfiguration.properties[deviceType].properties[safePathKey] = {
-                type: 'object',
-                properties: {
-                  enabled: {
-                    type: 'boolean',
-                    default: pathInfo.enabled !== false
-                  },
-                  customName: {
-                    type: 'string',
-                    default: pathInfo.customName || pathInfo.displayName || ''
-                  }
-                }
+              baseSchema.properties[deviceType].properties[safePathKey] = {
+                type: 'boolean',
+                title: `${pathInfo.displayName} (${devicePath})`,
+                default: false // All devices disabled by default
               };
             });
           }
@@ -118,52 +80,19 @@ export default function(app) {
 
     // UI Schema to enhance the configuration interface
     uiSchema: function() {
-      const uiSchema = {
-        enabledDevices: {
-          'ui:field': 'collapsible',
-          collapse: {
-            field: 'ObjectField',
-            wrapClassName: 'panel-group'
-          }
-        }
-      };
+      const uiSchema = {};
 
-      // Add UI enhancements for path configuration if it exists
+      // Make each device type collapsible if devices have been discovered
       if (hasDiscoveredPaths()) {
-        uiSchema.pathConfiguration = {
-          'ui:field': 'collapsible',
-          collapse: {
-            field: 'ObjectField',
-            wrapClassName: 'panel-group'
-          }
-        };
-
-        // Make each device type collapsible
         Object.keys(discoveredPaths).forEach(deviceType => {
           if (discoveredPaths[deviceType].size > 0) {
-            uiSchema.pathConfiguration[deviceType] = {
+            uiSchema[deviceType] = {
               'ui:field': 'collapsible',
               collapse: {
                 field: 'ObjectField',
                 wrapClassName: 'panel-group'
               }
             };
-
-            // Make individual path configurations more compact
-            discoveredPaths[deviceType].forEach((pathInfo, devicePath) => {
-              const safePathKey = devicePath.replace(/[^a-zA-Z0-9]/g, '_');
-              uiSchema.pathConfiguration[deviceType][safePathKey] = {
-                'ui:title': pathInfo.displayName,
-                enabled: {
-                  'ui:widget': 'checkbox',
-                  'ui:title': 'Enable'
-                },
-                customName: {
-                  'ui:title': 'Custom name',
-                  'ui:placeholder': pathInfo.displayName
-                }
-              };
-            });
           }
         });
       }
@@ -265,25 +194,14 @@ export default function(app) {
         }
       }
 
-      // Subscribe to Signal K updates using proper plugin API
-      const subscriptions = [];
-      if (config.enabledDevices?.batteries !== false) {
-        subscriptions.push({ path: 'electrical.batteries.*', period: config.interval });
-      }
-      if (config.enabledDevices?.tanks !== false) {
-        subscriptions.push({ path: 'tanks.*', period: config.interval });
-      }
-      if (config.enabledDevices?.environment !== false) {
-        subscriptions.push({ path: 'environment.*', period: config.interval });
-      }
-      if (config.enabledDevices?.switches !== false) {
-        subscriptions.push({ path: 'electrical.switches.*', period: config.interval });
-      }
-
-      if (subscriptions.length === 0) {
-        app.setPluginStatus('No device types enabled - check plugin configuration');
-        return;
-      }
+      // Subscribe to Signal K updates for discovery and processing
+      // We always subscribe to all device types for discovery, filtering happens later
+      const subscriptions = [
+        { path: 'electrical.batteries.*', period: config.interval },
+        { path: 'tanks.*', period: config.interval },
+        { path: 'environment.*', period: config.interval },
+        { path: 'electrical.switches.*', period: config.interval }
+      ];
 
       // Subscribe to Signal K delta stream using multiple approaches for compatibility
       app.setPluginStatus('Setting up Signal K subscription');
@@ -448,7 +366,7 @@ export default function(app) {
                         app.setPluginStatus(`Connected to Venus OS at ${config.venusHost} for [${activeList}] ${heartbeat}`);
                       });
                       
-                      await plugin.clients[deviceType].handleSignalKUpdate(pathValue.path, pathValue.value, getCustomName(deviceType, pathValue.path, config));
+                      await plugin.clients[deviceType].handleSignalKUpdate(pathValue.path, pathValue.value);
                       
                       activeClientTypes.add(deviceTypeNames[deviceType]);
                       const activeList = Array.from(activeClientTypes).sort().join(', ');
@@ -484,7 +402,7 @@ export default function(app) {
                     }
                     
                     try {
-                      await plugin.clients[deviceType].handleSignalKUpdate(pathValue.path, pathValue.value, getCustomName(deviceType, pathValue.path, config));
+                      await plugin.clients[deviceType].handleSignalKUpdate(pathValue.path, pathValue.value);
                     } catch (err) {
                       // Only log detailed errors if it's not a connection issue
                       if (err.message && (err.message.includes('ENOTFOUND') || err.message.includes('ECONNREFUSED'))) {
@@ -539,7 +457,17 @@ export default function(app) {
       // Set initial status if no data comes in
       setTimeout(() => {
         if (activeClientTypes.size === 0) {
-          if (venusReachable === false) {
+          // Check if any devices are enabled
+          const hasEnabledDevices = ['batteries', 'tanks', 'environment', 'switches'].some(deviceType => {
+            if (config[deviceType]) {
+              return Object.values(config[deviceType]).some(enabled => enabled === true);
+            }
+            return false;
+          });
+          
+          if (!hasEnabledDevices) {
+            app.setPluginStatus('Select devices to be sent to Venus OS in settings');
+          } else if (venusReachable === false) {
             app.setPluginStatus(`TESTING MODE: Discovering Signal K paths (Venus OS not connected)`);
           } else {
             app.setPluginStatus(`Waiting for Signal K data (${config.venusHost})`);
@@ -578,10 +506,10 @@ export default function(app) {
       return null;
     }
     
-    if ((config.enabledDevices?.batteries !== false) && settings.batteryRegex.test(path)) return 'batteries';
-    if ((config.enabledDevices?.tanks !== false) && settings.tankRegex.test(path)) return 'tanks';
-    if ((config.enabledDevices?.environment !== false) && (settings.temperatureRegex.test(path) || settings.humidityRegex.test(path))) return 'environment';
-    if ((config.enabledDevices?.switches !== false) && (settings.switchRegex.test(path) || settings.dimmerRegex.test(path))) return 'switches';
+    if (settings.batteryRegex.test(path)) return 'batteries';
+    if (settings.tankRegex.test(path)) return 'tanks';
+    if (settings.temperatureRegex.test(path) || settings.humidityRegex.test(path)) return 'environment';
+    if (settings.switchRegex.test(path) || settings.dimmerRegex.test(path)) return 'switches';
     return null;
   }
 
@@ -626,8 +554,6 @@ export default function(app) {
       
       pathMap.set(devicePath, {
         displayName: displayName,
-        enabled: true, // Default to enabled
-        customName: '',
         firstSeen: new Date().toISOString(),
         lastValue: value,
         sampleValue: value,
@@ -701,92 +627,113 @@ export default function(app) {
   function generateDisplayName(deviceType, devicePath) {
     switch (deviceType) {
       case 'batteries':
-        // electrical.batteries.0 -> Battery 0
+        // electrical.batteries.0 -> Battery (if only one) or Battery 0, Battery 1 (if multiple)
         const batteryMatch = devicePath.match(/electrical\.batteries\.(\d+|[^.]+)/);
         if (batteryMatch) {
-          return `Battery ${batteryMatch[1]}`;
+          const batteryId = batteryMatch[1];
+          // Count total batteries to decide if we need numbers
+          const totalBatteries = discoveredPaths.batteries ? discoveredPaths.batteries.size : 0;
+          if (totalBatteries <= 1 && batteryId === '0') {
+            return 'Battery';
+          }
+          return `Battery ${batteryId}`;
         }
         break;
         
       case 'tanks':
-        // tanks.blackWater.0 -> Black Water Tank 0
+        // tanks.freshWater.0 -> Freshwater (if functional name) or Fresh Water Tank 0 (if generic)
         const tankMatch = devicePath.match(/tanks\.([^.]+)\.(\d+|[^.]+)/);
         if (tankMatch) {
-          const tankType = tankMatch[1].replace(/([A-Z])/g, ' $1').toLowerCase();
+          let tankType = tankMatch[1];
           const tankId = tankMatch[2];
-          return `${tankType.charAt(0).toUpperCase() + tankType.slice(1)} Tank ${tankId}`;
+          
+          // Remove camel case and capitalize first letter
+          tankType = tankType.replace(/([A-Z])/g, ' $1').trim();
+          tankType = tankType.charAt(0).toUpperCase() + tankType.slice(1).toLowerCase();
+          
+          // Check if we have multiple tanks of this type
+          const tanksOfThisType = Array.from(discoveredPaths.tanks?.keys() || [])
+            .filter(path => path.includes(`tanks.${tankMatch[1]}.`)).length;
+          
+          // If functional name (not just 'tank'), omit 'Tank' suffix and number if only one
+          if (!tankType.toLowerCase().includes('tank')) {
+            if (tanksOfThisType <= 1 && tankId === '0') {
+              return tankType;
+            }
+            return `${tankType} ${tankId}`;
+          } else {
+            // Generic tank name, keep 'Tank' and number if multiple
+            if (tanksOfThisType <= 1 && tankId === '0') {
+              return tankType;
+            }
+            return `${tankType} ${tankId}`;
+          }
         }
         break;
         
       case 'environment':
-        // environment.water.temperature -> Temperature - Water
-        // propulsion.main.temperature -> Temperature - Main
+        // environment.water.temperature -> Water temperature
+        // propulsion.main.temperature -> Main temperature
         if (devicePath.includes('temperature')) {
           const tempMatch = devicePath.match(/environment\.([^.]+)\.temperature|propulsion\.([^.]+)\.temperature/);
           if (tempMatch) {
-            const sensor = tempMatch[1] || tempMatch[2];
-            return `Temperature - ${sensor.charAt(0).toUpperCase() + sensor.slice(1)}`;
+            let sensor = tempMatch[1] || tempMatch[2];
+            // Remove camel case and capitalize first letter
+            sensor = sensor.replace(/([A-Z])/g, ' $1').trim();
+            sensor = sensor.charAt(0).toUpperCase() + sensor.slice(1).toLowerCase();
+            return `${sensor} temperature`;
           }
         } else if (devicePath.includes('humidity') || devicePath.includes('relativeHumidity')) {
           const humMatch = devicePath.match(/environment\.([^.]+)\.(humidity|relativeHumidity)/);
           if (humMatch) {
-            const sensor = humMatch[1];
-            return `Humidity - ${sensor.charAt(0).toUpperCase() + sensor.slice(1)}`;
+            let sensor = humMatch[1];
+            // Remove camel case and capitalize first letter
+            sensor = sensor.replace(/([A-Z])/g, ' $1').trim();
+            sensor = sensor.charAt(0).toUpperCase() + sensor.slice(1).toLowerCase();
+            return `${sensor} humidity`;
           }
         }
         break;
         
       case 'switches':
-        // electrical.switches.nav -> Switch nav
+        // electrical.switches.nav -> Nav (if functional name)
         const switchMatch = devicePath.match(/electrical\.switches\.([^.]+)/);
         if (switchMatch) {
-          const switchId = switchMatch[1];
-          return `Switch ${switchId}`;
+          let switchId = switchMatch[1];
+          // Remove camel case and capitalize first letter
+          switchId = switchId.replace(/([A-Z])/g, ' $1').trim();
+          switchId = switchId.charAt(0).toUpperCase() + switchId.slice(1).toLowerCase();
+          
+          // If it's a functional name (not just a number), omit 'Switch'
+          if (!/^\d+$/.test(switchMatch[1])) {
+            return switchId;
+          } else {
+            // It's just a number, keep 'Switch' prefix
+            return `Switch ${switchId}`;
+          }
         }
         break;
     }
     
-    // Fallback to path-based name
-    return devicePath.split('.').pop() || devicePath;
+    // Fallback to path-based name with camel case removed
+    const fallback = devicePath.split('.').pop() || devicePath;
+    return fallback.replace(/([A-Z])/g, ' $1').trim()
+      .charAt(0).toUpperCase() + fallback.slice(1).toLowerCase();
   }
 
   // Function to check if a path is enabled in configuration
   function isPathEnabled(deviceType, fullPath, config) {
-    // Check if device type is enabled
-    if (config.enabledDevices?.[deviceType] === false) {
-      return false;
-    }
-
     // Get the device path for checking individual configuration
     const devicePath = getDevicePath(deviceType, fullPath);
-    if (!devicePath) return true;
+    if (!devicePath) return false; // Default to disabled if we can't parse the path
 
-    // Check individual path configuration if it exists
-    if (config.pathConfiguration?.[deviceType]) {
+    // Check if this specific device is enabled in the new configuration structure
+    if (config[deviceType]) {
       const safePathKey = devicePath.replace(/[^a-zA-Z0-9]/g, '_');
-      const pathConfig = config.pathConfiguration[deviceType][safePathKey];
-      if (pathConfig && pathConfig.enabled === false) {
-        return false;
-      }
+      return config[deviceType][safePathKey] === true;
     }
 
-    return true;
-  }
-
-  // Function to get custom name for a path
-  function getCustomName(deviceType, fullPath, config) {
-    // Get the device path for checking individual configuration
-    const devicePath = getDevicePath(deviceType, fullPath);
-    if (!devicePath) return null;
-
-    if (config.pathConfiguration?.[deviceType]) {
-      const safePathKey = devicePath.replace(/[^a-zA-Z0-9]/g, '_');
-      const pathConfig = config.pathConfiguration[deviceType][safePathKey];
-      if (pathConfig && pathConfig.customName) {
-        return pathConfig.customName;
-      }
-    }
-    return null;
+    return false; // Default to disabled
   }
 
   return plugin;
