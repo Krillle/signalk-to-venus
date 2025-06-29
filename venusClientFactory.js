@@ -5,13 +5,13 @@ import { VenusClient as SwitchClient } from './venusClient-switch.js';
 
 export function VenusClientFactory(settings, deviceType) {
   switch (deviceType) {
-    case 'battery':
+    case 'batteries':
       return new BatteryClient(settings, deviceType);
-    case 'tank':
+    case 'tanks':
       return new TankClient(settings, deviceType);
-    case 'env':
+    case 'environment':
       return new EnvClient(settings, deviceType);
-    case 'switch':
+    case 'switches':
       return new SwitchClient(settings, deviceType);
     default:
       throw new Error(`Unsupported device type: ${deviceType}`);

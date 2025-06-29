@@ -16,11 +16,11 @@ export class VenusClient extends EventEmitter {
 
   async init() {
     try {
-      // Set the D-Bus address to connect to Venus OS via TCP
+      // Set the D-Bus address to connect to Venus OS via TCP BEFORE creating the bus
       this.originalAddress = process.env.DBUS_SYSTEM_BUS_ADDRESS;
       process.env.DBUS_SYSTEM_BUS_ADDRESS = `tcp:host=${this.settings.venusHost},port=78`;
       
-      // Create D-Bus connection using systemBus with TCP address
+      // Create D-Bus connection using systemBus with TCP address (AFTER setting environment)
       this.bus = dbus.systemBus();
       
       // Try to request a name to test the connection
