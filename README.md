@@ -1,5 +1,7 @@
 # Signal K to Victron Venus OS Bridge
 
+> **⚠️ Development Status**: This plugin is currently in development and testing phase. It is not fully functional yet. Venus OS D-Bus authentication is being enhanced and connectivity features are still under active development.
+
 Injects Signal K battery, tank, temperature, humidity, and switch data into Venus OS D-Bus, enabling full integration with the Cerbo GX, GX Touch, and VRM.
 
 ## Features

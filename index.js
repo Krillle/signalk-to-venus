@@ -128,26 +128,33 @@ export default function(app) {
           app.debug('Creating dbus-native client with anonymous auth...');
           
           // Create D-Bus connection with anonymous authentication for Venus OS using dbus-native
-          testBus = dbusNative.createClient({
-            host: config.venusHost,
-            port: 78,
-            authMethods: ['ANONYMOUS'] // Try anonymous auth first for Venus OS
-          });
+          try {
+            testBus = dbusNative.createClient({
+              host: config.venusHost,
+              port: 78,
+              authMethods: ['ANONYMOUS'] // Try anonymous auth first for Venus OS
+            });
+            app.debug('dbus-native client created successfully');
+          } catch (createErr) {
+            app.debug('Failed to create dbus-native client:', createErr.message);
+            throw createErr;
+          }
           
-          // Wait for connection to be established
+          // Test the connection by trying to list names (simple D-Bus operation)
           await new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {
               reject(new Error('Connection timeout'));
             }, 3000);
             
-            testBus.on('connect', () => {
+            // Try a simple D-Bus operation to test connectivity
+            testBus.listNames((err, names) => {
               clearTimeout(timeout);
-              resolve();
-            });
-            
-            testBus.on('error', (err) => {
-              clearTimeout(timeout);
-              reject(err);
+              if (err) {
+                reject(err);
+              } else {
+                app.debug('D-Bus connection successful, found', names.length, 'services');
+                resolve();
+              }
             });
           });
           
