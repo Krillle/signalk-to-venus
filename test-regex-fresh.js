@@ -5,7 +5,10 @@ import('./settings.js?v=' + Date.now()).then(({default: settings}) => {
     'tanks.fuel.main.currentLevel',   // named (new style)  
     'tanks.fuel.starboard.currentLevel', // named (new style)
     'tanks.freshWater.port.currentLevel', // named (new style)
-    'tanks.diesel.tank1.currentLevel'     // alphanumeric
+    'tanks.diesel.tank1.currentLevel',    // alphanumeric with custom type
+    'tanks.diesel.main.currentLevel',     // custom type diesel
+    'tanks.customType.someId.currentLevel', // any custom tank type
+    'tanks.lubrication.engine1.currentLevel' // lubrication type
   ];
 
   console.log('Fresh Tank regex test:');
