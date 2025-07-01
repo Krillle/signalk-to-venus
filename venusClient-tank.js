@@ -17,12 +17,19 @@ export class VenusClient extends EventEmitter {
 
   async init() {
     try {
-      // Set the D-Bus address to connect to Venus OS via TCP BEFORE creating the bus
-      this.originalAddress = process.env.DBUS_SYSTEM_BUS_ADDRESS;
-      process.env.DBUS_SYSTEM_BUS_ADDRESS = `tcp:host=${this.settings.venusHost},port=78`;
-      
-      // Create D-Bus connection using systemBus with TCP address (AFTER setting environment)
-      this.bus = dbus.systemBus();
+      // Create D-Bus connection using anonymous authentication for Venus OS
+      try {
+        // Try using createClient directly with anonymous auth for Venus OS
+        this.bus = dbus.createClient({
+          busAddress: `tcp:host=${this.settings.venusHost},port=78`,
+          authMethods: ['ANONYMOUS']
+        });
+      } catch (err) {
+        // Fallback to standard systemBus with environment variable
+        this.originalAddress = process.env.DBUS_SYSTEM_BUS_ADDRESS;
+        process.env.DBUS_SYSTEM_BUS_ADDRESS = `tcp:host=${this.settings.venusHost},port=78`;
+        this.bus = dbus.systemBus();
+      }
       
       // Try to request a name to test the connection
       await this.bus.requestName(this.VBUS_SERVICE);

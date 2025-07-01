@@ -130,7 +130,9 @@ export default function(app) {
           originalAddress = process.env.DBUS_SYSTEM_BUS_ADDRESS;
           process.env.DBUS_SYSTEM_BUS_ADDRESS = `tcp:host=${config.venusHost},port=78`;
           
-          // Create the system bus AFTER setting the environment variable
+          // Create the system bus for Venus OS connection
+          // Note: dbus-next doesn't support createClient or authMethods configuration
+          // Venus OS D-Bus authentication may require manual configuration
           testBus = dbus.systemBus();
           
           // Try to connect with a short timeout
@@ -153,26 +155,25 @@ export default function(app) {
           if (err.code === 'ENOTFOUND') {
             errorMsg += ' (DNS resolution failed)';
           } else if (err.code === 'ECONNREFUSED') {
-            errorMsg += ' (DNS resolution failed)';
-          } else if (err.code === 'ECONNREFUSED') {
             errorMsg += ' (connection refused - check D-Bus TCP setting)';
           } else if (err.message.includes('timeout')) {
             errorMsg += ' (connection timeout)';
+          } else if (err.message.includes('dbus-keyrings') || err.message.includes('ENOENT')) {
+            errorMsg += ' (D-Bus authentication failed - this is a known issue)';
           }
           
           app.setPluginError(errorMsg);
           
-          // TEMPORARY: Don't clear clients when testing dynamic schema discovery
           // Clear all existing clients when Venus becomes unreachable
-          // Object.keys(plugin.clients).forEach(key => {
-          //   if (plugin.clients[key] && typeof plugin.clients[key] === 'object') {
-          //     // Disconnect existing clients gracefully
-          //     if (plugin.clients[key].disconnect) {
-          //       plugin.clients[key].disconnect().catch(() => {});
-          //     }
-          //   }
-          //   delete plugin.clients[key];
-          // });
+          Object.keys(plugin.clients).forEach(key => {
+            if (plugin.clients[key] && typeof plugin.clients[key] === 'object') {
+              // Disconnect existing clients gracefully
+              if (plugin.clients[key].disconnect) {
+                plugin.clients[key].disconnect().catch(() => {});
+              }
+            }
+            delete plugin.clients[key];
+          });
           
           return false;
         } finally {
@@ -303,12 +304,11 @@ export default function(app) {
           deltaCount++;
           lastDataTime = Date.now();
           
-          // TEMPORARY: Process paths even when Venus is not connected (for testing dynamic schema)
           // Check Venus reachability before processing any data
-          // if (venusReachable === false) {
-          //   // Venus OS is known to be unreachable, skip all processing
-          //   return;
-          // }
+          if (venusReachable === false) {
+            // Venus OS is known to be unreachable, skip all processing
+            return;
+          }
           
           if (delta.updates) {
             delta.updates.forEach(update => {
@@ -342,13 +342,6 @@ export default function(app) {
                   // Check if this specific path is enabled
                   if (!isPathEnabled(deviceType, pathValue.path, config)) {
                     return; // Skip disabled paths
-                  }
-                  
-                  // TEMPORARY: Skip Venus client creation when testing dynamic schema
-                  if (venusReachable === false) {
-                    // Just log that we would process this path
-                    app.debug(`Would process ${deviceType} path: ${pathValue.path} = ${pathValue.value}`);
-                    return;
                   }
                   
                   if (!plugin.clients[deviceType]) {
