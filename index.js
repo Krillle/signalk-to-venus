@@ -104,7 +104,7 @@ export default function(app) {
 
     start: function(options) {
       app.setPluginStatus('Starting Signal K to Venus OS bridge');
-      app.debug('Starting Signal K to Venus OS bridge');
+      app.debug('Starting Signal K to Venus OS bridge - Version 1.0.11');
       const config = { ...settings, ...options };
       plugin.clients = {};
       plugin.venusConnected = false; // Track Venus connection status
@@ -351,6 +351,7 @@ export default function(app) {
                   }
                 
                 const deviceType = identifyDeviceType(pathValue.path);
+                app.debug(`[VERSION 1.0.11] Processing path: ${pathValue.path}, deviceType: ${deviceType}, config exists: ${!!config}`);
                 if (deviceType) {
                   // Track this discovered path (always do discovery regardless of Venus OS connection)
                   addDiscoveredPath(deviceType, pathValue.path, pathValue.value);
@@ -362,6 +363,7 @@ export default function(app) {
                   }
                   
                   // Check if this specific path is enabled
+                  app.debug(`Checking if path ${pathValue.path} is enabled, config exists: ${!!config}`);
                   if (!isPathEnabled(deviceType, pathValue.path, config)) {
                     return; // Skip disabled paths
                   }
