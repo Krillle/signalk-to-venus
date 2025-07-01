@@ -1,4 +1,4 @@
-import dbus from 'dbus-next';
+import dbusNative from 'dbus-native';
 import EventEmitter from 'events';
 
 export class VenusClient extends EventEmitter {
@@ -7,32 +7,33 @@ export class VenusClient extends EventEmitter {
     this.settings = settings;
     this.deviceType = deviceType;
     this.bus = null;
-    this.interfaces = {};
+    this.batteryData = {};
     this.lastInitAttempt = 0;
-    this.OBJECT_PATH = `/com/victronenergy/virtual/${deviceType}`;
     this.VBUS_SERVICE = `com.victronenergy.virtual.${deviceType}`;
   }
 
   async init() {
     try {
-      // Create D-Bus connection using environment variable approach (dbus-next)
-      this.originalAddress = process.env.DBUS_SYSTEM_BUS_ADDRESS;
-      process.env.DBUS_SYSTEM_BUS_ADDRESS = `tcp:host=${this.settings.venusHost},port=78`;
-      this.bus = dbus.systemBus();
+      // Create D-Bus connection using dbus-native with anonymous authentication
+      this.bus = dbusNative.createClient({
+        host: this.settings.venusHost,
+        port: 78,
+        authMethods: ['ANONYMOUS']
+      });
       
-      // Try to request a name to test the connection
-      await this.bus.requestName(this.VBUS_SERVICE);
+      // Request service name
+      await new Promise((resolve, reject) => {
+        this.bus.requestName(this.VBUS_SERVICE, 0, (err, result) => {
+          if (err) reject(err);
+          else resolve(result);
+        });
+      });
+
       this._exportMgmt();
+      this._exportBatteryInterface();
       
     } catch (err) {
-      // Restore original D-Bus address on error
-      if (this.originalAddress) {
-        process.env.DBUS_SYSTEM_BUS_ADDRESS = this.originalAddress;
-      } else {
-        delete process.env.DBUS_SYSTEM_BUS_ADDRESS;
-      }
-      
-      // Convert dbus errors to more user-friendly messages
+      // Convert errors to more user-friendly messages
       if (err.code === 'ENOTFOUND' || err.code === 'ECONNREFUSED') {
         throw new Error(`Cannot connect to Venus OS at ${this.settings.venusHost}:78 - ${err.code}`);
       } else if (err.message && err.message.includes('timeout')) {
@@ -43,83 +44,93 @@ export class VenusClient extends EventEmitter {
   }
 
   _exportMgmt() {
-    const mgmtItems = {
-      '/Mgmt/ProcessName': 'signalk-virtual-device',
-      '/Mgmt/Connection': `tcp://${this.settings.venusHost}`,
-      '/Connected': 1
+    // Export management properties using dbus-native
+    const mgmtInterface = {
+      GetValue: () => {
+        return ['d', 1]; // Connected = 1
+      },
+      SetValue: (val) => {
+        return true;
+      },
+      GetText: () => {
+        return ['s', 'Connected'];
+      }
     };
-    for (const path in mgmtItems) {
-      this._export(path, path.split('/').pop(), mgmtItems[path], typeof mgmtItems[path] === 'string' ? 's' : 'd');
-    }
+
+    this.bus.exportInterface(mgmtInterface, '/Connected', 'com.victronenergy.BusItem');
+
+    const processNameInterface = {
+      GetValue: () => {
+        return ['s', 'signalk-virtual-device'];
+      },
+      SetValue: (val) => {
+        return true;
+      },
+      GetText: () => {
+        return ['s', 'Process name'];
+      }
+    };
+
+    this.bus.exportInterface(processNameInterface, '/Mgmt/ProcessName', 'com.victronenergy.BusItem');
+
+    const connectionInterface = {
+      GetValue: () => {
+        return ['s', `tcp://${this.settings.venusHost}`];
+      },
+      SetValue: (val) => {
+        return true;
+      },
+      GetText: () => {
+        return ['s', 'Connection'];
+      }
+    };
+
+    this.bus.exportInterface(connectionInterface, '/Mgmt/Connection', 'com.victronenergy.BusItem');
   }
 
-  _export(path, label, value, type = 'd') {
-    if (this.interfaces[path]) {
-      // Update existing value
-      this.interfaces[path]._value = value;
-      return;
-    }
-    
-    // Store the interface data
-    const interfaceData = {
-      _label: label,
-      _value: value,
-      _type: type
+  _exportBatteryInterface() {
+    // Export battery-specific D-Bus interfaces using dbus-native
+    const batteryPaths = {
+      '/Dc/0/Voltage': { value: 0, type: 'd', text: 'Voltage' },
+      '/Dc/0/Current': { value: 0, type: 'd', text: 'Current' },
+      '/Soc': { value: 0, type: 'd', text: 'State of charge' },
+      '/ConsumedAmphours': { value: 0, type: 'd', text: 'Consumed Amphours' },
+      '/TimeToGo': { value: 0, type: 'd', text: 'Time to go' },
+      '/Dc/0/Temperature': { value: 0, type: 'd', text: 'Temperature' },
+      '/Relay/0/State': { value: 0, type: 'd', text: 'Relay state' }
     };
-    
-    const parent = this; // Capture parent context
-    
-    // Create interface class following dbus-next examples
-    const { Interface, method } = dbus.interface;
-    
-    class BusItemInterface extends Interface {
-      constructor() {
-        super('com.victronenergy.BusItem');
-        this._value = value;
-        this._label = label;
-        this._type = type;
-      }
-      
-      GetValue() {
-        return new dbus.Variant(this._type, this._value || 0);
-      }
-      
-      SetValue(val) {
-        const actualValue = (val && typeof val === 'object' && 'value' in val) ? val.value : val;
-        this._value = actualValue;
-        interfaceData._value = actualValue;
-        parent.emit('valueChanged', path, actualValue);
+
+    // Export each battery property
+    Object.entries(batteryPaths).forEach(([path, config]) => {
+      this._exportProperty(path, config);
+    });
+  }
+
+  _exportProperty(path, config) {
+    // Store initial value
+    this.batteryData[path] = config.value;
+
+    const propertyInterface = {
+      GetValue: () => {
+        return [config.type, this.batteryData[path] || 0];
+      },
+      SetValue: (val) => {
+        const actualValue = Array.isArray(val) ? val[1] : val;
+        this.batteryData[path] = actualValue;
+        this.emit('valueChanged', path, actualValue);
         return true;
+      },
+      GetText: () => {
+        return ['s', config.text];
       }
-      
-      GetText() {
-        return this._label || '';
-      }
-    }
+    };
 
-    // Add method decorators
-    BusItemInterface.prototype.GetValue = method({ outSignature: 'v' })(BusItemInterface.prototype.GetValue);
-    BusItemInterface.prototype.SetValue = method({ inSignature: 'v', outSignature: 'b' })(BusItemInterface.prototype.SetValue);
-    BusItemInterface.prototype.GetText = method({ outSignature: 's' })(BusItemInterface.prototype.GetText);
-
-    try {
-      const interfaceInstance = new BusItemInterface();
-      this.bus.export(`${this.OBJECT_PATH}${path}`, interfaceInstance);
-      interfaceData._interface = interfaceInstance;
-      this.interfaces[path] = interfaceData;
-    } catch (err) {
-      console.error(`Failed to export ${path}:`, err);
-      throw err;
-    }
+    this.bus.exportInterface(propertyInterface, path, 'com.victronenergy.BusItem');
   }
 
   _updateValue(path, value) {
-    if (this.interfaces[path]) {
-      this.interfaces[path]._value = value;
-      // Also update the interface instance if it exists
-      if (this.interfaces[path]._interface) {
-        this.interfaces[path]._interface._value = value;
-      }
+    if (this.batteryData.hasOwnProperty(path)) {
+      this.batteryData[path] = value;
     }
   }
 
@@ -144,38 +155,37 @@ export class VenusClient extends EventEmitter {
       }
       
       if (path.includes('voltage')) {
-        this._export('/Dc/0/Voltage', 'Battery Voltage', value);
+        this._updateValue('/Dc/0/Voltage', value);
         this.emit('dataUpdated', 'Battery Voltage', `${value.toFixed(2)}V`);
       }
       else if (path.includes('current')) {
-        this._export('/Dc/0/Current', 'Battery Current', value);
+        this._updateValue('/Dc/0/Current', value);
         this.emit('dataUpdated', 'Battery Current', `${value.toFixed(1)}A`);
       }
       else if (path.includes('stateOfCharge') || (path.includes('capacity') && path.includes('state'))) {
-        this._export('/Soc', 'State of Charge', value);
+        this._updateValue('/Soc', value);
         this.emit('dataUpdated', 'State of Charge', `${Math.round(value * 100)}%`);
       }
       else if (path.includes('consumed') || (path.includes('capacity') && path.includes('consumed'))) {
-        this._export('/ConsumedAmphours', 'Consumed Ah', value);
+        this._updateValue('/ConsumedAmphours', value);
         this.emit('dataUpdated', 'Consumed Ah', `${value.toFixed(1)}Ah`);
       }
       else if (path.includes('timeRemaining') || (path.includes('capacity') && path.includes('time'))) {
         if (value !== null) {
-          this._export('/TimeToGo', 'Time Remaining', value);
+          this._updateValue('/TimeToGo', value);
           this.emit('dataUpdated', 'Time Remaining', `${Math.round(value/60)}min`);
         }
       }
       else if (path.includes('relay')) {
-        this._export('/Relay/0/State', 'Relay', value);
+        this._updateValue('/Relay/0/State', value);
         this.emit('dataUpdated', 'Relay', value ? 'On' : 'Off');
       }
       else if (path.includes('temperature')) {
-        this._export('/Dc/0/Temperature', 'Battery Temp', value);
+        this._updateValue('/Dc/0/Temperature', value);
         this.emit('dataUpdated', 'Battery Temp', `${value.toFixed(1)}°C`);
       }
       else if (path.includes('name')) {
-        // Handle battery name/label
-        this._export('/CustomName', 'Battery Name', value);
+        // Handle battery name/label - not updating D-Bus value, just for logging
         this.emit('dataUpdated', 'Battery Name', value);
       }
       else {
@@ -191,19 +201,13 @@ export class VenusClient extends EventEmitter {
 
   async disconnect() {
     if (this.bus) {
-      for (const path in this.interfaces) {
-        this.bus.unexport(`${this.OBJECT_PATH}${path}`);
+      try {
+        this.bus.end();
+      } catch (err) {
+        // Ignore disconnect errors
       }
-      await this.bus.disconnect();
       this.bus = null;
-      this.interfaces = {};
-    }
-    
-    // Restore original D-Bus address
-    if (this.originalAddress) {
-      process.env.DBUS_SYSTEM_BUS_ADDRESS = this.originalAddress;
-    } else {
-      delete process.env.DBUS_SYSTEM_BUS_ADDRESS;
+      this.batteryData = {};
     }
   }
 }

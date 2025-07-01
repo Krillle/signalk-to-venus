@@ -4,6 +4,7 @@ import { VenusClient as EnvClient } from './venusClient-env.js';
 import { VenusClient as SwitchClient } from './venusClient-switch.js';
 
 export function VenusClientFactory(settings, deviceType) {
+  // All clients now use dbus-native for consistent authentication
   switch (deviceType) {
     case 'batteries':
       return new BatteryClient(settings, deviceType);

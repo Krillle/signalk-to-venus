@@ -143,19 +143,27 @@ export default function(app) {
           // Test the connection by trying to list names (simple D-Bus operation)
           await new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {
+              app.debug('Venus connectivity test timed out after 3 seconds');
               reject(new Error('Connection timeout'));
             }, 3000);
             
             // Try a simple D-Bus operation to test connectivity
-            testBus.listNames((err, names) => {
+            try {
+              testBus.listNames((err, names) => {
+                clearTimeout(timeout);
+                if (err) {
+                  app.debug('listNames failed:', err.message);
+                  reject(err);
+                } else {
+                  app.debug('D-Bus connection successful, found', names.length, 'services');
+                  resolve();
+                }
+              });
+            } catch (syncErr) {
               clearTimeout(timeout);
-              if (err) {
-                reject(err);
-              } else {
-                app.debug('D-Bus connection successful, found', names.length, 'services');
-                resolve();
-              }
-            });
+              app.debug('listNames call failed synchronously:', syncErr.message);
+              reject(syncErr);
+            }
           });
           
           venusReachable = true;
@@ -316,8 +324,7 @@ export default function(app) {
           
           // Check Venus reachability before processing any data
           if (venusReachable !== true) {
-            // Venus OS is not confirmed reachable, skip all processing
-            app.debug(`Skipping Venus processing - reachability status: ${venusReachable}`);
+            // Venus OS is not confirmed reachable, skip all processing silently
             return;
           }
           

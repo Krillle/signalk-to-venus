@@ -1,4 +1,4 @@
-import dbus from 'dbus-next';
+import dbusNative from 'dbus-native';
 import EventEmitter from 'events';
 
 export class VenusClient extends EventEmitter {
@@ -7,43 +7,34 @@ export class VenusClient extends EventEmitter {
     this.settings = settings;
     this.deviceType = deviceType;
     this.bus = null;
-    this.interfaces = {};
-    this.index = 0;
+    this.tankData = {};
     this.lastInitAttempt = 0;
     this.tankCounts = {}; // Track how many tanks of each type we have
-    this.OBJECT_PATH = `/com/victronenergy/virtual/${deviceType}`;
+    this.tankIndex = 0; // For unique tank indexing
     this.VBUS_SERVICE = `com.victronenergy.virtual.${deviceType}`;
   }
 
   async init() {
     try {
-      // Create D-Bus connection using anonymous authentication for Venus OS
-      try {
-        // Try using createClient directly with anonymous auth for Venus OS
-        this.bus = dbus.createClient({
-          busAddress: `tcp:host=${this.settings.venusHost},port=78`,
-          authMethods: ['ANONYMOUS']
-        });
-      } catch (err) {
-        // Fallback to standard systemBus with environment variable
-        this.originalAddress = process.env.DBUS_SYSTEM_BUS_ADDRESS;
-        process.env.DBUS_SYSTEM_BUS_ADDRESS = `tcp:host=${this.settings.venusHost},port=78`;
-        this.bus = dbus.systemBus();
-      }
+      // Create D-Bus connection using dbus-native with anonymous authentication
+      this.bus = dbusNative.createClient({
+        host: this.settings.venusHost,
+        port: 78,
+        authMethods: ['ANONYMOUS']
+      });
       
-      // Try to request a name to test the connection
-      await this.bus.requestName(this.VBUS_SERVICE);
+      // Request service name
+      await new Promise((resolve, reject) => {
+        this.bus.requestName(this.VBUS_SERVICE, 0, (err, result) => {
+          if (err) reject(err);
+          else resolve(result);
+        });
+      });
+
       this._exportMgmt();
       
     } catch (err) {
-      // Restore original D-Bus address on error
-      if (this.originalAddress) {
-        process.env.DBUS_SYSTEM_BUS_ADDRESS = this.originalAddress;
-      } else {
-        delete process.env.DBUS_SYSTEM_BUS_ADDRESS;
-      }
-      
-      // Convert dbus errors to more user-friendly messages
+      // Convert errors to more user-friendly messages
       if (err.code === 'ENOTFOUND' || err.code === 'ECONNREFUSED') {
         throw new Error(`Cannot connect to Venus OS at ${this.settings.venusHost}:78 - ${err.code}`);
       } else if (err.message && err.message.includes('timeout')) {
@@ -54,83 +45,75 @@ export class VenusClient extends EventEmitter {
   }
 
   _exportMgmt() {
-    const mgmtItems = {
-      '/Mgmt/ProcessName': 'signalk-virtual-device',
-      '/Mgmt/Connection': `tcp://${this.settings.venusHost}`,
-      '/Connected': 1
+    // Export management properties using dbus-native
+    const mgmtInterface = {
+      GetValue: () => {
+        return ['d', 1]; // Connected = 1
+      },
+      SetValue: (val) => {
+        return true;
+      },
+      GetText: () => {
+        return ['s', 'Connected'];
+      }
     };
-    for (const path in mgmtItems) {
-      this._export(path, path.split('/').pop(), mgmtItems[path], typeof mgmtItems[path] === 'string' ? 's' : 'd');
-    }
+
+    this.bus.exportInterface(mgmtInterface, '/Connected', 'com.victronenergy.BusItem');
+
+    const processNameInterface = {
+      GetValue: () => {
+        return ['s', 'signalk-virtual-device'];
+      },
+      SetValue: (val) => {
+        return true;
+      },
+      GetText: () => {
+        return ['s', 'Process name'];
+      }
+    };
+
+    this.bus.exportInterface(processNameInterface, '/Mgmt/ProcessName', 'com.victronenergy.BusItem');
+
+    const connectionInterface = {
+      GetValue: () => {
+        return ['s', `tcp://${this.settings.venusHost}`];
+      },
+      SetValue: (val) => {
+        return true;
+      },
+      GetText: () => {
+        return ['s', 'Connection'];
+      }
+    };
+
+    this.bus.exportInterface(connectionInterface, '/Mgmt/Connection', 'com.victronenergy.BusItem');
   }
 
-  _export(path, label, value, type = 'd') {
-    if (this.interfaces[path]) {
-      // Update existing value
-      this.interfaces[path]._value = value;
-      return;
-    }
-    
-    // Store the interface data
-    const interfaceData = {
-      _label: label,
-      _value: value,
-      _type: type
-    };
-    
-    const parent = this; // Capture parent context
-    
-    // Create interface class following dbus-next examples
-    const { Interface, method } = dbus.interface;
-    
-    class BusItemInterface extends Interface {
-      constructor() {
-        super('com.victronenergy.BusItem');
-        this._value = value;
-        this._label = label;
-        this._type = type;
-      }
-      
-      GetValue() {
-        return new dbus.Variant(this._type, this._value || 0);
-      }
-      
-      SetValue(val) {
-        const actualValue = (val && typeof val === 'object' && 'value' in val) ? val.value : val;
-        this._value = actualValue;
-        interfaceData._value = actualValue;
-        parent.emit('valueChanged', path, actualValue);
+  _exportProperty(path, config) {
+    // Store initial value
+    this.tankData[path] = config.value;
+
+    const propertyInterface = {
+      GetValue: () => {
+        return [config.type, this.tankData[path] || (config.type === 's' ? '' : 0)];
+      },
+      SetValue: (val) => {
+        const actualValue = Array.isArray(val) ? val[1] : val;
+        this.tankData[path] = actualValue;
+        this.emit('valueChanged', path, actualValue);
         return true;
+      },
+      GetText: () => {
+        return ['s', config.text];
       }
-      
-      GetText() {
-        return this._label || '';
-      }
-    }
+    };
 
-    // Add method decorators
-    BusItemInterface.prototype.GetValue = method({ outSignature: 'v' })(BusItemInterface.prototype.GetValue);
-    BusItemInterface.prototype.SetValue = method({ inSignature: 'v', outSignature: 'b' })(BusItemInterface.prototype.SetValue);
-    BusItemInterface.prototype.GetText = method({ outSignature: 's' })(BusItemInterface.prototype.GetText);
-
-    try {
-      const interfaceInstance = new BusItemInterface();
-      this.bus.export(`${this.OBJECT_PATH}${path}`, interfaceInstance);
-      interfaceData._interface = interfaceInstance;
-      this.interfaces[path] = interfaceData;
-    } catch (err) {
-      console.error(`Failed to export ${path}:`, err);
-      throw err;
-    }
+    this.bus.exportInterface(propertyInterface, path, 'com.victronenergy.BusItem');
   }
 
   _updateValue(path, value) {
-    if (this.interfaces[path]) {
-      this.interfaces[path]._value = value;
-      // Also update the interface instance if it exists
-      if (this.interfaces[path]._interface) {
-        this.interfaces[path]._interface._value = value;
-      }
+    if (this.tankData.hasOwnProperty(path)) {
+      this.tankData[path] = value;
     }
   }
 
@@ -174,63 +157,85 @@ export class VenusClient extends EventEmitter {
   }
 
   async handleSignalKUpdate(path, value) {
-    // Validate input parameters
-    if (value === null || value === undefined) {
-      console.debug(`Skipping invalid tank value for ${path}: ${value}`);
-      return;
-    }
-    
-    if (!this.bus) {
-      // Only try to initialize once every 30 seconds to avoid spam
-      const now = Date.now();
-      if (!this.lastInitAttempt || (now - this.lastInitAttempt) > 30000) {
-        this.lastInitAttempt = now;
-        await this.init();
-      } else {
-        // Skip silently if we recently failed to connect
+    try {
+      // Validate input parameters
+      if (value === null || value === undefined) {
+        console.debug(`Skipping invalid tank value for ${path}: ${value}`);
         return;
       }
-    }
-    
-    const tankName = this._getTankName(path);
-    const index = this.index++;
-    
-    if (path.includes('currentLevel')) {
-      // Validate numeric value before using
-      if (typeof value === 'number' && !isNaN(value)) {
-        this._export(`/Tank/${index}/Level`, tankName, value);
-        this.emit('dataUpdated', 'Tank Level', `${tankName}: ${(value * 100).toFixed(1)}%`);
+      
+      if (!this.bus) {
+        // Only try to initialize once every 30 seconds to avoid spam
+        const now = Date.now();
+        if (!this.lastInitAttempt || (now - this.lastInitAttempt) > 30000) {
+          this.lastInitAttempt = now;
+          await this.init();
+        } else {
+          // Skip silently if we recently failed to connect
+          return;
+        }
       }
-    } else if (path.includes('capacity')) {
-      // Validate numeric value before using
-      if (typeof value === 'number' && !isNaN(value)) {
-        this._export(`/Tank/${index}/Capacity`, `${tankName} Capacity`, value);
-        this.emit('dataUpdated', 'Tank Capacity', `${tankName}: ${value}L`);
+      
+      const tankName = this._getTankName(path);
+      const index = this.tankIndex++;
+      
+      if (path.includes('currentLevel')) {
+        // Validate and convert level (0-1 to 0-100 percentage)
+        if (typeof value === 'number' && !isNaN(value)) {
+          const levelPath = `/Tank/${index}/Level`;
+          const levelPercent = value * 100;
+          this._exportProperty(levelPath, { 
+            value: levelPercent, 
+            type: 'd', 
+            text: `${tankName} level` 
+          });
+          this.emit('dataUpdated', 'Tank Level', `${tankName}: ${levelPercent.toFixed(1)}%`);
+        }
       }
-    } else if (path.includes('name')) {
-      // Name can be a string
-      if (typeof value === 'string') {
-        this._export(`/Tank/${index}/Name`, `${tankName} Name`, value, 's');
-        this.emit('dataUpdated', 'Tank Name', `${tankName}: ${value}`);
+      else if (path.includes('capacity')) {
+        // Validate and set capacity
+        if (typeof value === 'number' && !isNaN(value)) {
+          const capacityPath = `/Tank/${index}/Capacity`;
+          this._exportProperty(capacityPath, { 
+            value: value, 
+            type: 'd', 
+            text: `${tankName} capacity` 
+          });
+          this.emit('dataUpdated', 'Tank Capacity', `${tankName}: ${value}L`);
+        }
       }
+      else if (path.includes('name')) {
+        // Tank name/label
+        if (typeof value === 'string') {
+          const namePath = `/Tank/${index}/Name`;
+          this._exportProperty(namePath, { 
+            value: value, 
+            type: 's', 
+            text: `${tankName} name` 
+          });
+          this.emit('dataUpdated', 'Tank Name', `${tankName}: ${value}`);
+        }
+      }
+      else {
+        // Silently ignore unknown tank paths
+        console.debug(`Ignoring unknown tank path: ${path}`);
+        return;
+      }
+      
+    } catch (err) {
+      throw new Error(err.message);
     }
   }
 
   async disconnect() {
     if (this.bus) {
-      for (const path in this.interfaces) {
-        this.bus.unexport(`${this.OBJECT_PATH}${path}`);
+      try {
+        this.bus.end();
+      } catch (err) {
+        // Ignore disconnect errors
       }
-      await this.bus.disconnect();
       this.bus = null;
-      this.interfaces = {};
-    }
-    
-    // Restore original D-Bus address
-    if (this.originalAddress) {
-      process.env.DBUS_SYSTEM_BUS_ADDRESS = this.originalAddress;
-    } else {
-      delete process.env.DBUS_SYSTEM_BUS_ADDRESS;
+      this.tankData = {};
     }
   }
 }
