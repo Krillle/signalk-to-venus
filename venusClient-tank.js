@@ -160,7 +160,7 @@ export class VenusClient extends EventEmitter {
     try {
       // Validate input parameters
       if (value === null || value === undefined) {
-        console.debug(`Skipping invalid tank value for ${path}: ${value}`);
+        // Skip invalid tank values silently
         return;
       }
       
@@ -218,7 +218,7 @@ export class VenusClient extends EventEmitter {
       }
       else {
         // Silently ignore unknown tank paths
-        console.debug(`Ignoring unknown tank path: ${path}`);
+        // Silently ignore unknown tank paths
         return;
       }
       

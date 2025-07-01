@@ -132,7 +132,7 @@ export class VenusClient extends EventEmitter {
     try {
       // Validate input parameters
       if (value === null || value === undefined) {
-        console.debug(`Skipping invalid switch value for ${path}: ${value}`);
+        // Skip invalid switch values silently
         return;
       }
       
@@ -177,7 +177,7 @@ export class VenusClient extends EventEmitter {
       }
       else {
         // Silently ignore unknown switch paths
-        console.debug(`Ignoring unknown switch path: ${path}`);
+        // Silently ignore unknown switch paths
         return;
       }
       

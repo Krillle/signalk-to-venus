@@ -119,7 +119,7 @@ export class VenusClient extends EventEmitter {
     try {
       // Validate input parameters
       if (value === null || value === undefined) {
-        console.debug(`Skipping invalid environment value for ${path}: ${value}`);
+        // Skip invalid environment values silently
         return;
       }
       
@@ -149,7 +149,7 @@ export class VenusClient extends EventEmitter {
         });
         this.emit('dataUpdated', 'Temperature', `${(tempK - 273.15).toFixed(1)}°C`);
       }
-      else if (path.includes('humidity')) {
+      else if (path.includes('humidity') || path.includes('relativeHumidity')) {
         // Humidity as percentage (0-1 to 0-100)
         const humidityPercent = value > 1 ? value : value * 100;
         this._exportProperty('/Humidity', { 
@@ -169,8 +169,7 @@ export class VenusClient extends EventEmitter {
         this.emit('dataUpdated', 'Pressure', `${(value / 100).toFixed(1)} hPa`);
       }
       else {
-        // Silently ignore unknown environment paths
-        console.debug(`Ignoring unknown environment path: ${path}`);
+        // Silently ignore unknown environment paths (no logging to avoid spam)
         return;
       }
       

@@ -138,7 +138,7 @@ export class VenusClient extends EventEmitter {
     try {
       // Validate input parameters
       if (typeof value !== 'number' || value === null || value === undefined || isNaN(value)) {
-        console.debug(`Skipping invalid battery value for ${path}: ${value}`);
+        // Skip invalid battery values silently
         return;
       }
       
@@ -190,7 +190,7 @@ export class VenusClient extends EventEmitter {
       }
       else {
         // Silently ignore unknown battery paths instead of throwing errors
-        console.debug(`Ignoring unknown battery path: ${path}`);
+        // Silently ignore unknown battery paths
         return;
       }
       
