@@ -244,7 +244,7 @@ export default function(app) {
             }
             
             // Filter paths early - only process paths we care about
-            const deviceType = identifyDeviceType(data.path, config);
+            const deviceType = identifyDeviceType(data.path);
             if (!deviceType) {
               // Path doesn't match any enabled device types, skip silently
               return;
@@ -350,7 +350,7 @@ export default function(app) {
                     return;
                   }
                 
-                const deviceType = identifyDeviceType(pathValue.path, config);
+                const deviceType = identifyDeviceType(pathValue.path);
                 if (deviceType) {
                   // Track this discovered path (always do discovery regardless of Venus OS connection)
                   addDiscoveredPath(deviceType, pathValue.path, pathValue.value);
@@ -435,7 +435,8 @@ export default function(app) {
               } catch (err) {
                 // Only log unexpected errors, suppress common connection errors
                 if (!err.message || (!err.message.includes('ENOTFOUND') && !err.message.includes('ECONNREFUSED'))) {
-                  app.error(`Unexpected error processing ${pathValue.path}: ${err.message}`);
+                  const pathInfo = pathValue?.path || 'unknown path';
+                  app.error(`Unexpected error processing ${pathInfo}: ${err.message}`);
                 }
               }
             });
@@ -521,7 +522,7 @@ export default function(app) {
   };
 
   // Helper function to identify device type from Signal K path
-  function identifyDeviceType(path, config) {
+  function identifyDeviceType(path) {
     // Filter out Cerbo GX relays (venus-0, venus-1) to prevent feedback loops
     if (path.match(/electrical\.switches\.venus-[01]\./)) {
       return null;
