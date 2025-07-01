@@ -109,7 +109,7 @@ export default function(app) {
       const activeClientTypes = new Set();
       let dataUpdateCount = 0;
       let heartbeatToggle = false; // For alternating heartbeat display
-      let venusReachable = null; // Track Venus OS reachability
+      let venusReachable = false; // Track Venus OS reachability (assume unreachable until proven otherwise)
       
       const deviceTypeNames = {
         'batteries': 'Batteries',
@@ -166,6 +166,7 @@ export default function(app) {
           venusReachable = false;
           app.debug('Venus connectivity test result: false');
           app.debug('Connection error details:', err.code, err.message);
+          app.debug('Venus processing will be disabled');
           let errorMsg = `Venus OS not reachable at ${config.venusHost}`;
           
           if (err.code === 'ENOTFOUND') {
@@ -314,8 +315,9 @@ export default function(app) {
           lastDataTime = Date.now();
           
           // Check Venus reachability before processing any data
-          if (venusReachable === false) {
-            // Venus OS is known to be unreachable, skip all processing
+          if (venusReachable !== true) {
+            // Venus OS is not confirmed reachable, skip all processing
+            app.debug(`Skipping Venus processing - reachability status: ${venusReachable}`);
             return;
           }
           
