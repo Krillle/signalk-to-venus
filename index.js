@@ -107,6 +107,7 @@ export default function(app) {
       app.debug('Starting Signal K to Venus OS bridge');
       const config = { ...settings, ...options };
       plugin.clients = {};
+      plugin.venusConnected = false; // Track Venus connection status
       const activeClientTypes = new Set();
       let dataUpdateCount = 0;
       let heartbeatToggle = false; // For alternating heartbeat display
@@ -325,12 +326,6 @@ export default function(app) {
           deltaCount++;
           lastDataTime = Date.now();
           
-          // Check Venus reachability before processing any data
-          if (venusReachable !== true) {
-            // Venus OS is not confirmed reachable, skip all processing silently
-            return;
-          }
-          
           if (delta.updates) {
             delta.updates.forEach(update => {
               // Check if update and update.values are valid
@@ -357,8 +352,14 @@ export default function(app) {
                 
                 const deviceType = identifyDeviceType(pathValue.path, config);
                 if (deviceType) {
-                  // Track this discovered path
+                  // Track this discovered path (always do discovery regardless of Venus OS connection)
                   addDiscoveredPath(deviceType, pathValue.path, pathValue.value);
+                  
+                  // Only proceed with Venus OS operations if Venus is reachable and path is enabled
+                  if (venusReachable !== true) {
+                    // Venus OS not reachable, skip Venus operations but continue discovery
+                    return;
+                  }
                   
                   // Check if this specific path is enabled
                   if (!isPathEnabled(deviceType, pathValue.path, config)) {
@@ -480,9 +481,15 @@ export default function(app) {
           });
           
           if (!hasEnabledDevices) {
-            app.setPluginStatus('Select devices to be sent to Venus OS in settings');
+            const totalDiscovered = Object.values(discoveredPaths).reduce((sum, map) => sum + map.size, 0);
+            if (totalDiscovered > 0) {
+              app.setPluginStatus(`Device Discovery: Found ${totalDiscovered} Signal K devices - configure in settings`);
+            } else {
+              app.setPluginStatus('Discovering Signal K devices - check back in a moment');
+            }
           } else if (venusReachable === false) {
-            app.setPluginStatus(`TESTING MODE: Discovering Signal K paths (Venus OS not connected)`);
+            const totalDiscovered = Object.values(discoveredPaths).reduce((sum, map) => sum + map.size, 0);
+            app.setPluginStatus(`Discovery: ${totalDiscovered} devices found - Venus OS not connected at ${config.venusHost}`);
           } else {
             app.setPluginStatus(`Waiting for Signal K data (${config.venusHost})`);
           }
