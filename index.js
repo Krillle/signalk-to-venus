@@ -18,6 +18,7 @@ export default function(app) {
     id: 'signalk-to-venus',
     name: 'Signal K to Venus OS Bridge',
     description: 'Bridges Signal K data to Victron Venus OS via D-Bus',
+    venusConnected: false,
     unsubscribe: null,
     clients: {},
     connectivityInterval: null,
@@ -69,7 +70,7 @@ export default function(app) {
               baseSchema.properties[deviceType].properties[safePathKey] = {
                 type: 'boolean',
                 title: `${pathInfo.displayName} (${devicePath})`,
-                default: false // All devices disabled by default
+                default: true // Enable devices by default for better user experience
               };
             });
           }
@@ -167,11 +168,13 @@ export default function(app) {
           });
           
           venusReachable = true;
+          plugin.venusConnected = true;
           app.debug('Venus connectivity test result: true (anonymous auth successful)');
           app.setPluginStatus(`Venus OS reachable at ${config.venusHost} (anonymous auth)`);
           return true;
         } catch (err) {
           venusReachable = false;
+          plugin.venusConnected = false;
           app.debug('Venus connectivity test result: false');
           app.debug('Connection error details:', err.code, err.message);
           app.debug('Venus processing will be disabled');
@@ -598,7 +601,10 @@ export default function(app) {
       
       // Update status with discovered paths count
       const totalPaths = Object.values(discoveredPaths).reduce((sum, map) => sum + map.size, 0);
-      app.setPluginStatus(`TESTING MODE: Discovered ${totalPaths} Signal K devices (Venus OS not connected)`);
+      const statusMsg = plugin.venusConnected ? 
+        `Connected to Venus OS - ${totalPaths} devices discovered` :
+        `Device Discovery: Found ${totalPaths} Signal K devices (Venus OS: ${config.venusHost})`; 
+      app.setPluginStatus(statusMsg);
     } else {
       // Update last seen value and add this property to the set
       const deviceInfo = pathMap.get(devicePath);
@@ -744,7 +750,9 @@ export default function(app) {
       return config[deviceType][safePathKey] === true;
     }
 
-    return false; // Default to disabled
+    // Default to enabled for newly discovered devices during initial discovery
+    // This allows the device to be processed and appear in the UI
+    return true;
   }
 
   return plugin;
