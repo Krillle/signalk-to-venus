@@ -125,6 +125,7 @@ export default function(app) {
         try {
           app.debug('Running Venus OS connectivity test...');
           app.debug(`Testing connection to ${config.venusHost}:78`);
+          app.debug('Creating dbus-native client with anonymous auth...');
           
           // Create D-Bus connection with anonymous authentication for Venus OS using dbus-native
           testBus = dbusNative.createClient({
@@ -157,6 +158,7 @@ export default function(app) {
         } catch (err) {
           venusReachable = false;
           app.debug('Venus connectivity test result: false');
+          app.debug('Connection error details:', err.code, err.message);
           let errorMsg = `Venus OS not reachable at ${config.venusHost}`;
           
           if (err.code === 'ENOTFOUND') {
