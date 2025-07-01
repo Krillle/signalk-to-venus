@@ -104,7 +104,7 @@ export default function(app) {
 
     start: function(options) {
       app.setPluginStatus('Starting Signal K to Venus OS bridge');
-      app.debug('Starting Signal K to Venus OS bridge - Version 1.0.11');
+      app.debug('Starting Signal K to Venus OS bridge - Version 1.0.12');
       const config = { ...settings, ...options };
       plugin.clients = {};
       plugin.venusConnected = false; // Track Venus connection status
@@ -351,10 +351,10 @@ export default function(app) {
                   }
                 
                 const deviceType = identifyDeviceType(pathValue.path);
-                app.debug(`[VERSION 1.0.11] Processing path: ${pathValue.path}, deviceType: ${deviceType}, config exists: ${!!config}`);
+                app.debug(`[VERSION 1.0.12] Processing path: ${pathValue.path}, deviceType: ${deviceType}, config exists: ${!!config}`);
                 if (deviceType) {
                   // Track this discovered path (always do discovery regardless of Venus OS connection)
-                  addDiscoveredPath(deviceType, pathValue.path, pathValue.value);
+                  addDiscoveredPath(deviceType, pathValue.path, pathValue.value, config);
                   
                   // Only proceed with Venus OS operations if Venus is reachable and path is enabled
                   if (venusReachable !== true) {
@@ -438,7 +438,8 @@ export default function(app) {
                 // Only log unexpected errors, suppress common connection errors
                 if (!err.message || (!err.message.includes('ENOTFOUND') && !err.message.includes('ECONNREFUSED'))) {
                   const pathInfo = pathValue?.path || 'unknown path';
-                  app.error(`Unexpected error processing ${pathInfo}: ${err.message}`);
+                  app.error(`[CATCH BLOCK v1.0.11] Unexpected error processing ${pathInfo}: ${err.message}`);
+                  app.error(`[CATCH BLOCK v1.0.11] Stack trace: ${err.stack}`);
                 }
               }
             });
@@ -564,62 +565,69 @@ export default function(app) {
   }
 
   // Function to add a discovered path to tracking
-  function addDiscoveredPath(deviceType, path, value) {
-    const pathMap = discoveredPaths[deviceType];
-    if (!pathMap) return;
+  function addDiscoveredPath(deviceType, path, value, config) {
+    try {
+      app.debug(`[addDiscoveredPath v1.0.11] Adding ${deviceType} path: ${path}`);
+      const pathMap = discoveredPaths[deviceType];
+      if (!pathMap) return;
 
-    // Extract the device/sensor path (one level up from the property)
-    const devicePath = getDevicePath(deviceType, path);
-    if (!devicePath) return;
+      // Extract the device/sensor path (one level up from the property)
+      const devicePath = getDevicePath(deviceType, path);
+      if (!devicePath) return;
 
-    if (!pathMap.has(devicePath)) {
-      // Generate a human-readable display name
-      let displayName = generateDisplayName(deviceType, devicePath);
-      
-      pathMap.set(devicePath, {
-        displayName: displayName,
-        firstSeen: new Date().toISOString(),
-        lastValue: value,
-        sampleValue: value,
-        properties: new Set([path]) // Track which properties we've seen
-      });
-
-      // Trigger schema update if enough time has passed
-      const now = Date.now();
-      if (now - lastSchemaUpdate > 2000) { // Throttle updates to every 2 seconds (reduced for testing)
-        lastSchemaUpdate = now;
+      if (!pathMap.has(devicePath)) {
+        // Generate a human-readable display name
+        app.debug(`[addDiscoveredPath v1.0.11] Generating display name for ${devicePath}`);
+        let displayName = generateDisplayName(deviceType, devicePath);
         
-        app.debug(`Schema update triggered - total discovered paths: ${Object.values(discoveredPaths).reduce((sum, map) => sum + map.size, 0)}`);
-        
-        // Notify Signal K that the schema has changed (if supported)
-        if (app.handleMessage && typeof app.handleMessage === 'function') {
-          try {
-            app.handleMessage(plugin.id, {
-              type: 'schema-update',
-              timestamp: new Date().toISOString()
-            });
-            app.debug('Schema update notification sent');
-          } catch (err) {
-            app.debug('Schema update notification not supported:', err.message);
+        pathMap.set(devicePath, {
+          displayName: displayName,
+          firstSeen: new Date().toISOString(),
+          lastValue: value,
+          sampleValue: value,
+          properties: new Set([path]) // Track which properties we've seen
+        });
+
+        // Trigger schema update if enough time has passed
+        const now = Date.now();
+        if (now - lastSchemaUpdate > 2000) { // Throttle updates to every 2 seconds (reduced for testing)
+          lastSchemaUpdate = now;
+          
+          app.debug(`Schema update triggered - total discovered paths: ${Object.values(discoveredPaths).reduce((sum, map) => sum + map.size, 0)}`);
+          
+          // Notify Signal K that the schema has changed (if supported)
+          if (app.handleMessage && typeof app.handleMessage === 'function') {
+            try {
+              app.handleMessage(plugin.id, {
+                type: 'schema-update',
+                timestamp: new Date().toISOString()
+              });
+              app.debug('Schema update notification sent');
+            } catch (err) {
+              app.debug('Schema update notification not supported:', err.message);
+            }
+          } else {
+            app.debug('No handleMessage function available for schema updates');
           }
-        } else {
-          app.debug('No handleMessage function available for schema updates');
         }
+        
+        app.debug(`Discovered new ${deviceType} device: ${devicePath} (${displayName}) - Total ${deviceType}: ${pathMap.size}`);
+        
+        // Update status with discovered paths count
+        const totalPaths = Object.values(discoveredPaths).reduce((sum, map) => sum + map.size, 0);
+        const statusMsg = plugin.venusConnected ? 
+          `Connected to Venus OS - ${totalPaths} devices discovered` :
+          `Device Discovery: Found ${totalPaths} Signal K devices (Venus OS: ${config.venusHost})`; 
+        app.setPluginStatus(statusMsg);
+      } else {
+        // Update last seen value and add this property to the set
+        const deviceInfo = pathMap.get(devicePath);
+        deviceInfo.lastValue = value;
+        deviceInfo.properties.add(path);
       }
-      
-      app.debug(`Discovered new ${deviceType} device: ${devicePath} (${displayName}) - Total ${deviceType}: ${pathMap.size}`);
-      
-      // Update status with discovered paths count
-      const totalPaths = Object.values(discoveredPaths).reduce((sum, map) => sum + map.size, 0);
-      const statusMsg = plugin.venusConnected ? 
-        `Connected to Venus OS - ${totalPaths} devices discovered` :
-        `Device Discovery: Found ${totalPaths} Signal K devices (Venus OS: ${config.venusHost})`; 
-      app.setPluginStatus(statusMsg);
-    } else {
-      // Update last seen value and add this property to the set
-      const deviceInfo = pathMap.get(devicePath);
-      deviceInfo.lastValue = value;
-      deviceInfo.properties.add(path);
+    } catch (err) {
+      app.error(`[addDiscoveredPath ERROR v1.0.11] Error in addDiscoveredPath: ${err.message}`);
+      app.error(`[addDiscoveredPath ERROR v1.0.11] Stack: ${err.stack}`);
     }
   }
 
