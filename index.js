@@ -1,6 +1,7 @@
 import { VenusClientFactory } from './venusClientFactory.js';
 import settings from './settings.js';
 import dbus from 'dbus-next';
+import dbusNative from 'dbus-native';
 
 // Signal K plugin entry point
 export default function(app) {
@@ -120,32 +121,38 @@ export default function(app) {
       // Test Venus OS connectivity before processing any data
       async function testVenusConnectivity() {
         let testBus = null;
-        let originalAddress = null;
         
         try {
           app.debug('Running Venus OS connectivity test...');
           app.debug(`Testing connection to ${config.venusHost}:78`);
           
-          // Store original environment and set new address BEFORE creating the bus
-          originalAddress = process.env.DBUS_SYSTEM_BUS_ADDRESS;
-          process.env.DBUS_SYSTEM_BUS_ADDRESS = `tcp:host=${config.venusHost},port=78`;
+          // Create D-Bus connection with anonymous authentication for Venus OS using dbus-native
+          testBus = dbusNative.createClient({
+            host: config.venusHost,
+            port: 78,
+            authMethods: ['ANONYMOUS'] // Try anonymous auth first for Venus OS
+          });
           
-          // Create the system bus for Venus OS connection
-          // Note: dbus-next doesn't support createClient or authMethods configuration
-          // Venus OS D-Bus authentication may require manual configuration
-          testBus = dbus.systemBus();
-          
-          // Try to connect with a short timeout
-          const testPromise = testBus.requestName('com.victronenergy.test.connectivity');
-          const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Connection timeout')), 3000)
-          );
-          
-          await Promise.race([testPromise, timeoutPromise]);
+          // Wait for connection to be established
+          await new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+              reject(new Error('Connection timeout'));
+            }, 3000);
+            
+            testBus.on('connect', () => {
+              clearTimeout(timeout);
+              resolve();
+            });
+            
+            testBus.on('error', (err) => {
+              clearTimeout(timeout);
+              reject(err);
+            });
+          });
           
           venusReachable = true;
-          app.debug('Venus connectivity test result: true');
-          app.setPluginStatus(`Venus OS reachable at ${config.venusHost}`);
+          app.debug('Venus connectivity test result: true (anonymous auth successful)');
+          app.setPluginStatus(`Venus OS reachable at ${config.venusHost} (anonymous auth)`);
           return true;
         } catch (err) {
           venusReachable = false;
@@ -177,20 +184,13 @@ export default function(app) {
           
           return false;
         } finally {
-          // Always disconnect the test bus and restore environment
+          // Always disconnect the test bus
           if (testBus) {
             try {
-              await testBus.disconnect();
+              testBus.end();
             } catch (disconnectErr) {
               // Silent disconnect error handling
             }
-          }
-          
-          // Restore original D-Bus address
-          if (originalAddress) {
-            process.env.DBUS_SYSTEM_BUS_ADDRESS = originalAddress;
-          } else {
-            delete process.env.DBUS_SYSTEM_BUS_ADDRESS;
           }
         }
       }
