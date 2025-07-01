@@ -118,12 +118,12 @@ export class VenusClient extends EventEmitter {
   }
 
   _getTankName(path) {
-    // Extract tank type and ID from Signal K path like tanks.fuel.0.currentLevel
+    // Extract tank type and ID from Signal K path like tanks.fuel.starboard.currentLevel
     const pathParts = path.split('.');
     if (pathParts.length < 3) return 'Tank';
     
     const tankType = pathParts[1]; // fuel, freshWater, etc.
-    const tankId = pathParts[2]; // 0, 1, 2, etc.
+    const tankId = pathParts[2]; // any alphanumeric string (not just numbers!)
     
     // Convert camelCase to proper names
     const typeNames = {
@@ -148,11 +148,13 @@ export class VenusClient extends EventEmitter {
       this.tankCounts[tankType].push(tankId);
     }
     
-    // Only add number if there are multiple tanks of the same type
-    if (this.tankCounts[tankType].length > 1) {
-      return `${typeName} ${parseInt(tankId) + 1}`;
-    } else {
+    // Always include the tank ID unless it's a generic single tank
+    if (this.tankCounts[tankType].length === 1 && (tankId === '0' || tankId === 'main' || tankId === 'primary')) {
+      // Single tank with generic ID - just use type name
       return typeName;
+    } else {
+      // Multiple tanks or specific ID - include the ID
+      return `${typeName} ${tankId}`;
     }
   }
 

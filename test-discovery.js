@@ -11,8 +11,9 @@ const testSignalKData = [
   { path: 'electrical.batteries.0.current', value: -5.2 },
   { path: 'electrical.batteries.0.stateOfCharge', value: 0.85 },
   { path: 'electrical.batteries.1.voltage', value: 12.6 },
-  { path: 'tanks.fuel.0.currentLevel', value: 0.75 },
-  { path: 'tanks.freshWater.0.currentLevel', value: 0.60 },
+  { path: 'tanks.fuel.main.currentLevel', value: 0.75 },
+  { path: 'tanks.fuel.starboard.currentLevel', value: 0.65 },
+  { path: 'tanks.freshWater.port.currentLevel', value: 0.60 },
   { path: 'tanks.blackWater.0.currentLevel', value: 0.15 },
   { path: 'environment.inside.temperature', value: 295.15 },
   { path: 'environment.outside.temperature', value: 288.15 },
@@ -101,7 +102,7 @@ function generateDisplayName(deviceType, devicePath) {
           'blackWater': 'Blackwater'
         };
         const typeName = typeNames[tankType] || tankType.charAt(0).toUpperCase() + tankType.slice(1);
-        return tankId === '0' ? typeName : `${typeName} ${tankId}`;
+        return tankId === '0' || tankId === 'main' || tankId === 'primary' ? typeName : `${typeName} ${tankId}`;
       }
       return 'Tank';
     case 'environment':

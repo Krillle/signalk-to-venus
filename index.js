@@ -665,11 +665,11 @@ export default function(app) {
         break;
         
       case 'tanks':
-        // tanks.freshWater.0 -> Freshwater (if functional name) or Fresh Water Tank 0 (if generic)
-        const tankMatch = devicePath.match(/tanks\.([^.]+)\.(\d+|[^.]+)/);
+        // tanks.freshWater.starboard -> Freshwater starboard (if specific name)
+        const tankMatch = devicePath.match(/tanks\.([^.]+)\.([^.]+)/);
         if (tankMatch) {
           let tankType = tankMatch[1];
-          const tankId = tankMatch[2];
+          const tankId = tankMatch[2]; // Can be any alphanumeric string per Signal K spec
           
           // Remove camel case and capitalize first letter
           tankType = tankType.replace(/([A-Z])/g, ' $1').trim();
@@ -679,17 +679,14 @@ export default function(app) {
           const tanksOfThisType = Array.from(discoveredPaths.tanks?.keys() || [])
             .filter(path => path.includes(`tanks.${tankMatch[1]}.`)).length;
           
-          // If functional name (not just 'tank'), omit 'Tank' suffix and number if only one
-          if (!tankType.toLowerCase().includes('tank')) {
-            if (tanksOfThisType <= 1 && tankId === '0') {
-              return tankType;
-            }
-            return `${tankType} ${tankId}`;
+          // Use generic ID detection instead of assuming only '0' is generic
+          const isGenericId = ['0', 'main', 'primary', 'default'].includes(tankId.toLowerCase());
+          
+          // If single tank with generic ID, omit the ID
+          if (tanksOfThisType <= 1 && isGenericId) {
+            return tankType;
           } else {
-            // Generic tank name, keep 'Tank' and number if multiple
-            if (tanksOfThisType <= 1 && tankId === '0') {
-              return tankType;
-            }
+            // Multiple tanks or specific ID - include the ID
             return `${tankType} ${tankId}`;
           }
         }

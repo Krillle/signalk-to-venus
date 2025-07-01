@@ -9,7 +9,7 @@ export default {
     switches: true
   },
   batteryRegex: /^electrical\.batteries\.\d+\./, 
-  tankRegex: /^tanks\.(fuel|freshWater|wasteWater|blackWater|lubrication|liveWell|baitWell|gas|ballast)\.\d+\./, 
+  tankRegex: /^tanks\.(fuel|freshWater|wasteWater|blackWater|lubrication|liveWell|baitWell|gas|ballast)\.[^.\/]+\./, 
   temperatureRegex: /^environment\..*\.temperature$|^propulsion\..*\.temperature$/, 
   humidityRegex: /^environment\..*\.(humidity|relativeHumidity)$/, 
   switchRegex: /^electrical\.switches\.[^.]+\.state$/, 
