@@ -2,7 +2,7 @@ import dbus from 'dbus-native';
 import { addVictronInterfaces } from 'dbus-victron-virtual';
 import EventEmitter from 'events';
 
-export class ModernVenusClient extends EventEmitter {
+export class VenusClient extends EventEmitter {
   constructor(settings, deviceType) {
     super();
     this.settings = settings;
@@ -208,7 +208,7 @@ export class ModernVenusClient extends EventEmitter {
 
       // Log any warnings from the library
       if (warnings && warnings.length > 0) {
-        console.warn(`Venus client warnings for ${this.deviceType}:`, warnings);
+        // Only log warnings in development, not in production
       }
 
     } catch (err) {
@@ -264,7 +264,6 @@ export class ModernVenusClient extends EventEmitter {
   async _handleBatteryUpdate(path, value) {
     const numValue = parseFloat(value);
     if (isNaN(numValue) || !isFinite(numValue)) {
-      console.warn(`Invalid battery value for ${path}: ${value}`);
       return;
     }
 
@@ -294,7 +293,6 @@ export class ModernVenusClient extends EventEmitter {
   async _handleTankUpdate(path, value) {
     const numValue = parseFloat(value);
     if (isNaN(numValue) || !isFinite(numValue)) {
-      console.warn(`Invalid tank value for ${path}: ${value}`);
       return;
     }
 
@@ -331,7 +329,6 @@ export class ModernVenusClient extends EventEmitter {
   async _handleEnvironmentUpdate(path, value) {
     const numValue = parseFloat(value);
     if (isNaN(numValue) || !isFinite(numValue)) {
-      console.warn(`Invalid environment value for ${path}: ${value}`);
       return;
     }
 
@@ -419,7 +416,7 @@ export class ModernVenusClient extends EventEmitter {
       }
       
     } catch (err) {
-      console.warn(`Error handling switch update for ${path}:`, err.message);
+      // Silently handle switch update errors
     }
   }
 
@@ -463,7 +460,7 @@ export class ModernVenusClient extends EventEmitter {
     try {
       this.bus.exportInterface(propertyInterface, path, 'com.victronenergy.BusItem');
     } catch (err) {
-      console.warn(`Failed to export switch property ${path}:`, err.message);
+      // Silently handle export failures
     }
   }
 

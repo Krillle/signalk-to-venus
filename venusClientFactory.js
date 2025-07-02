@@ -1,6 +1,6 @@
-import { ModernVenusClient } from './venusClient.js';
+import { VenusClient } from './venusClient.js';
 
 export function VenusClientFactory(settings, deviceType) {
-  // Use the modern implementation with dbus-victron-virtual
-  return new ModernVenusClient(settings, deviceType);
+  // Use the Venus client implementation with dbus-victron-virtual
+  return new VenusClient(settings, deviceType);
 }

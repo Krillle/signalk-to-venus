@@ -103,7 +103,6 @@ export default function(app) {
 
     start: function(options) {
       app.setPluginStatus('Starting Signal K to Venus OS bridge');
-      app.debug('Starting Signal K to Venus OS bridge - Version 2.0.0');
       const config = { ...settings, ...options };
       plugin.clients = {};
       plugin.venusConnected = false; // Track Venus connection status
@@ -124,10 +123,6 @@ export default function(app) {
         let testBus = null;
         
         try {
-          app.debug('Running Venus OS connectivity test...');
-          app.debug(`Testing connection to ${config.venusHost}:78`);
-          app.debug('Creating dbus-native client with anonymous auth...');
-          
           // Create D-Bus connection with anonymous authentication for Venus OS using dbus-native
           try {
             testBus = dbusNative.createClient({
@@ -135,16 +130,13 @@ export default function(app) {
               port: 78,
               authMethods: ['ANONYMOUS'] // Try anonymous auth first for Venus OS
             });
-            app.debug('dbus-native client created successfully');
           } catch (createErr) {
-            app.debug('Failed to create dbus-native client:', createErr.message);
             throw createErr;
           }
           
           // Test the connection by trying to list names (simple D-Bus operation)
           await new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {
-              app.debug('Venus connectivity test timed out after 3 seconds');
               reject(new Error('Connection timeout'));
             }, 3000);
             
@@ -153,31 +145,24 @@ export default function(app) {
               testBus.listNames((err, names) => {
                 clearTimeout(timeout);
                 if (err) {
-                  app.debug('listNames failed:', err.message);
                   reject(err);
                 } else {
-                  app.debug('D-Bus connection successful, found', names.length, 'services');
                   resolve();
                 }
               });
             } catch (syncErr) {
               clearTimeout(timeout);
-              app.debug('listNames call failed synchronously:', syncErr.message);
               reject(syncErr);
             }
           });
           
           venusReachable = true;
           plugin.venusConnected = true;
-          app.debug('Venus connectivity test result: true (anonymous auth successful)');
-          app.setPluginStatus(`Venus OS reachable at ${config.venusHost} (anonymous auth)`);
+          app.setPluginStatus(`Venus OS reachable at ${config.venusHost}`);
           return true;
         } catch (err) {
           venusReachable = false;
           plugin.venusConnected = false;
-          app.debug('Venus connectivity test result: false');
-          app.debug('Connection error details:', err.code, err.message);
-          app.debug('Venus processing will be disabled');
           let errorMsg = `Venus OS not reachable at ${config.venusHost}`;
           
           if (err.code === 'ENOTFOUND') {
@@ -238,7 +223,6 @@ export default function(app) {
           plugin.unsubscribe = app.streambundle.getSelfBus().onValue(data => {
             // Validate the streambundle data before conversion
             if (!data || typeof data !== 'object' || !data.path) {
-              app.debug(`Invalid streambundle data:`, data);
               return;
             }
             
@@ -269,7 +253,6 @@ export default function(app) {
             
             processDelta(delta);
           });
-          app.debug('Successfully subscribed to streambundle - null values filtered at source');
         } catch (err) {
           app.error('getSelfBus method failed:', err);
         }
@@ -285,7 +268,6 @@ export default function(app) {
           plugin.unsubscribe = app.signalk.subscribe(subscription, delta => {
             processDelta(delta);
           });
-          app.debug('Successfully subscribed to signalk.subscribe');
         } catch (err) {
           app.error('signalk.subscribe method failed:', err);
         }
@@ -298,7 +280,6 @@ export default function(app) {
             }
             next(delta);
           });
-          app.debug('Successfully subscribed to registerDeltaInputHandler');
         } catch (err) {
           app.error('registerDeltaInputHandler method failed:', err);
         }
@@ -329,7 +310,6 @@ export default function(app) {
             delta.updates.forEach(update => {
               // Check if update and update.values are valid
               if (!update || !Array.isArray(update.values)) {
-                app.debug(`Skipping invalid update:`, update);
                 return;
               }
               
@@ -350,7 +330,6 @@ export default function(app) {
                   }
                 
                 const deviceType = identifyDeviceType(pathValue.path);
-                app.debug(`[VERSION 2.0.0] Processing path: ${pathValue.path}, deviceType: ${deviceType}, config exists: ${!!config}`);
                 if (deviceType) {
                   // Track this discovered path (always do discovery regardless of Venus OS connection)
                   addDiscoveredPath(deviceType, pathValue.path, pathValue.value, config);
@@ -362,7 +341,6 @@ export default function(app) {
                   }
                   
                   // Check if this specific path is enabled
-                  app.debug(`Checking if path ${pathValue.path} is enabled, config exists: ${!!config}`);
                   if (!isPathEnabled(deviceType, pathValue.path, config)) {
                     return; // Skip disabled paths
                   }
@@ -464,7 +442,6 @@ export default function(app) {
             if (signalKPath) {
               // Use Signal K's internal API instead of external PUT
               await app.putSelfPath(signalKPath, value, 'venus-bridge');
-              app.debug(`Updated Signal K path ${signalKPath} with value ${value}`);
             }
           } catch (err) {
             app.error(`Error updating Signal K path from venus ${venusPath}:`, err);
@@ -502,7 +479,6 @@ export default function(app) {
 
     stop: function() {
       app.setPluginStatus('Stopping Signal K to Venus OS bridge');
-      app.debug('Stopping Signal K to Venus OS bridge');
       
       // Clear connectivity interval
       if (plugin.connectivityInterval) {
@@ -566,7 +542,6 @@ export default function(app) {
   // Function to add a discovered path to tracking
   function addDiscoveredPath(deviceType, path, value, config) {
     try {
-      app.debug(`[addDiscoveredPath v1.0.11] Adding ${deviceType} path: ${path}`);
       const pathMap = discoveredPaths[deviceType];
       if (!pathMap) return;
 
@@ -576,7 +551,6 @@ export default function(app) {
 
       if (!pathMap.has(devicePath)) {
         // Generate a human-readable display name
-        app.debug(`[addDiscoveredPath v1.0.11] Generating display name for ${devicePath}`);
         let displayName = generateDisplayName(deviceType, devicePath);
         
         pathMap.set(devicePath, {
@@ -592,8 +566,6 @@ export default function(app) {
         if (now - lastSchemaUpdate > 2000) { // Throttle updates to every 2 seconds (reduced for testing)
           lastSchemaUpdate = now;
           
-          app.debug(`Schema update triggered - total discovered paths: ${Object.values(discoveredPaths).reduce((sum, map) => sum + map.size, 0)}`);
-          
           // Notify Signal K that the schema has changed (if supported)
           if (app.handleMessage && typeof app.handleMessage === 'function') {
             try {
@@ -601,16 +573,11 @@ export default function(app) {
                 type: 'schema-update',
                 timestamp: new Date().toISOString()
               });
-              app.debug('Schema update notification sent');
             } catch (err) {
-              app.debug('Schema update notification not supported:', err.message);
+              // Schema update notification not supported
             }
-          } else {
-            app.debug('No handleMessage function available for schema updates');
           }
         }
-        
-        app.debug(`Discovered new ${deviceType} device: ${devicePath} (${displayName}) - Total ${deviceType}: ${pathMap.size}`);
         
         // Update status with discovered paths count
         const totalPaths = Object.values(discoveredPaths).reduce((sum, map) => sum + map.size, 0);
