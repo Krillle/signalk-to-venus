@@ -532,7 +532,7 @@ export default function(app) {
     
     if (settings.batteryRegex.test(path)) return 'batteries';
     if (settings.tankRegex.test(path)) return 'tanks';
-    if (settings.temperatureRegex.test(path) || settings.humidityRegex.test(path)) return 'environment';
+    if (settings.temperatureRegex.test(path) || settings.humidityRegex.test(path) || settings.pressureRegex.test(path)) return 'environment';
     if (settings.switchRegex.test(path) || settings.dimmerRegex.test(path)) return 'switches';
     return null;
   }

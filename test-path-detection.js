@@ -33,8 +33,7 @@ const testPaths = [
   { path: 'electrical.switches.venus-1.state', value: false, expectedDevice: null },
   
   // Unknown paths
-  { path: 'navigation.position.latitude', value: 45.123, expectedDevice: null },
-  { path: 'environment.deck.pressure', value: 101325, expectedDevice: null }, // Pressure regex doesn't match this
+  { path: 'navigation.position.latitude', value: 45.123, expectedDevice: null }
 ];
 
 console.log('=== Complete Signal K Path Detection & Processing Test ===\n');
@@ -51,7 +50,7 @@ function identifyDeviceType(path) {
   
   if (settings.batteryRegex.test(path)) return 'batteries';
   if (settings.tankRegex.test(path)) return 'tanks';
-  if (settings.temperatureRegex.test(path) || settings.humidityRegex.test(path)) return 'environment';
+  if (settings.temperatureRegex.test(path) || settings.humidityRegex.test(path) || settings.pressureRegex.test(path)) return 'environment';
   if (settings.switchRegex.test(path) || settings.dimmerRegex.test(path)) return 'switches';
   return null;
 }

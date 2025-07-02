@@ -12,6 +12,7 @@ export default {
   tankRegex: /^tanks\.[^.\/]+\.[^.\/]+\./, 
   temperatureRegex: /^environment\..*\.temperature$|^propulsion\..*\.temperature$/, 
   humidityRegex: /^environment\..*\.(humidity|relativeHumidity)$/, 
+  pressureRegex: /^environment\..*\.pressure$/, 
   switchRegex: /^electrical\.switches\.[^.]+\.state$/, 
   dimmerRegex: /^electrical\.switches\.[^.]+\.dimmingLevel$/
 };
