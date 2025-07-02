@@ -1,34 +1,6 @@
 import dbusNative from 'dbus-native';
 import EventEmitter from 'events';
 
-// Value wrapping functions to match dbus-victron-virtual pattern
-function getType(value) {
-  return value === null
-    ? "d"
-    : typeof value === "undefined"
-      ? (() => { throw new Error("Value cannot be undefined"); })()
-      : typeof value === "string"
-        ? "s"
-        : typeof value === "number"
-          ? isNaN(value)
-            ? (() => { throw new Error("NaN is not a valid input"); })()
-            : Number.isInteger(value) ? "i" : "d"
-          : (() => { throw new Error("Unsupported type: " + typeof value); })();
-}
-
-function wrapValue(t, v) {
-  if (v === null) {
-    return ["ai", []]; // Null as empty integer array per Victron standard
-  }
-  switch (t) {
-    case "b": return ["b", v];
-    case "s": return ["s", v];
-    case "i": return ["i", v];
-    case "d": return ["d", v];
-    default: return t.type ? wrapValue(t.type, v) : v;
-  }
-}
-
 export class VenusClient extends EventEmitter {
   constructor(settings, deviceType) {
     super();
@@ -41,6 +13,32 @@ export class VenusClient extends EventEmitter {
       temperature: 24,
       humidity: 25
     };
+  }
+
+  // Helper function to wrap values in D-Bus variant format  
+  wrapValue(type, value) {
+    if (value === null) {
+      return ["ai", []]; // Null as empty integer array per Victron standard
+    }
+    switch (type) {
+      case "b": return ["b", value];
+      case "s": return ["s", value];
+      case "i": return ["i", value];
+      case "d": return ["d", value];
+      default: return type.type ? this.wrapValue(type.type, value) : value;
+    }
+  }
+
+  // Helper function to get D-Bus type for JavaScript values
+  getType(value) {
+    if (value === null) return "d";
+    if (typeof value === "undefined") throw new Error("Value cannot be undefined");
+    if (typeof value === "string") return "s";
+    if (typeof value === "number") {
+      if (isNaN(value)) throw new Error("NaN is not a valid input");
+      return Number.isInteger(value) ? "i" : "d";
+    }
+    throw new Error("Unsupported type: " + typeof value);
   }
 
   async init() {
@@ -108,10 +106,11 @@ export class VenusClient extends EventEmitter {
         GetItems: ["", "a{sa{sv}}", [], ["items"]],
         GetValue: ["", "v", [], ["value"]],
         GetText: ["", "s", [], ["text"]],
-        SetValue: ["v", "i", [], []],
+        SetValue: ["v", "i", ["value"], ["result"]],
       },
       signals: {
-        ItemsChanged: ["a{sa{sv}}", "", [], []],
+        ItemsChanged: ["a{sa{sv}}", ["changes"]],
+        PropertiesChanged: ["a{sv}", ["changes"]],
       },
     };
 
@@ -119,22 +118,22 @@ export class VenusClient extends EventEmitter {
     const rootInterface = {
       GetItems: () => {
         return [
-          ["/Mgmt/Connection", [["Value", wrapValue("i", 1)], ["Text", ["s", "Connected"]]]],
-          ["/ProductName", [["Value", wrapValue("s", `SignalK ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)} Sensor`)], ["Text", ["s", "Product name"]]]],
-          ["/DeviceInstance", [["Value", wrapValue("u", deviceInstance)], ["Text", ["s", "Device instance"]]]],
-          ["/CustomName", [["Value", wrapValue("s", `SignalK ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)}`)], ["Text", ["s", "Custom name"]]]],
-          ["/Mgmt/ProcessName", [["Value", wrapValue("s", `signalk-${sensorType}-sensor`)], ["Text", ["s", "Process name"]]]],
-          ["/Mgmt/ProcessVersion", [["Value", wrapValue("s", "1.0.12")], ["Text", ["s", "Process version"]]]]
+          ["/Mgmt/Connection", [["Value", this.wrapValue("i", 1)], ["Text", ["s", "Connected"]]]],
+          ["/ProductName", [["Value", this.wrapValue("s", `SignalK ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)} Sensor`)], ["Text", ["s", "Product name"]]]],
+          ["/DeviceInstance", [["Value", this.wrapValue("u", deviceInstance)], ["Text", ["s", "Device instance"]]]],
+          ["/CustomName", [["Value", this.wrapValue("s", `SignalK ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)}`)], ["Text", ["s", "Custom name"]]]],
+          ["/Mgmt/ProcessName", [["Value", this.wrapValue("s", `signalk-${sensorType}-sensor`)], ["Text", ["s", "Process name"]]]],
+          ["/Mgmt/ProcessVersion", [["Value", this.wrapValue("s", "1.0.12")], ["Text", ["s", "Process version"]]]]
         ];
       },
       GetValue: () => {
         return [
-          ["Mgmt/Connection", wrapValue("i", 1)],
-          ["ProductName", wrapValue("s", `SignalK ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)} Sensor`)],
-          ["DeviceInstance", wrapValue("u", deviceInstance)],
-          ["CustomName", wrapValue("s", `SignalK ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)}`)],
-          ["Mgmt/ProcessName", wrapValue("s", `signalk-${sensorType}-sensor`)],
-          ["Mgmt/ProcessVersion", wrapValue("s", "1.0.12")]
+          ["Mgmt/Connection", this.wrapValue("i", 1)],
+          ["ProductName", this.wrapValue("s", `SignalK ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)} Sensor`)],
+          ["DeviceInstance", this.wrapValue("u", deviceInstance)],
+          ["CustomName", this.wrapValue("s", `SignalK ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)}`)],
+          ["Mgmt/ProcessName", this.wrapValue("s", `signalk-${sensorType}-sensor`)],
+          ["Mgmt/ProcessVersion", this.wrapValue("s", "1.0.12")]
         ];
       },
       emit: function(name, args) {
@@ -157,7 +156,7 @@ export class VenusClient extends EventEmitter {
     // Export individual property interfaces
     Object.entries(properties).forEach(([path, config]) => {
       const propertyInterface = {
-        GetValue: () => wrapValue(config.type, config.value),
+        GetValue: () => this.wrapValue(config.type, config.value),
         SetValue: (val) => 0, // Success
         GetText: () => config.text
       };
@@ -166,9 +165,12 @@ export class VenusClient extends EventEmitter {
         name: "com.victronenergy.BusItem",
         methods: {
           GetValue: ["", "v", [], ["value"]],
-          SetValue: ["v", "i", [], []],
+          SetValue: ["v", "i", ["value"], ["result"]],
           GetText: ["", "s", [], ["text"]],
         },
+        signals: {
+          PropertiesChanged: ["a{sv}", ["changes"]]
+        }
       });
     });
   }
@@ -179,9 +181,12 @@ export class VenusClient extends EventEmitter {
       name: "com.victronenergy.BusItem",
       methods: {
         GetValue: ["", "v", [], ["value"]],
-        SetValue: ["v", "i", [], []],
+        SetValue: ["v", "i", ["value"], ["result"]],
         GetText: ["", "s", [], ["text"]],
       },
+      signals: {
+        PropertiesChanged: ["a{sv}", ["changes"]]
+      }
     };
 
     // Store initial value
@@ -190,7 +195,7 @@ export class VenusClient extends EventEmitter {
     const propertyInterface = {
       GetValue: () => {
         const currentValue = this.envData[path] || (config.type === 's' ? '' : 0);
-        return wrapValue(config.type, currentValue);
+        return this.wrapValue(config.type, currentValue);
       },
       SetValue: (val) => {
         const actualValue = Array.isArray(val) ? val[1] : val;
