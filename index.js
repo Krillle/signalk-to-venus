@@ -545,7 +545,7 @@ export default function(app) {
   // Function to add a discovered path to tracking
   function addDiscoveredPath(deviceType, path, value, config) {
     try {
-      app.debug(`[addDiscoveredPath v1.0.11] Adding ${deviceType} path: ${path}`);
+      app.debug(`Adding ${deviceType} path: ${path}`);
       const pathMap = discoveredPaths[deviceType];
       if (!pathMap) return;
 
@@ -555,7 +555,7 @@ export default function(app) {
 
       if (!pathMap.has(devicePath)) {
         // Generate a human-readable display name
-        app.debug(`[addDiscoveredPath v1.0.11] Generating display name for ${devicePath}`);
+        app.debug(`Generating display name for ${devicePath}`);
         let displayName = generateDisplayName(deviceType, devicePath);
         
         pathMap.set(devicePath, {
