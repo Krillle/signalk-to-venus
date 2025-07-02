@@ -73,6 +73,15 @@ export class VenusClient extends EventEmitter {
   }
 
   _exportMgmt(bus, sensorType, deviceInstance) {
+    // Helper function to safely export interfaces
+    const safeExportInterface = (interfaceObj, path, interfaceName) => {
+      try {
+        bus.exportInterface(interfaceObj, path, interfaceName);
+      } catch (err) {
+        console.warn(`Failed to export ${interfaceName} at ${path}:`, err.message);
+      }
+    };
+
     // Export management properties using dbus-native
     const mgmtInterface = {
       GetValue: () => {
@@ -86,7 +95,7 @@ export class VenusClient extends EventEmitter {
       }
     };
 
-    bus.exportInterface(mgmtInterface, '/Connected', 'com.victronenergy.BusItem');
+    safeExportInterface(mgmtInterface, '/Connected', 'com.victronenergy.BusItem');
 
     // Product Name - Required for Venus OS recognition
     const productNameInterface = {
@@ -101,7 +110,7 @@ export class VenusClient extends EventEmitter {
       }
     };
 
-    bus.exportInterface(productNameInterface, '/ProductName', 'com.victronenergy.BusItem');
+    safeExportInterface(productNameInterface, '/ProductName', 'com.victronenergy.BusItem');
 
     // Device Instance - Required for unique identification
     const deviceInstanceInterface = {
@@ -116,7 +125,7 @@ export class VenusClient extends EventEmitter {
       }
     };
 
-    bus.exportInterface(deviceInstanceInterface, '/DeviceInstance', 'com.victronenergy.BusItem');
+    safeExportInterface(deviceInstanceInterface, '/DeviceInstance', 'com.victronenergy.BusItem');
 
     // Custom Name
     const customNameInterface = {
@@ -131,7 +140,7 @@ export class VenusClient extends EventEmitter {
       }
     };
 
-    bus.exportInterface(customNameInterface, '/CustomName', 'com.victronenergy.BusItem');
+    safeExportInterface(customNameInterface, '/CustomName', 'com.victronenergy.BusItem');
 
     const processNameInterface = {
       GetValue: () => {
@@ -145,7 +154,7 @@ export class VenusClient extends EventEmitter {
       }
     };
 
-    bus.exportInterface(processNameInterface, '/Mgmt/ProcessName', 'com.victronenergy.BusItem');
+    safeExportInterface(processNameInterface, '/Mgmt/ProcessName', 'com.victronenergy.BusItem');
 
     const connectionInterface = {
       GetValue: () => {
@@ -159,7 +168,7 @@ export class VenusClient extends EventEmitter {
       }
     };
 
-    bus.exportInterface(connectionInterface, '/Mgmt/Connection', 'com.victronenergy.BusItem');
+    safeExportInterface(connectionInterface, '/Mgmt/Connection', 'com.victronenergy.BusItem');
   }
 
   _exportProperty(bus, path, config) {
@@ -181,7 +190,12 @@ export class VenusClient extends EventEmitter {
       }
     };
 
-    bus.exportInterface(propertyInterface, path, 'com.victronenergy.BusItem');
+    try {
+      bus.exportInterface(propertyInterface, path, 'com.victronenergy.BusItem');
+    } catch (err) {
+      console.warn(`Failed to export D-Bus interface for ${path}:`, err.message);
+      // Don't throw - just log the warning and continue
+    }
   }
 
   _updateValue(path, value) {
@@ -218,11 +232,19 @@ export class VenusClient extends EventEmitter {
         bus = this.buses.temperature;
         
         // Temperature in Celsius (Signal K spec uses Kelvin, convert to Celsius for Venus OS)
-        let tempC = value;
-        if (value > 200) {
-          // Assume Kelvin, convert to Celsius
-          tempC = value - 273.15;
+        let tempC = parseFloat(value);
+        
+        // Validate that we have a valid number
+        if (isNaN(tempC) || !isFinite(tempC)) {
+          console.warn(`Invalid temperature value received: ${value} (type: ${typeof value})`);
+          return;
         }
+        
+        if (tempC > 200) {
+          // Assume Kelvin, convert to Celsius
+          tempC = tempC - 273.15;
+        }
+        
         this._exportProperty(bus, '/Temperature', { 
           value: tempC, 
           type: 'd', 
@@ -255,7 +277,22 @@ export class VenusClient extends EventEmitter {
         bus = this.buses.humidity;
         
         // Humidity as percentage (0-1 to 0-100)
-        const humidityPercent = value > 1 ? value : value * 100;
+        let humidityPercent = parseFloat(value);
+        
+        // Validate that we have a valid number
+        if (isNaN(humidityPercent) || !isFinite(humidityPercent)) {
+          console.warn(`Invalid humidity value received: ${value} (type: ${typeof value})`);
+          return;
+        }
+        
+        // Convert from ratio to percentage if needed
+        if (humidityPercent <= 1) {
+          humidityPercent = humidityPercent * 100;
+        }
+        
+        // Clamp to valid range
+        humidityPercent = Math.max(0, Math.min(100, humidityPercent));
+        
         this._exportProperty(bus, '/Temperature', { 
           value: humidityPercent, 
           type: 'd', 

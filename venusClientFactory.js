@@ -1,20 +1,6 @@
-import { VenusClient as BatteryClient } from './venusClient-battery.js';
-import { VenusClient as TankClient } from './venusClient-tank.js';
-import { VenusClient as EnvClient } from './venusClient-env.js';
-import { VenusClient as SwitchClient } from './venusClient-switch.js';
+import { ModernVenusClient } from './venusClient-modern.js';
 
 export function VenusClientFactory(settings, deviceType) {
-  // All clients now use dbus-native for consistent authentication
-  switch (deviceType) {
-    case 'batteries':
-      return new BatteryClient(settings, deviceType);
-    case 'tanks':
-      return new TankClient(settings, deviceType);
-    case 'environment':
-      return new EnvClient(settings, deviceType);
-    case 'switches':
-      return new SwitchClient(settings, deviceType);
-    default:
-      throw new Error(`Unsupported device type: ${deviceType}`);
-  }
+  // Use the modern implementation with dbus-victron-virtual
+  return new ModernVenusClient(settings, deviceType);
 }

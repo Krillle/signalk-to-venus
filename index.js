@@ -1,6 +1,5 @@
 import { VenusClientFactory } from './venusClientFactory.js';
 import settings from './settings.js';
-import dbus from 'dbus-next';
 import dbusNative from 'dbus-native';
 
 // Signal K plugin entry point
@@ -104,7 +103,7 @@ export default function(app) {
 
     start: function(options) {
       app.setPluginStatus('Starting Signal K to Venus OS bridge');
-      app.debug('Starting Signal K to Venus OS bridge - Version 1.0.12');
+      app.debug('Starting Signal K to Venus OS bridge - Version 2.0.0');
       const config = { ...settings, ...options };
       plugin.clients = {};
       plugin.venusConnected = false; // Track Venus connection status
@@ -351,7 +350,7 @@ export default function(app) {
                   }
                 
                 const deviceType = identifyDeviceType(pathValue.path);
-                app.debug(`[VERSION 1.0.12] Processing path: ${pathValue.path}, deviceType: ${deviceType}, config exists: ${!!config}`);
+                app.debug(`[VERSION 2.0.0] Processing path: ${pathValue.path}, deviceType: ${deviceType}, config exists: ${!!config}`);
                 if (deviceType) {
                   // Track this discovered path (always do discovery regardless of Venus OS connection)
                   addDiscoveredPath(deviceType, pathValue.path, pathValue.value, config);

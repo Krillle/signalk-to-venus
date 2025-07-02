@@ -1,7 +1,7 @@
 {
   "name": "signalk-to-venus",
-  "version": "1.0.12",
-  "description": "Injects battery, tank, temperature, humidity, and switch data from Signal K into the Victron Cerbo GX D-Bus via Venus OS.",
+  "version": "2.0.0",
+  "description": "Professional Signal K to Venus OS bridge using dbus-victron-virtual for robust D-Bus communication with Victron Energy systems.",
   "keywords": [
     "signalk-node-server-plugin",
     "signalk-category-output",
@@ -26,6 +26,6 @@
     "node": ">=16.0.0"
   },
   "dependencies": {
-    "dbus-native": "^0.4.0"
+    "dbus-victron-virtual": "^0.1.16"
   }
 }
