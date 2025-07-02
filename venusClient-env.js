@@ -1,6 +1,34 @@
 import dbusNative from 'dbus-native';
 import EventEmitter from 'events';
 
+// Value wrapping functions to match dbus-victron-virtual pattern
+function getType(value) {
+  return value === null
+    ? "d"
+    : typeof value === "undefined"
+      ? (() => { throw new Error("Value cannot be undefined"); })()
+      : typeof value === "string"
+        ? "s"
+        : typeof value === "number"
+          ? isNaN(value)
+            ? (() => { throw new Error("NaN is not a valid input"); })()
+            : Number.isInteger(value) ? "i" : "d"
+          : (() => { throw new Error("Unsupported type: " + typeof value); })();
+}
+
+function wrapValue(t, v) {
+  if (v === null) {
+    return ["ai", []]; // Null as empty integer array per Victron standard
+  }
+  switch (t) {
+    case "b": return ["b", v];
+    case "s": return ["s", v];
+    case "i": return ["i", v];
+    case "d": return ["d", v];
+    default: return t.type ? wrapValue(t.type, v) : v;
+  }
+}
+
 export class VenusClient extends EventEmitter {
   constructor(settings, deviceType) {
     super();
@@ -73,104 +101,76 @@ export class VenusClient extends EventEmitter {
   }
 
   _exportMgmt(bus, sensorType, deviceInstance) {
-    // Define the BusItem interface descriptor for dbus-native
+    // Define the BusItem interface descriptor matching dbus-victron-virtual
     const busItemInterface = {
       name: "com.victronenergy.BusItem",
       methods: {
+        GetItems: ["", "a{sa{sv}}", [], ["items"]],
         GetValue: ["", "v", [], ["value"]],
-        SetValue: ["v", "i", [], []],
         GetText: ["", "s", [], ["text"]],
+        SetValue: ["v", "i", [], []],
+      },
+      signals: {
+        ItemsChanged: ["a{sa{sv}}", "", [], []],
       },
     };
 
-    // Export management properties using dbus-native with proper interface descriptors
-    const mgmtInterface = {
+    // Root interface with GetItems and GetValue for all properties
+    const rootInterface = {
+      GetItems: () => {
+        return [
+          ["/Mgmt/Connection", [["Value", wrapValue("i", 1)], ["Text", ["s", "Connected"]]]],
+          ["/ProductName", [["Value", wrapValue("s", `SignalK ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)} Sensor`)], ["Text", ["s", "Product name"]]]],
+          ["/DeviceInstance", [["Value", wrapValue("u", deviceInstance)], ["Text", ["s", "Device instance"]]]],
+          ["/CustomName", [["Value", wrapValue("s", `SignalK ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)}`)], ["Text", ["s", "Custom name"]]]],
+          ["/Mgmt/ProcessName", [["Value", wrapValue("s", `signalk-${sensorType}-sensor`)], ["Text", ["s", "Process name"]]]],
+          ["/Mgmt/ProcessVersion", [["Value", wrapValue("s", "1.0.12")], ["Text", ["s", "Process version"]]]]
+        ];
+      },
       GetValue: () => {
-        return ['i', 1]; // Connected = 1 (integer, not double)
+        return [
+          ["Mgmt/Connection", wrapValue("i", 1)],
+          ["ProductName", wrapValue("s", `SignalK ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)} Sensor`)],
+          ["DeviceInstance", wrapValue("u", deviceInstance)],
+          ["CustomName", wrapValue("s", `SignalK ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)}`)],
+          ["Mgmt/ProcessName", wrapValue("s", `signalk-${sensorType}-sensor`)],
+          ["Mgmt/ProcessVersion", wrapValue("s", "1.0.12")]
+        ];
       },
-      SetValue: (val) => {
-        return 0; // Success
-      },
-      GetText: () => {
-        return 'Connected'; // Native string return as you discovered
+      emit: function(name, args) {
+        // ItemsChanged signal support
       }
     };
 
-    bus.exportInterface(mgmtInterface, '/Mgmt/Connection', busItemInterface);
+    bus.exportInterface(rootInterface, "/", busItemInterface);
 
-    // Product Name - Required for Venus OS recognition
-    const productNameInterface = {
-      GetValue: () => {
-        return ['s', `SignalK ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)} Sensor`];
-      },
-      SetValue: (val) => {
-        return 0;
-      },
-      GetText: () => {
-        return 'Product name';
-      }
+    // Individual property interfaces following dbus-victron-virtual pattern
+    const properties = {
+      "/Mgmt/Connection": { type: "i", value: 1, text: "Connected" },
+      "/ProductName": { type: "s", value: `SignalK ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)} Sensor`, text: "Product name" },
+      "/DeviceInstance": { type: "u", value: deviceInstance, text: "Device instance" },
+      "/CustomName": { type: "s", value: `SignalK ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)}`, text: "Custom name" },
+      "/Mgmt/ProcessName": { type: "s", value: `signalk-${sensorType}-sensor`, text: "Process name" },
+      "/Mgmt/ProcessVersion": { type: "s", value: "1.0.12", text: "Process version" }
     };
 
-    bus.exportInterface(productNameInterface, '/ProductName', busItemInterface);
+    // Export individual property interfaces
+    Object.entries(properties).forEach(([path, config]) => {
+      const propertyInterface = {
+        GetValue: () => wrapValue(config.type, config.value),
+        SetValue: (val) => 0, // Success
+        GetText: () => config.text
+      };
 
-    // Device Instance - Required for unique identification
-    const deviceInstanceInterface = {
-      GetValue: () => {
-        return ['u', deviceInstance]; // Unsigned integer for device instance
-      },
-      SetValue: (val) => {
-        return 0;
-      },
-      GetText: () => {
-        return 'Device instance';
-      }
-    };
-
-    bus.exportInterface(deviceInstanceInterface, '/DeviceInstance', busItemInterface);
-
-    // Custom Name
-    const customNameInterface = {
-      GetValue: () => {
-        return ['s', `SignalK ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)}`];
-      },
-      SetValue: (val) => {
-        return 0;
-      },
-      GetText: () => {
-        return 'Custom name';
-      }
-    };
-
-    bus.exportInterface(customNameInterface, '/CustomName', busItemInterface);
-
-    // Process Name and Version - Required for VRM registration
-    const processNameInterface = {
-      GetValue: () => {
-        return ['s', `signalk-${sensorType}-sensor`];
-      },
-      SetValue: (val) => {
-        return 0;
-      },
-      GetText: () => {
-        return 'Process name';
-      }
-    };
-
-    bus.exportInterface(processNameInterface, '/Mgmt/ProcessName', busItemInterface);
-
-    const processVersionInterface = {
-      GetValue: () => {
-        return ['s', '1.0.12'];
-      },
-      SetValue: (val) => {
-        return 0;
-      },
-      GetText: () => {
-        return 'Process version';
-      }
-    };
-
-    bus.exportInterface(processVersionInterface, '/Mgmt/ProcessVersion', busItemInterface);
+      bus.exportInterface(propertyInterface, path, {
+        name: "com.victronenergy.BusItem",
+        methods: {
+          GetValue: ["", "v", [], ["value"]],
+          SetValue: ["v", "i", [], []],
+          GetText: ["", "s", [], ["text"]],
+        },
+      });
+    });
   }
 
   _exportProperty(bus, path, config) {
@@ -189,7 +189,8 @@ export class VenusClient extends EventEmitter {
 
     const propertyInterface = {
       GetValue: () => {
-        return [config.type, this.envData[path] || (config.type === 's' ? '' : 0)];
+        const currentValue = this.envData[path] || (config.type === 's' ? '' : 0);
+        return wrapValue(config.type, currentValue);
       },
       SetValue: (val) => {
         const actualValue = Array.isArray(val) ? val[1] : val;
