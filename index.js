@@ -103,7 +103,7 @@ export default function(app) {
 
     start: function(options) {
       app.setPluginStatus('Starting Signal K to Venus OS bridge');
-      app.debug('Starting Signal K to Venus OS bridge - Version 1.0.12');
+      app.debug('Starting Signal K to Venus OS bridge');
       const config = { ...settings, ...options };
       plugin.clients = {};
       plugin.venusConnected = false; // Track Venus connection status
@@ -123,11 +123,7 @@ export default function(app) {
       async function testVenusConnectivity() {
         let testBus = null;
         
-        try {
-          app.debug('Running Venus OS connectivity test...');
-          app.debug(`Testing connection to ${config.venusHost}:78`);
-          app.debug('Creating dbus-native client with anonymous auth...');
-          
+        try {          
           // Create D-Bus connection with anonymous authentication for Venus OS using dbus-native
           try {
             testBus = dbusNative.createClient({
@@ -135,16 +131,13 @@ export default function(app) {
               port: 78,
               authMethods: ['ANONYMOUS'] // Try anonymous auth first for Venus OS
             });
-            app.debug('dbus-native client created successfully');
           } catch (createErr) {
-            app.debug('Failed to create dbus-native client:', createErr.message);
             throw createErr;
           }
           
           // Test the connection by trying to list names (simple D-Bus operation)
           await new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {
-              app.debug('Venus connectivity test timed out after 3 seconds');
               reject(new Error('Connection timeout'));
             }, 3000);
             
@@ -153,31 +146,24 @@ export default function(app) {
               testBus.listNames((err, names) => {
                 clearTimeout(timeout);
                 if (err) {
-                  app.debug('listNames failed:', err.message);
                   reject(err);
                 } else {
-                  app.debug('D-Bus connection successful, found', names.length, 'services');
                   resolve();
                 }
               });
             } catch (syncErr) {
               clearTimeout(timeout);
-              app.debug('listNames call failed synchronously:', syncErr.message);
               reject(syncErr);
             }
           });
           
           venusReachable = true;
           plugin.venusConnected = true;
-          app.debug('Venus connectivity test result: true (anonymous auth successful)');
-          app.setPluginStatus(`Venus OS reachable at ${config.venusHost} (anonymous auth)`);
+          app.setPluginStatus(`Venus OS reachable at ${config.venusHost}`);
           return true;
         } catch (err) {
           venusReachable = false;
           plugin.venusConnected = false;
-          app.debug('Venus connectivity test result: false');
-          app.debug('Connection error details:', err.code, err.message);
-          app.debug('Venus processing will be disabled');
           let errorMsg = `Venus OS not reachable at ${config.venusHost}`;
           
           if (err.code === 'ENOTFOUND') {
@@ -238,7 +224,6 @@ export default function(app) {
           plugin.unsubscribe = app.streambundle.getSelfBus().onValue(data => {
             // Validate the streambundle data before conversion
             if (!data || typeof data !== 'object' || !data.path) {
-              app.debug(`Invalid streambundle data:`, data);
               return;
             }
             
@@ -269,7 +254,6 @@ export default function(app) {
             
             processDelta(delta);
           });
-          app.debug('Successfully subscribed to streambundle - null values filtered at source');
         } catch (err) {
           app.error('getSelfBus method failed:', err);
         }
@@ -285,7 +269,6 @@ export default function(app) {
           plugin.unsubscribe = app.signalk.subscribe(subscription, delta => {
             processDelta(delta);
           });
-          app.debug('Successfully subscribed to signalk.subscribe');
         } catch (err) {
           app.error('signalk.subscribe method failed:', err);
         }
@@ -298,7 +281,6 @@ export default function(app) {
             }
             next(delta);
           });
-          app.debug('Successfully subscribed to registerDeltaInputHandler');
         } catch (err) {
           app.error('registerDeltaInputHandler method failed:', err);
         }
@@ -329,7 +311,6 @@ export default function(app) {
             delta.updates.forEach(update => {
               // Check if update and update.values are valid
               if (!update || !Array.isArray(update.values)) {
-                app.debug(`Skipping invalid update:`, update);
                 return;
               }
               
@@ -350,7 +331,6 @@ export default function(app) {
                   }
                 
                 const deviceType = identifyDeviceType(pathValue.path);
-                app.debug(`[VERSION 1.0.12] Processing path: ${pathValue.path}, deviceType: ${deviceType}, config exists: ${!!config}`);
                 if (deviceType) {
                   // Track this discovered path (always do discovery regardless of Venus OS connection)
                   addDiscoveredPath(deviceType, pathValue.path, pathValue.value, config);
@@ -362,7 +342,6 @@ export default function(app) {
                   }
                   
                   // Check if this specific path is enabled
-                  app.debug(`Checking if path ${pathValue.path} is enabled, config exists: ${!!config}`);
                   if (!isPathEnabled(deviceType, pathValue.path, config)) {
                     return; // Skip disabled paths
                   }
