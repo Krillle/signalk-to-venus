@@ -26,6 +26,7 @@
     "node": ">=16.0.0"
   },
   "dependencies": {
+    "dbus-native": "^0.7.3",
     "dbus-victron-virtual": "^0.1.16"
   }
 }
