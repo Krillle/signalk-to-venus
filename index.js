@@ -1,6 +1,5 @@
 import { VenusClientFactory } from './venusClientFactory.js';
 import settings from './settings.js';
-import dbus from 'dbus-next';
 import dbusNative from 'dbus-native';
 
 // Signal K plugin entry point
