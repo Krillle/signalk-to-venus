@@ -73,20 +73,30 @@ export class VenusClient extends EventEmitter {
   }
 
   _exportMgmt(bus, sensorType, deviceInstance) {
-    // Export management properties using dbus-native
+    // Define the BusItem interface descriptor for dbus-native
+    const busItemInterface = {
+      name: "com.victronenergy.BusItem",
+      methods: {
+        GetValue: ["", "v", [], ["value"]],
+        SetValue: ["v", "i", [], []],
+        GetText: ["", "s", [], ["text"]],
+      },
+    };
+
+    // Export management properties using dbus-native with proper interface descriptors
     const mgmtInterface = {
       GetValue: () => {
-        return ['d', 1]; // Connected = 1
+        return ['i', 1]; // Connected = 1 (integer, not double)
       },
       SetValue: (val) => {
-        return true;
+        return 0; // Success
       },
       GetText: () => {
-        return ['s', 'Connected'];
+        return 'Connected'; // Native string return as you discovered
       }
     };
 
-    bus.exportInterface(mgmtInterface, '/Connected', 'com.victronenergy.BusItem');
+    bus.exportInterface(mgmtInterface, '/Mgmt/Connection', busItemInterface);
 
     // Product Name - Required for Venus OS recognition
     const productNameInterface = {
@@ -94,29 +104,29 @@ export class VenusClient extends EventEmitter {
         return ['s', `SignalK ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)} Sensor`];
       },
       SetValue: (val) => {
-        return true;
+        return 0;
       },
       GetText: () => {
-        return ['s', 'Product name'];
+        return 'Product name';
       }
     };
 
-    bus.exportInterface(productNameInterface, '/ProductName', 'com.victronenergy.BusItem');
+    bus.exportInterface(productNameInterface, '/ProductName', busItemInterface);
 
     // Device Instance - Required for unique identification
     const deviceInstanceInterface = {
       GetValue: () => {
-        return ['i', deviceInstance];
+        return ['u', deviceInstance]; // Unsigned integer for device instance
       },
       SetValue: (val) => {
-        return true;
+        return 0;
       },
       GetText: () => {
-        return ['s', 'Device instance'];
+        return 'Device instance';
       }
     };
 
-    bus.exportInterface(deviceInstanceInterface, '/DeviceInstance', 'com.victronenergy.BusItem');
+    bus.exportInterface(deviceInstanceInterface, '/DeviceInstance', busItemInterface);
 
     // Custom Name
     const customNameInterface = {
@@ -124,45 +134,56 @@ export class VenusClient extends EventEmitter {
         return ['s', `SignalK ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)}`];
       },
       SetValue: (val) => {
-        return true;
+        return 0;
       },
       GetText: () => {
-        return ['s', 'Custom name'];
+        return 'Custom name';
       }
     };
 
-    bus.exportInterface(customNameInterface, '/CustomName', 'com.victronenergy.BusItem');
+    bus.exportInterface(customNameInterface, '/CustomName', busItemInterface);
 
+    // Process Name and Version - Required for VRM registration
     const processNameInterface = {
       GetValue: () => {
         return ['s', `signalk-${sensorType}-sensor`];
       },
       SetValue: (val) => {
-        return true;
+        return 0;
       },
       GetText: () => {
-        return ['s', 'Process name'];
+        return 'Process name';
       }
     };
 
-    bus.exportInterface(processNameInterface, '/Mgmt/ProcessName', 'com.victronenergy.BusItem');
+    bus.exportInterface(processNameInterface, '/Mgmt/ProcessName', busItemInterface);
 
-    const connectionInterface = {
+    const processVersionInterface = {
       GetValue: () => {
-        return ['s', `tcp://${this.settings.venusHost}`];
+        return ['s', '1.0.12'];
       },
       SetValue: (val) => {
-        return true;
+        return 0;
       },
       GetText: () => {
-        return ['s', 'Connection'];
+        return 'Process version';
       }
     };
 
-    bus.exportInterface(connectionInterface, '/Mgmt/Connection', 'com.victronenergy.BusItem');
+    bus.exportInterface(processVersionInterface, '/Mgmt/ProcessVersion', busItemInterface);
   }
 
   _exportProperty(bus, path, config) {
+    // Define the BusItem interface descriptor for dbus-native
+    const busItemInterface = {
+      name: "com.victronenergy.BusItem",
+      methods: {
+        GetValue: ["", "v", [], ["value"]],
+        SetValue: ["v", "i", [], []],
+        GetText: ["", "s", [], ["text"]],
+      },
+    };
+
     // Store initial value
     this.envData[path] = config.value;
 
@@ -174,14 +195,14 @@ export class VenusClient extends EventEmitter {
         const actualValue = Array.isArray(val) ? val[1] : val;
         this.envData[path] = actualValue;
         this.emit('valueChanged', path, actualValue);
-        return true;
+        return 0; // Success
       },
       GetText: () => {
-        return ['s', config.text];
+        return config.text; // Native string return
       }
     };
 
-    bus.exportInterface(propertyInterface, path, 'com.victronenergy.BusItem');
+    bus.exportInterface(propertyInterface, path, busItemInterface);
   }
 
   _updateValue(path, value) {

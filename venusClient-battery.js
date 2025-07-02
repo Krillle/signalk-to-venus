@@ -44,48 +44,104 @@ export class VenusClient extends EventEmitter {
   }
 
   _exportMgmt() {
-    // Export management properties using dbus-native
+    // Define the BusItem interface descriptor for dbus-native
+    const busItemInterface = {
+      name: "com.victronenergy.BusItem",
+      methods: {
+        GetValue: ["", "v", [], ["value"]],
+        SetValue: ["v", "i", [], []],
+        GetText: ["", "s", [], ["text"]],
+      },
+    };
+
+    // Export management properties using dbus-native with proper interface descriptors
     const mgmtInterface = {
       GetValue: () => {
-        return ['d', 1]; // Connected = 1
+        return ['i', 1]; // Connected = 1 (integer, not double)
       },
       SetValue: (val) => {
-        return true;
+        return 0; // Success
       },
       GetText: () => {
-        return ['s', 'Connected'];
+        return 'Connected'; // Native string return
       }
     };
 
-    this.bus.exportInterface(mgmtInterface, '/Connected', 'com.victronenergy.BusItem');
+    this.bus.exportInterface(mgmtInterface, '/Mgmt/Connection', busItemInterface);
 
+    // Product Name - Required for Venus OS recognition
+    const productNameInterface = {
+      GetValue: () => {
+        return ['s', 'SignalK Virtual Battery'];
+      },
+      SetValue: (val) => {
+        return 0;
+      },
+      GetText: () => {
+        return 'Product name';
+      }
+    };
+
+    this.bus.exportInterface(productNameInterface, '/ProductName', busItemInterface);
+
+    // Device Instance - Required for unique identification
+    const deviceInstanceInterface = {
+      GetValue: () => {
+        return ['u', 100]; // Unsigned integer for device instance
+      },
+      SetValue: (val) => {
+        return 0;
+      },
+      GetText: () => {
+        return 'Device instance';
+      }
+    };
+
+    this.bus.exportInterface(deviceInstanceInterface, '/DeviceInstance', busItemInterface);
+
+    // Custom Name
+    const customNameInterface = {
+      GetValue: () => {
+        return ['s', 'SignalK Battery'];
+      },
+      SetValue: (val) => {
+        return 0;
+      },
+      GetText: () => {
+        return 'Custom name';
+      }
+    };
+
+    this.bus.exportInterface(customNameInterface, '/CustomName', busItemInterface);
+
+    // Process Name and Version - Required for VRM registration
     const processNameInterface = {
       GetValue: () => {
-        return ['s', 'signalk-virtual-device'];
+        return ['s', 'signalk-battery-sensor'];
       },
       SetValue: (val) => {
-        return true;
+        return 0;
       },
       GetText: () => {
-        return ['s', 'Process name'];
+        return 'Process name';
       }
     };
 
-    this.bus.exportInterface(processNameInterface, '/Mgmt/ProcessName', 'com.victronenergy.BusItem');
+    this.bus.exportInterface(processNameInterface, '/Mgmt/ProcessName', busItemInterface);
 
-    const connectionInterface = {
+    const processVersionInterface = {
       GetValue: () => {
-        return ['s', `tcp://${this.settings.venusHost}`];
+        return ['s', '1.0.12'];
       },
       SetValue: (val) => {
-        return true;
+        return 0;
       },
       GetText: () => {
-        return ['s', 'Connection'];
+        return 'Process version';
       }
     };
 
-    this.bus.exportInterface(connectionInterface, '/Mgmt/Connection', 'com.victronenergy.BusItem');
+    this.bus.exportInterface(processVersionInterface, '/Mgmt/ProcessVersion', busItemInterface);
   }
 
   _exportBatteryInterface() {
@@ -107,6 +163,16 @@ export class VenusClient extends EventEmitter {
   }
 
   _exportProperty(path, config) {
+    // Define the BusItem interface descriptor for dbus-native
+    const busItemInterface = {
+      name: "com.victronenergy.BusItem",
+      methods: {
+        GetValue: ["", "v", [], ["value"]],
+        SetValue: ["v", "i", [], []],
+        GetText: ["", "s", [], ["text"]],
+      },
+    };
+
     // Store initial value
     this.batteryData[path] = config.value;
 
@@ -118,14 +184,14 @@ export class VenusClient extends EventEmitter {
         const actualValue = Array.isArray(val) ? val[1] : val;
         this.batteryData[path] = actualValue;
         this.emit('valueChanged', path, actualValue);
-        return true;
+        return 0; // Success
       },
       GetText: () => {
-        return ['s', config.text];
+        return config.text; // Native string return
       }
     };
 
-    this.bus.exportInterface(propertyInterface, path, 'com.victronenergy.BusItem');
+    this.bus.exportInterface(propertyInterface, path, busItemInterface);
   }
 
   _updateValue(path, value) {
