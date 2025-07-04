@@ -1,11 +1,11 @@
 import { describe, it, beforeEach, afterEach, expect, vi } from 'vitest';
 import { VenusClientFactory } from '../venusClientFactory.js';
 
-// Mock the client classes
-const mockBatteryClient = vi.fn();
-const mockTankClient = vi.fn();
-const mockEnvClient = vi.fn();
-const mockSwitchClient = vi.fn();
+// Mock the client classes as constructors
+const mockBatteryClient = vi.fn().mockImplementation(() => ({}));
+const mockTankClient = vi.fn().mockImplementation(() => ({}));
+const mockEnvClient = vi.fn().mockImplementation(() => ({}));
+const mockSwitchClient = vi.fn().mockImplementation(() => ({}));
 
 vi.mock('../venusClient-battery.js', () => ({
   VenusClient: mockBatteryClient

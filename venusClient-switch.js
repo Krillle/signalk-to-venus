@@ -321,6 +321,12 @@ export class VenusClient extends EventEmitter {
         return;
       }
       
+      // Check if this is a valid switch path before proceeding
+      if (!path.includes('state') && !path.includes('dimmingLevel')) {
+        // Silently ignore unknown switch paths
+        return;
+      }
+      
       if (!this.bus) {
         // Only try to initialize once every 30 seconds to avoid spam
         const now = Date.now();
@@ -360,11 +366,6 @@ export class VenusClient extends EventEmitter {
           });
           this.emit('dataUpdated', 'Switch Dimming', `${switchName}: ${dimmingPercent.toFixed(1)}%`);
         }
-      }
-      else {
-        // Silently ignore unknown switch paths
-        // Silently ignore unknown switch paths
-        return;
       }
       
     } catch (err) {
