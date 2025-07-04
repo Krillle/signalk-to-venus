@@ -5,7 +5,7 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     coverage: {
-      provider: 'c8',
+      provider: 'v8',
       reporter: ['text', 'json', 'html'],
       exclude: [
         'node_modules/',
@@ -13,6 +13,6 @@ export default defineConfig({
         '**/*.test.js'
       ]
     },
-    setupFiles: ['./test/setup.js']
+    setupFiles: ['./setup.js']
   }
 });
