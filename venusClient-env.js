@@ -124,34 +124,36 @@ export class VenusClient extends EventEmitter {
     // Root interface with GetItems and GetValue for all properties
     const rootInterface = {
       GetItems: () => {
-        const items = {};
+        // Return all management properties in the correct vedbus.py format
+        // Format: a{sa{sv}} - array of dictionary entries with string keys and variant values
+        const items = [];
         
         // Add management properties
-        items["/Mgmt/Connection"] = {
+        items.push(["/Mgmt/Connection", {
           Value: this.wrapValue("i", 1),
           Text: this.wrapValue("s", "Connected")
-        };
-        items["/ProductName"] = {
+        }]);
+        items.push(["/ProductName", {
           Value: this.wrapValue("s", `SignalK ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)} Sensor`),
           Text: this.wrapValue("s", "Product name")
-        };
-        items["/DeviceInstance"] = {
+        }]);
+        items.push(["/DeviceInstance", {
           Value: this.wrapValue("u", deviceInstance),
           Text: this.wrapValue("s", "Device instance")
-        };
-        items["/CustomName"] = {
+        }]);
+        items.push(["/CustomName", {
           Value: this.wrapValue("s", `SignalK ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)}`),
           Text: this.wrapValue("s", "Custom name")
-        };
-        items["/Mgmt/ProcessName"] = {
+        }]);
+        items.push(["/Mgmt/ProcessName", {
           Value: this.wrapValue("s", `signalk-${sensorType}-sensor`),
           Text: this.wrapValue("s", "Process name")
-        };
-        items["/Mgmt/ProcessVersion"] = {
+        }]);
+        items.push(["/Mgmt/ProcessVersion", {
           Value: this.wrapValue("s", "1.0.12"),
           Text: this.wrapValue("s", "Process version")
-        };
-
+        }]);
+        
         // Add environment data properties
         Object.entries(this.envData).forEach(([path, value]) => {
           const envPaths = {
@@ -160,10 +162,10 @@ export class VenusClient extends EventEmitter {
           };
           
           const text = envPaths[path] || 'Environment property';
-          items[path] = {
+          items.push([path, {
             Value: this.wrapValue('d', value),
             Text: this.wrapValue('s', text)
-          };
+          }]);
         });
 
         return items;

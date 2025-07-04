@@ -338,15 +338,16 @@ export class VenusClient extends EventEmitter {
 
     const rootInterfaceImpl = {
       GetItems: () => {
-        // Return all management properties and battery data
-        const items = {};
+        // Return all management properties and battery data in the correct vedbus.py format
+        // Format: a{sa{sv}} - array of dictionary entries with string keys and variant values
+        const items = [];
         
         // Add management properties
         Object.entries(this.managementProperties).forEach(([path, info]) => {
-          items[path] = {
+          items.push([path, {
             Value: this.wrapValue(this.getType(info.value), info.value),
             Text: this.wrapValue('s', info.text)
-          };
+          }]);
         });
 
         // Add battery data properties
@@ -362,10 +363,10 @@ export class VenusClient extends EventEmitter {
           };
           
           const text = batteryPaths[path] || 'Battery property';
-          items[path] = {
+          items.push([path, {
             Value: this.wrapValue('d', value),
             Text: this.wrapValue('s', text)
-          };
+          }]);
         });
 
         return items;
