@@ -13,7 +13,10 @@ export class VenusClient extends EventEmitter {
     this.switchInstances = new Map(); // Track switch instances by Signal K base path
     this.exportedProperties = new Set(); // Track which D-Bus properties have been exported
     this.exportedInterfaces = new Set(); // Track which D-Bus interfaces have been exported
+    this.settingsBus = null; // Separate bus for settings
     this.VBUS_SERVICE = `com.victronenergy.virtual.${deviceType}`;
+    this.SETTINGS_SERVICE = 'com.victronenergy.settings';
+    this.SETTINGS_ROOT = '/Settings/Devices';
     this.managementProperties = {};
   }
 
@@ -40,7 +43,14 @@ export class VenusClient extends EventEmitter {
         authMethods: ['ANONYMOUS']
       });
       
-      // Request service name
+      // Create separate settings bus connection
+      this.settingsBus = dbusNative.createClient({
+        host: this.settings.venusHost,
+        port: 78,
+        authMethods: ['ANONYMOUS']
+      });
+      
+      // Request service name for main bus
       await new Promise((resolve, reject) => {
         this.bus.requestName(this.VBUS_SERVICE, 0, (err, result) => {
           if (err) reject(err);
@@ -201,18 +211,24 @@ export class VenusClient extends EventEmitter {
     this.bus.exportInterface(rootImpl, '/', rootInterface);
   }
 
-  _getOrCreateSwitchInstance(path) {
+  async _getOrCreateSwitchInstance(path) {
     // Extract the base switch path (e.g., electrical.switches.nav from electrical.switches.nav.state)
     const basePath = path.replace(/\.(state|dimmingLevel)$/, '');
     
     if (!this.switchInstances.has(basePath)) {
       // Create a deterministic index based on the path hash to ensure consistency
       const index = this._generateStableIndex(basePath);
-      this.switchInstances.set(basePath, {
+      const switchInstance = {
         index: index,
         name: this._getSwitchName(path),
         basePath: basePath
-      });
+      };
+      
+      // Register switch in Venus OS settings and get VRM instance ID
+      const vrmInstanceId = await this._registerSwitchInSettings(switchInstance);
+      switchInstance.vrmInstanceId = vrmInstanceId;
+      
+      this.switchInstances.set(basePath, switchInstance);
     }
     
     return this.switchInstances.get(basePath);
@@ -317,9 +333,9 @@ export class VenusClient extends EventEmitter {
         }
       }
       
-      const switchInstance = this._getOrCreateSwitchInstance(path);
+      const switchInstance = await this._getOrCreateSwitchInstance(path);
       const switchName = switchInstance.name;
-      const index = switchInstance.index;
+      const index = switchInstance.vrmInstanceId || switchInstance.index;
       
       if (path.includes('state')) {
         // Switch state (0 = off, 1 = on)
@@ -364,10 +380,91 @@ export class VenusClient extends EventEmitter {
         // Ignore disconnect errors
       }
       this.bus = null;
-      this.switchData = {};
-      this.switchInstances.clear();
-      this.exportedProperties.clear();
-      this.exportedInterfaces.clear();
+    }
+    
+    if (this.settingsBus) {
+      try {
+        this.settingsBus.end();
+      } catch (err) {
+        // Ignore disconnect errors
+      }
+      this.settingsBus = null;
+    }
+    
+    this.switchData = {};
+    this.switchInstances.clear();
+    this.exportedProperties.clear();
+    this.exportedInterfaces.clear();
+  }
+
+  async _registerSwitchInSettings(switchInstance) {
+    if (!this.settingsBus) {
+      return switchInstance.index; // Fallback to hash-based index
+    }
+
+    try {
+      // Create a unique service name for this switch
+      const serviceName = `signalk_switch_${switchInstance.basePath.replace(/[^a-zA-Z0-9]/g, '_')}`;
+      const settingsPath = `${this.SETTINGS_ROOT}/${serviceName}`;
+      
+      // Proposed class and VRM instance (switch type and instance)
+      const proposedInstance = `switch:${switchInstance.index}`;
+      
+      // Define the BusItem interface descriptor for settings
+      const busItemInterface = {
+        name: "com.victronenergy.BusItem",
+        methods: {
+          GetValue: ["", "v", [], ["value"]],
+          SetValue: ["v", "i", ["value"], ["result"]],
+          GetText: ["", "s", [], ["text"]],
+        },
+        signals: {
+          PropertiesChanged: ["a{sv}", ["changes"]]
+        }
+      };
+
+      // ClassAndVrmInstance setting
+      const classInstancePath = `${settingsPath}/ClassAndVrmInstance`;
+      const classInstanceInterface = {
+        GetValue: () => {
+          return this.wrapValue('s', proposedInstance);
+        },
+        SetValue: (val) => {
+          // Allow VRM to change our instance
+          const actualValue = Array.isArray(val) ? val[1] : val;
+          return 0; // Success
+        },
+        GetText: () => {
+          return 'Class and VRM instance';
+        }
+      };
+
+      // CustomName setting
+      const customNamePath = `${settingsPath}/CustomName`;
+      const customNameInterface = {
+        GetValue: () => {
+          return this.wrapValue('s', switchInstance.name);
+        },
+        SetValue: (val) => {
+          const actualValue = Array.isArray(val) ? val[1] : val;
+          return 0; // Success
+        },
+        GetText: () => {
+          return 'Custom name';
+        }
+      };
+
+      // Export the settings interfaces
+      this.settingsBus.exportInterface(classInstanceInterface, classInstancePath, busItemInterface);
+      this.settingsBus.exportInterface(customNameInterface, customNamePath, busItemInterface);
+
+      // Extract instance ID from the proposed instance string
+      const instanceMatch = proposedInstance.match(/:(\d+)$/);
+      return instanceMatch ? parseInt(instanceMatch[1]) : switchInstance.index;
+
+    } catch (err) {
+      // Fallback to hash-based index if settings registration fails
+      return switchInstance.index;
     }
   }
 }
