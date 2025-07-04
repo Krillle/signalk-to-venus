@@ -373,9 +373,7 @@ export class VenusClient extends EventEmitter {
   }
 
   async _registerEnvironmentSensorInSettings(sensorType, deviceInstance) {
-    // Environment sensors don't have separate settings bus, so we'll use the main bus
-    const bus = this.buses[sensorType];
-    if (!bus) {
+    if (!this.buses[sensorType]) {
       return deviceInstance; // Fallback to default instance
     }
 
@@ -383,8 +381,8 @@ export class VenusClient extends EventEmitter {
       // Create a unique service name for this sensor
       const serviceName = `signalk_${sensorType}_${deviceInstance}`;
       
-      // Proposed class and VRM instance (sensor type and instance)
-      const proposedInstance = `${sensorType}:${deviceInstance}`;
+      // Proposed class and VRM instance (environment type and instance)
+      const proposedInstance = `environment:${deviceInstance}`;
 
       // Create settings array following Victron's Settings API format
       // For dbus-native with signature 'aa{sv}' - array of array of dict entries
@@ -403,12 +401,12 @@ export class VenusClient extends EventEmitter {
         ]
       ];
 
-      // Call the Venus OS Settings API to register the device using the main bus
+      // Call the Venus OS Settings API to register the device using the sensor bus
       const settingsResult = await new Promise((resolve, reject) => {
         console.log('Invoking Settings API with:', JSON.stringify(settingsArray, null, 2));
         
         // Use the correct dbus-native invoke format
-        bus.invoke({
+        this.buses[sensorType].invoke({
           destination: 'com.victronenergy.settings',
           path: '/',
           'interface': 'com.victronenergy.Settings',
@@ -444,7 +442,7 @@ export class VenusClient extends EventEmitter {
                 valueEntry[1] && valueEntry[1][1] && valueEntry[1][1][0]) {
               
               actualProposedInstance = valueEntry[1][1][0]; // Extract the actual assigned value
-              const instanceMatch = actualProposedInstance.match(/:(\d+)/);
+              const instanceMatch = actualProposedInstance.match(/environment:(\d+)/);
               if (instanceMatch) {
                 actualInstance = parseInt(instanceMatch[1]);
                 console.log(`${sensorType} sensor assigned actual instance: ${actualInstance} (${actualProposedInstance})`);
@@ -456,49 +454,6 @@ export class VenusClient extends EventEmitter {
           }
         }
       }
-
-      // Also export the D-Bus interfaces for direct access
-      const busItemInterface = {
-        name: "com.victronenergy.BusItem",
-        methods: {
-          GetValue: ["", "v", [], ["value"]],
-          SetValue: ["v", "i", ["value"], ["result"]],
-          GetText: ["", "s", [], ["text"]],
-        },
-        signals: {
-          PropertiesChanged: ["a{sv}", ["changes"]]
-        }
-      };
-
-      // Export ClassAndVrmInstance interface using the main bus
-      const classInterface = {
-        GetValue: () => {
-          return this.wrapValue('s', actualProposedInstance);
-        },
-        SetValue: (val) => {
-          return 0; // Success
-        },
-        GetText: () => {
-          return 'Class and VRM instance';
-        }
-      };
-
-      bus.exportInterface(classInterface, `/Settings/Devices/${serviceName}/ClassAndVrmInstance`, busItemInterface);
-
-      // Export CustomName interface using the main bus
-      const nameInterface = {
-        GetValue: () => {
-          return this.wrapValue('s', `SignalK ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)}`);
-        },
-        SetValue: (val) => {
-          return 0; // Success
-        },
-        GetText: () => {
-          return 'Custom name';
-        }
-      };
-
-      bus.exportInterface(nameInterface, `/Settings/Devices/${serviceName}/CustomName`, busItemInterface);
 
       console.log(`${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)} sensor registered in Venus OS Settings: ${serviceName} -> ${actualProposedInstance}`);
       return actualInstance;

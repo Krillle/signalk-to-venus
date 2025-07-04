@@ -9,14 +9,8 @@ export class VenusClient extends EventEmitter {
     this.bus = null;
     this.tankData = {};
     this.lastInitAttempt = 0;
-    this.tankIndex = 0; // For unique tank indexing
-    this.tankCounts = {}; // Track how many tanks of each type we have
     this.tankInstances = new Map(); // Track tank instances by Signal K base path
-    this.exportedProperties = new Set(); // Track which D-Bus properties have been exported
     this.exportedInterfaces = new Set(); // Track which D-Bus interfaces have been exported
-    this.VBUS_SERVICE = `com.victronenergy.virtual.${deviceType}`;
-    this.SETTINGS_SERVICE = 'com.victronenergy.settings';
-    this.SETTINGS_ROOT = '/Settings/Devices';
     this.managementProperties = {};
   }
 
@@ -36,23 +30,28 @@ export class VenusClient extends EventEmitter {
 
   async init() {
     try {
-      // Create D-Bus connection using dbus-native with anonymous authentication
+      // Create single D-Bus connection using dbus-native with anonymous authentication
       this.bus = dbusNative.createClient({
         host: this.settings.venusHost,
         port: 78,
         authMethods: ['ANONYMOUS']
       });
       
-      // Request service name for main bus
+      // Request the main service name for tanks
+      const serviceName = `com.victronenergy.tank.signalk`;
       await new Promise((resolve, reject) => {
-        this.bus.requestName(this.VBUS_SERVICE, 0, (err, result) => {
+        this.bus.requestName(serviceName, 0, (err, result) => {
           if (err) reject(err);
           else resolve(result);
         });
       });
-
+      
+      // Export management interfaces
       this._exportMgmt();
-      this._exportRootInterface(); // Export root interface for VRM compatibility
+      this._exportRootInterface();
+      
+      // Register the main tank service in Venus OS Settings
+      await this._registerMainServiceInSettings();
       
     } catch (err) {
       // Convert errors to more user-friendly messages
@@ -111,10 +110,10 @@ export class VenusClient extends EventEmitter {
     this.bus.exportInterface(productNameInterface, '/ProductName', busItemInterface);
     this.managementProperties['/ProductName'] = { value: 'SignalK Virtual Tank', text: 'Product name' };
 
-    // Device Instance - Required for unique identification
+    // Device Instance - will be updated after Settings registration
     const deviceInstanceInterface = {
       GetValue: () => {
-        return this.wrapValue('u', this.managementProperties['/DeviceInstance'].value);
+        return this.wrapValue('u', this.managementProperties['/DeviceInstance']?.value || 100);
       },
       SetValue: (val) => {
         return 0;
@@ -125,7 +124,7 @@ export class VenusClient extends EventEmitter {
     };
 
     this.bus.exportInterface(deviceInstanceInterface, '/DeviceInstance', busItemInterface);
-    this.managementProperties['/DeviceInstance'] = { value: 101, text: 'Device instance' };
+    this.managementProperties['/DeviceInstance'] = { value: 100, text: 'Device instance' };
 
     // Custom Name
     const customNameInterface = {
@@ -143,10 +142,10 @@ export class VenusClient extends EventEmitter {
     this.bus.exportInterface(customNameInterface, '/CustomName', busItemInterface);
     this.managementProperties['/CustomName'] = { value: 'SignalK Tank', text: 'Custom name' };
 
-    // Process Name and Version - Required for VRM registration
+    // Process Name
     const processNameInterface = {
       GetValue: () => {
-        return this.wrapValue('s', 'signalk-tank-sensor');
+        return this.wrapValue('s', 'signalk-tank');
       },
       SetValue: (val) => {
         return 0;
@@ -157,7 +156,7 @@ export class VenusClient extends EventEmitter {
     };
 
     this.bus.exportInterface(processNameInterface, '/Mgmt/ProcessName', busItemInterface);
-    this.managementProperties['/Mgmt/ProcessName'] = { value: 'signalk-tank-sensor', text: 'Process name' };
+    this.managementProperties['/Mgmt/ProcessName'] = { value: 'signalk-tank', text: 'Process name' };
 
     const processVersionInterface = {
       GetValue: () => {
@@ -576,7 +575,7 @@ export class VenusClient extends EventEmitter {
       });
 
       // Extract the actual assigned instance ID from the Settings API result
-      let actualInstance = tankInstance || 100;
+      let actualInstance = tankInstance.index;
       let actualProposedInstance = proposedInstance;
       
       if (settingsResult && settingsResult.length > 0) {
@@ -597,8 +596,9 @@ export class VenusClient extends EventEmitter {
                 actualInstance = parseInt(instanceMatch[1]);
                 console.log(`Tank assigned actual instance: ${actualInstance} (${actualProposedInstance})`);
                 
-                // Update the DeviceInstance to match the assigned instance
-                this.managementProperties['/DeviceInstance'] = { value: actualInstance, text: 'Device instance' };
+                // Update the tank instance to match the assigned instance
+                tankInstance.actualInstance = actualInstance;
+                tankInstance.vrmInstanceId = actualInstance;
               }
             }
           }
@@ -660,6 +660,92 @@ export class VenusClient extends EventEmitter {
       console.error(`Settings registration failed for tank ${tankInstance.basePath}:`, err);
       // Fallback to hash-based index if settings registration fails
       return tankInstance.index;
+    }
+  }
+
+  async _registerMainServiceInSettings() {
+    if (!this.bus) {
+      return;
+    }
+
+    try {
+      // Create a unique service name for the main tank service
+      const serviceName = `signalk_tank_service`;
+      
+      // Proposed class and VRM instance for the main tank service
+      const proposedInstance = `tank:100`;
+      
+      // Create settings array following Victron's Settings API format
+      const settingsArray = [
+        [
+          ['path', ['s', `/Settings/Devices/${serviceName}/ClassAndVrmInstance`]],
+          ['default', ['s', proposedInstance]],
+          ['type', ['s', 's']],
+          ['description', ['s', 'Class and VRM instance']]
+        ],
+        [
+          ['path', ['s', `/Settings/Devices/${serviceName}/CustomName`]],
+          ['default', ['s', 'SignalK Tank Service']],
+          ['type', ['s', 's']],
+          ['description', ['s', 'Custom name']]
+        ]
+      ];
+
+      // Call the Venus OS Settings API to register the main service
+      const settingsResult = await new Promise((resolve, reject) => {
+        console.log('Registering main tank service in Settings API:', JSON.stringify(settingsArray, null, 2));
+        
+        this.bus.invoke({
+          destination: 'com.victronenergy.settings',
+          path: '/',
+          'interface': 'com.victronenergy.Settings',
+          member: 'AddSettings',
+          signature: 'aa{sv}',
+          body: [settingsArray]
+        }, (err, result) => {
+          if (err) {
+            console.log('Main service Settings API error:', err);
+            reject(new Error(`Main service Settings registration failed: ${err.message || err}`));
+          } else {
+            console.log('Main service Settings API result:', result);
+            resolve(result);
+          }
+        });
+      });
+
+      // Extract the actual assigned instance ID from the Settings API result
+      let actualInstance = 100;
+      
+      if (settingsResult && settingsResult.length > 0) {
+        // Parse the Settings API response format
+        for (const result of settingsResult) {
+          if (result && Array.isArray(result)) {
+            // Look for the ClassAndVrmInstance result
+            const pathEntry = result.find(entry => entry && entry[0] === 'path');
+            const valueEntry = result.find(entry => entry && entry[0] === 'value');
+            
+            if (pathEntry && valueEntry && 
+                pathEntry[1] && pathEntry[1][1] && pathEntry[1][1][0] && pathEntry[1][1][0].includes('ClassAndVrmInstance') &&
+                valueEntry[1] && valueEntry[1][1] && valueEntry[1][1][0]) {
+              
+              const actualProposedInstance = valueEntry[1][1][0]; // Extract the actual assigned value
+              const instanceMatch = actualProposedInstance.match(/tank:(\d+)/);
+              if (instanceMatch) {
+                actualInstance = parseInt(instanceMatch[1]);
+                console.log(`Main tank service assigned actual instance: ${actualInstance} (${actualProposedInstance})`);
+                
+                // Update the main service DeviceInstance to match the assigned instance
+                this.managementProperties['/DeviceInstance'].value = actualInstance;
+              }
+            }
+          }
+        }
+      }
+
+      console.log(`Main tank service registered in Venus OS Settings: ${serviceName} -> tank:${actualInstance}`);
+      
+    } catch (err) {
+      console.error('Failed to register main tank service in settings:', err.message);
     }
   }
 
