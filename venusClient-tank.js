@@ -502,38 +502,44 @@ export class VenusClient extends EventEmitter {
       const proposedInstance = `tank:${tankInstance.index}`;
       
       // Create settings array following Victron's Settings API format
+      // Each setting should be a dictionary with path, default, type, description
       const settingsArray = [
         {
-          'path': [`Settings/Devices/${serviceName}/ClassAndVrmInstance`],
-          'default': [proposedInstance],
-          'type': ['s'], // string type
-          'description': ['Class and VRM instance']
+          'path': `Settings/Devices/${serviceName}/ClassAndVrmInstance`,
+          'default': proposedInstance,
+          'type': 's', // string type
+          'description': 'Class and VRM instance'
         },
         {
-          'path': [`Settings/Devices/${serviceName}/CustomName`],
-          'default': [tankInstance.name],
-          'type': ['s'], // string type  
-          'description': ['Custom name']
+          'path': `Settings/Devices/${serviceName}/CustomName`,
+          'default': tankInstance.name,
+          'type': 's', // string type  
+          'description': 'Custom name'
         }
       ];
 
       // Call the Venus OS Settings API to register the device using the same bus
       await new Promise((resolve, reject) => {
-        this.bus.invoke(
-          'com.victronenergy.settings',
-          '/',
-          'com.victronenergy.Settings',
-          'AddSettings',
-          'aa{sv}',
-          [settingsArray],
-          (err, result) => {
-            if (err) {
-              reject(new Error(`Settings registration failed: ${err.message || err}`));
-            } else {
-              resolve(result);
-            }
+        console.log('Invoking Settings API with:', JSON.stringify(settingsArray, null, 2));
+        
+        // Use the correct dbus-native invoke format
+        this.bus.invoke({
+          destination: 'com.victronenergy.settings',
+          path: '/',
+          'interface': 'com.victronenergy.Settings',
+          member: 'AddSettings',
+          signature: 'aa{sv}',
+          body: [settingsArray]
+        }, (err, result) => {
+          if (err) {
+            console.log('Settings API error:', err);
+            console.dir(err);
+            reject(new Error(`Settings registration failed: ${err.message || err}`));
+          } else {
+            console.log('Settings API result:', result);
+            resolve(result);
           }
-        );
+        });
       });
 
       // Also export the D-Bus interfaces for direct access using the same bus
