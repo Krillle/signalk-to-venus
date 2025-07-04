@@ -34,39 +34,43 @@ describe('VenusClientFactory', () => {
   });
 
   it('should create battery client for batteries device type', () => {
-    VenusClientFactory(mockSettings, 'batteries');
+    const result = VenusClientFactory(mockSettings, 'batteries');
     
     expect(mockBatteryClient).toHaveBeenCalledWith(mockSettings, 'batteries');
     expect(mockTankClient).not.toHaveBeenCalled();
     expect(mockEnvClient).not.toHaveBeenCalled();
     expect(mockSwitchClient).not.toHaveBeenCalled();
+    expect(result).toBeDefined();
   });
 
   it('should create tank client for tanks device type', () => {
-    VenusClientFactory(mockSettings, 'tanks');
+    const result = VenusClientFactory(mockSettings, 'tanks');
     
     expect(mockTankClient).toHaveBeenCalledWith(mockSettings, 'tanks');
     expect(mockBatteryClient).not.toHaveBeenCalled();
     expect(mockEnvClient).not.toHaveBeenCalled();
     expect(mockSwitchClient).not.toHaveBeenCalled();
+    expect(result).toBeDefined();
   });
 
   it('should create environment client for environment device type', () => {
-    VenusClientFactory(mockSettings, 'environment');
+    const result = VenusClientFactory(mockSettings, 'environment');
     
     expect(mockEnvClient).toHaveBeenCalledWith(mockSettings, 'environment');
     expect(mockBatteryClient).not.toHaveBeenCalled();
     expect(mockTankClient).not.toHaveBeenCalled();
     expect(mockSwitchClient).not.toHaveBeenCalled();
+    expect(result).toBeDefined();
   });
 
   it('should create switch client for switches device type', () => {
-    VenusClientFactory(mockSettings, 'switches');
+    const result = VenusClientFactory(mockSettings, 'switches');
     
     expect(mockSwitchClient).toHaveBeenCalledWith(mockSettings, 'switches');
     expect(mockBatteryClient).not.toHaveBeenCalled();
     expect(mockTankClient).not.toHaveBeenCalled();
     expect(mockEnvClient).not.toHaveBeenCalled();
+    expect(result).toBeDefined();
   });
 
   it('should throw error for unsupported device type', () => {
@@ -80,8 +84,9 @@ describe('VenusClientFactory', () => {
     const mocks = [mockBatteryClient, mockTankClient, mockEnvClient, mockSwitchClient];
     
     deviceTypes.forEach((deviceType, index) => {
-      VenusClientFactory(mockSettings, deviceType);
+      const result = VenusClientFactory(mockSettings, deviceType);
       expect(mocks[index]).toHaveBeenCalledWith(mockSettings, deviceType);
+      expect(result).toBeDefined();
     });
   });
 });

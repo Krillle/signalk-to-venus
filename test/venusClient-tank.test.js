@@ -39,6 +39,13 @@ describe('VenusClient - Tank', () => {
     });
     mockBus.exportInterface.mockImplementation(() => {});
     mockBus.end.mockImplementation(() => {});
+    
+    // Mock init to prevent real network connections
+    vi.spyOn(client, 'init').mockResolvedValue();
+    
+    // Set up mock buses
+    client.bus = mockBus;
+    client.settingsBus = mockBus;
   });
 
   afterEach(async () => {
@@ -182,7 +189,7 @@ describe('VenusClient - Tank', () => {
       );
       
       // All should return the same instance
-      expect(instances[0]).toStrictEqual(instances[1]);
+      expect(instances[0]).toBe(instances[1]);
       expect(instances[1]).toStrictEqual(instances[2]);
       expect(instances[0].basePath).toBe('tanks.fuel.starboard');
     });
@@ -319,6 +326,19 @@ describe('VenusClient - Tank', () => {
   });
 
   describe('Initialization', () => {
+    beforeEach(() => {
+      // Restore the real init method for initialization tests
+      vi.restoreAllMocks();
+      
+      // Re-setup basic mocks but leave init unmocked
+      mockDbusNative.createClient.mockReturnValue(mockBus);
+      mockBus.requestName.mockImplementation((service, flags, callback) => {
+        setTimeout(() => callback(null, 1), 0);
+      });
+      mockBus.exportInterface.mockImplementation(() => {});
+      mockBus.end.mockImplementation(() => {});
+    });
+    
     it('should create D-Bus connections', async () => {
       await client.init();
       

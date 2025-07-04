@@ -38,6 +38,13 @@ describe('VenusClient - Switch', () => {
     });
     mockBus.exportInterface.mockImplementation(() => {});
     mockBus.end.mockImplementation(() => {});
+    
+    // Mock init to prevent real network connections
+    vi.spyOn(client, 'init').mockResolvedValue();
+    
+    // Set up mock buses
+    client.bus = mockBus;
+    client.settingsBus = mockBus;
   });
 
   describe('Switch Instance Management', () => {
