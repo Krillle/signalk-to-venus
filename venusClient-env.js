@@ -387,19 +387,19 @@ export class VenusClient extends EventEmitter {
       const proposedInstance = `${sensorType}:${deviceInstance}`;
 
       // Create settings array following Victron's Settings API format
-      // Each setting should be a dictionary with path, default, type, description
+      // Each setting should be a dictionary with proper D-Bus variant types
       const settingsArray = [
         {
-          'path': `Settings/Devices/${serviceName}/ClassAndVrmInstance`,
-          'default': proposedInstance,
-          'type': 's', // string type
-          'description': 'Class and VRM instance'
+          'path': ['s', `Settings/Devices/${serviceName}/ClassAndVrmInstance`],
+          'default': ['s', proposedInstance],
+          'type': ['s', 's'], // string type
+          'description': ['s', 'Class and VRM instance']
         },
         {
-          'path': `Settings/Devices/${serviceName}/CustomName`,
-          'default': `SignalK ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)}`,
-          'type': 's', // string type  
-          'description': 'Custom name'
+          'path': ['s', `Settings/Devices/${serviceName}/CustomName`],
+          'default': ['s', `SignalK ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)}`],
+          'type': ['s', 's'], // string type  
+          'description': ['s', 'Custom name']
         }
       ];
 

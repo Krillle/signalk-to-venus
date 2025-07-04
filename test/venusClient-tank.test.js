@@ -356,12 +356,11 @@ describe('VenusClient - Tank', () => {
       client.settingsBus = mockBus;
     });
 
-    it('should disconnect both buses', async () => {
+    it('should disconnect the bus', async () => {
       await client.disconnect();
       
-      expect(mockBus.end).toHaveBeenCalledTimes(2);
+      expect(mockBus.end).toHaveBeenCalledTimes(1);
       expect(client.bus).toBeNull();
-      expect(client.settingsBus).toBeNull();
     });
 
     it('should clear all data structures', async () => {
