@@ -9,8 +9,9 @@ export class VenusClient extends EventEmitter {
     this.bus = null;
     this.tankData = {};
     this.lastInitAttempt = 0;
-    this.tankCounts = {}; // Track how many tanks of each type we have
     this.tankIndex = 0; // For unique tank indexing
+    this.tankCounts = {}; // Track how many tanks of each type we have
+    this.tankInstances = new Map(); // Track tank instances by Signal K base path
     this.VBUS_SERVICE = `com.victronenergy.virtual.${deviceType}`;
     this.managementProperties = {};
   }
@@ -199,6 +200,21 @@ export class VenusClient extends EventEmitter {
     this.bus.exportInterface(rootImpl, '/', rootInterface);
   }
 
+  _getOrCreateTankInstance(path) {
+    // Extract the base tank path (e.g., tanks.fuel.starboard from tanks.fuel.starboard.currentLevel)
+    const basePath = path.replace(/\.(currentLevel|capacity|name)$/, '');
+    
+    if (!this.tankInstances.has(basePath)) {
+      this.tankInstances.set(basePath, {
+        index: this.tankIndex++,
+        name: this._getTankName(path),
+        basePath: basePath
+      });
+    }
+    
+    return this.tankInstances.get(basePath);
+  }
+
   _exportProperty(path, config) {
     // Define the BusItem interface descriptor for dbus-native
     const busItemInterface = {
@@ -301,8 +317,9 @@ export class VenusClient extends EventEmitter {
         }
       }
       
-      const tankName = this._getTankName(path);
-      const index = this.tankIndex++;
+      const tankInstance = this._getOrCreateTankInstance(path);
+      const tankName = tankInstance.name;
+      const index = tankInstance.index;
       
       if (path.includes('currentLevel')) {
         // Validate and convert level (0-1 to 0-100 percentage)
@@ -361,6 +378,7 @@ export class VenusClient extends EventEmitter {
       }
       this.bus = null;
       this.tankData = {};
+      this.tankInstances.clear();
     }
   }
 }

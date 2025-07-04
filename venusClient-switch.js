@@ -10,6 +10,7 @@ export class VenusClient extends EventEmitter {
     this.switchData = {};
     this.lastInitAttempt = 0;
     this.switchIndex = 0; // For unique switch indexing
+    this.switchInstances = new Map(); // Track switch instances by Signal K base path
     this.VBUS_SERVICE = `com.victronenergy.virtual.${deviceType}`;
     this.managementProperties = {};
   }
@@ -198,6 +199,21 @@ export class VenusClient extends EventEmitter {
     this.bus.exportInterface(rootImpl, '/', rootInterface);
   }
 
+  _getOrCreateSwitchInstance(path) {
+    // Extract the base switch path (e.g., electrical.switches.nav from electrical.switches.nav.state)
+    const basePath = path.replace(/\.(state|dimmingLevel)$/, '');
+    
+    if (!this.switchInstances.has(basePath)) {
+      this.switchInstances.set(basePath, {
+        index: this.switchIndex++,
+        name: this._getSwitchName(path),
+        basePath: basePath
+      });
+    }
+    
+    return this.switchInstances.get(basePath);
+  }
+
   _exportProperty(path, config) {
     // Define the BusItem interface descriptor for dbus-native
     const busItemInterface = {
@@ -271,8 +287,9 @@ export class VenusClient extends EventEmitter {
         }
       }
       
-      const switchName = this._getSwitchName(path);
-      const index = this.switchIndex++;
+      const switchInstance = this._getOrCreateSwitchInstance(path);
+      const switchName = switchInstance.name;
+      const index = switchInstance.index;
       
       if (path.includes('state')) {
         // Switch state (0 = off, 1 = on)
@@ -318,6 +335,7 @@ export class VenusClient extends EventEmitter {
       }
       this.bus = null;
       this.switchData = {};
+      this.switchInstances.clear();
     }
   }
 }
