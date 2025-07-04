@@ -14,7 +14,10 @@ export class VenusClient extends EventEmitter {
     this.tankInstances = new Map(); // Track tank instances by Signal K base path
     this.exportedProperties = new Set(); // Track which D-Bus properties have been exported
     this.exportedInterfaces = new Set(); // Track which D-Bus interfaces have been exported
+    this.settingsBus = null; // Separate bus for settings
     this.VBUS_SERVICE = `com.victronenergy.virtual.${deviceType}`;
+    this.SETTINGS_SERVICE = 'com.victronenergy.settings';
+    this.SETTINGS_ROOT = '/Settings/Devices';
     this.managementProperties = {};
   }
 
@@ -41,7 +44,14 @@ export class VenusClient extends EventEmitter {
         authMethods: ['ANONYMOUS']
       });
       
-      // Request service name
+      // Create separate settings bus connection
+      this.settingsBus = dbusNative.createClient({
+        host: this.settings.venusHost,
+        port: 78,
+        authMethods: ['ANONYMOUS']
+      });
+      
+      // Request service name for main bus
       await new Promise((resolve, reject) => {
         this.bus.requestName(this.VBUS_SERVICE, 0, (err, result) => {
           if (err) reject(err);
@@ -112,7 +122,7 @@ export class VenusClient extends EventEmitter {
     // Device Instance - Required for unique identification
     const deviceInstanceInterface = {
       GetValue: () => {
-        return this.wrapValue('u', 101); // Unsigned integer for device instance
+        return this.wrapValue('u', 101); // Base device instance for tank service
       },
       SetValue: (val) => {
         return 0;
@@ -202,18 +212,24 @@ export class VenusClient extends EventEmitter {
     this.bus.exportInterface(rootImpl, '/', rootInterface);
   }
 
-  _getOrCreateTankInstance(path) {
+  async _getOrCreateTankInstance(path) {
     // Extract the base tank path (e.g., tanks.fuel.starboard from tanks.fuel.starboard.currentLevel)
     const basePath = path.replace(/\.(currentLevel|capacity|name)$/, '');
     
     if (!this.tankInstances.has(basePath)) {
       // Create a deterministic index based on the path hash to ensure consistency
       const index = this._generateStableIndex(basePath);
-      this.tankInstances.set(basePath, {
+      const tankInstance = {
         index: index,
         name: this._getTankName(path),
         basePath: basePath
-      });
+      };
+      
+      // Register tank in Venus OS settings and get VRM instance ID
+      const vrmInstanceId = await this._registerTankInSettings(tankInstance);
+      tankInstance.vrmInstanceId = vrmInstanceId;
+      
+      this.tankInstances.set(basePath, tankInstance);
     }
     
     return this.tankInstances.get(basePath);
@@ -347,9 +363,9 @@ export class VenusClient extends EventEmitter {
         }
       }
       
-      const tankInstance = this._getOrCreateTankInstance(path);
+      const tankInstance = await this._getOrCreateTankInstance(path);
       const tankName = tankInstance.name;
-      const index = tankInstance.index;
+      const index = tankInstance.vrmInstanceId || tankInstance.index;
       
       if (path.includes('currentLevel')) {
         // Validate and convert level (0-1 to 0-100 percentage)
@@ -399,6 +415,77 @@ export class VenusClient extends EventEmitter {
     }
   }
 
+  async _registerTankInSettings(tankInstance) {
+    if (!this.settingsBus) {
+      return tankInstance.index; // Fallback to hash-based index
+    }
+
+    try {
+      // Create a unique service name for this tank
+      const serviceName = `signalk_tank_${tankInstance.basePath.replace(/[^a-zA-Z0-9]/g, '_')}`;
+      const settingsPath = `${this.SETTINGS_ROOT}/${serviceName}`;
+      
+      // Proposed class and VRM instance (tank type and instance)
+      const proposedInstance = `tank:${tankInstance.index}`;
+      
+      // Define the BusItem interface descriptor for settings
+      const busItemInterface = {
+        name: "com.victronenergy.BusItem",
+        methods: {
+          GetValue: ["", "v", [], ["value"]],
+          SetValue: ["v", "i", ["value"], ["result"]],
+          GetText: ["", "s", [], ["text"]],
+        },
+        signals: {
+          PropertiesChanged: ["a{sv}", ["changes"]]
+        }
+      };
+
+      // ClassAndVrmInstance setting
+      const classInstancePath = `${settingsPath}/ClassAndVrmInstance`;
+      const classInstanceInterface = {
+        GetValue: () => {
+          return this.wrapValue('s', proposedInstance);
+        },
+        SetValue: (val) => {
+          // Allow VRM to change our instance
+          const actualValue = Array.isArray(val) ? val[1] : val;
+          return 0; // Success
+        },
+        GetText: () => {
+          return 'Class and VRM instance';
+        }
+      };
+
+      // CustomName setting
+      const customNamePath = `${settingsPath}/CustomName`;
+      const customNameInterface = {
+        GetValue: () => {
+          return this.wrapValue('s', tankInstance.name);
+        },
+        SetValue: (val) => {
+          const actualValue = Array.isArray(val) ? val[1] : val;
+          return 0; // Success
+        },
+        GetText: () => {
+          return 'Custom name';
+        }
+      };
+
+      // Export the settings interfaces
+      this.settingsBus.exportInterface(classInstanceInterface, classInstancePath, busItemInterface);
+      this.settingsBus.exportInterface(customNameInterface, customNamePath, busItemInterface);
+
+      // Extract instance ID from the proposed instance string
+      const instanceMatch = proposedInstance.match(/:(\d+)$/);
+      return instanceMatch ? parseInt(instanceMatch[1]) : tankInstance.index;
+
+    } catch (err) {
+      // Fallback to hash-based index if settings registration fails
+      return tankInstance.index;
+    }
+  }
+
   async disconnect() {
     if (this.bus) {
       try {
@@ -407,10 +494,20 @@ export class VenusClient extends EventEmitter {
         // Ignore disconnect errors
       }
       this.bus = null;
-      this.tankData = {};
-      this.tankInstances.clear();
-      this.exportedProperties.clear();
-      this.exportedInterfaces.clear();
     }
+    
+    if (this.settingsBus) {
+      try {
+        this.settingsBus.end();
+      } catch (err) {
+        // Ignore disconnect errors
+      }
+      this.settingsBus = null;
+    }
+    
+    this.tankData = {};
+    this.tankInstances.clear();
+    this.exportedProperties.clear();
+    this.exportedInterfaces.clear();
   }
 }
