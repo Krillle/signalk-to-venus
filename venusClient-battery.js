@@ -326,9 +326,9 @@ export class VenusClient extends EventEmitter {
       name: "com.victronenergy.BusItem",
       methods: {
         GetItems: ["", "a{sa{sv}}", [], ["items"]],
-        GetValue: ["s", "v", ["path"], ["value"]],
-        SetValue: ["sv", "i", ["path", "value"], ["result"]],
-        GetText: ["s", "s", ["path"], ["text"]],
+        GetValue: ["", "v", [], ["value"]],
+        SetValue: ["v", "i", ["value"], ["result"]],
+        GetText: ["", "s", [], ["text"]],
       },
       signals: {
         ItemsChanged: ["a{sa{sv}}", ["changes"]],
@@ -372,50 +372,18 @@ export class VenusClient extends EventEmitter {
         return items;
       },
       
-      GetValue: (path) => {
-        // Handle root path specially
-        if (!path || path === '/') {
-          return this.wrapValue('s', 'SignalK Virtual Battery Service');
-        }
-        
-        if (this.managementProperties[path]) {
-          return this.wrapValue(this.getType(this.managementProperties[path].value), this.managementProperties[path].value);
-        }
-        if (this.batteryData[path] !== undefined) {
-          return this.wrapValue('d', this.batteryData[path]);
-        }
-        throw new Error(`Path ${path} not found`);
+      GetValue: () => {
+        // Root object value
+        return this.wrapValue('s', 'SignalK Virtual Battery Service');
       },
       
-      SetValue: (path, value) => {
-        if (this.batteryData[path] !== undefined) {
-          const actualValue = Array.isArray(value) ? value[1] : value;
-          this.batteryData[path] = actualValue;
-          this.emit('valueChanged', path, actualValue);
-          return 0;
-        }
+      SetValue: (value) => {
+        // Root object doesn't support setting values
         return -1; // Error
       },
       
-      GetText: (path) => {
-        // Handle root path specially
-        if (!path || path === '/') {
-          return 'SignalK Virtual Battery Service';
-        }
-        
-        if (this.managementProperties[path]) {
-          return this.managementProperties[path].text;
-        }
-        const batteryPaths = {
-          '/Dc/0/Voltage': 'Voltage',
-          '/Dc/0/Current': 'Current',
-          '/Soc': 'State of charge',
-          '/ConsumedAmphours': 'Consumed Amphours',
-          '/TimeToGo': 'Time to go',
-          '/Dc/0/Temperature': 'Temperature',
-          '/Relay/0/State': 'Relay state'
-        };
-        return batteryPaths[path] || 'Battery property';
+      GetText: () => {
+        return 'SignalK Virtual Battery Service';
       }
     };
 

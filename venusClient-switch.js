@@ -188,9 +188,9 @@ export class VenusClient extends EventEmitter {
       name: "com.victronenergy.BusItem",
       methods: {
         GetItems: ["", "a{sa{sv}}", [], ["items"]],
-        GetValue: ["s", "v", ["path"], ["value"]],
-        SetValue: ["sv", "i", ["path", "value"], ["result"]],
-        GetText: ["s", "s", ["path"], ["text"]],
+        GetValue: ["", "v", [], ["value"]],
+        SetValue: ["v", "i", ["value"], ["result"]],
+        GetText: ["", "s", [], ["text"]],
       },
       signals: {
         ItemsChanged: ["a{sa{sv}}", ["changes"]],
@@ -231,55 +231,18 @@ export class VenusClient extends EventEmitter {
         return items;
       },
       
-      GetValue: (path) => {
-        // Handle root path specially
-        if (!path || path === '/') {
-          return this.wrapValue('s', 'SignalK Virtual Switch Service');
-        }
-        
-        // Check management properties first
-        if (this.managementProperties[path]) {
-          return this.wrapValue(this.getType(this.managementProperties[path].value), this.managementProperties[path].value);
-        }
-        
-        // Check switch data
-        if (this.switchData[path] !== undefined) {
-          return this.wrapValue('d', this.switchData[path]);
-        }
-        
-        throw new Error(`Path ${path} not found`);
+      GetValue: () => {
+        // Root object value
+        return this.wrapValue('s', 'SignalK Virtual Switch Service');
       },
       
-      SetValue: (path, value) => {
-        if (this.switchData[path] !== undefined) {
-          const actualValue = Array.isArray(value) ? value[1] : value;
-          this.switchData[path] = actualValue;
-          this.emit('valueChanged', path, actualValue);
-          return 0;
-        }
+      SetValue: (value) => {
+        // Root object doesn't support setting values
         return -1; // Error
       },
       
-      GetText: (path) => {
-        // Handle root path specially
-        if (!path || path === '/') {
-          return 'SignalK Virtual Switch Service';
-        }
-        
-        // Check management properties first
-        if (this.managementProperties[path]) {
-          return this.managementProperties[path].text;
-        }
-        
-        // Switch-specific paths
-        const switchPaths = {
-          '/Switches/0/State': 'Switch state',
-          '/Switches/0/DimLevel': 'Dimming level',
-          '/Switches/1/State': 'Switch state',
-          '/Switches/1/DimLevel': 'Dimming level'
-        };
-        
-        return switchPaths[path] || 'Switch property';
+      GetText: () => {
+        return 'SignalK Virtual Switch Service';
       }
     };
 

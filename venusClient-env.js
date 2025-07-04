@@ -111,9 +111,9 @@ export class VenusClient extends EventEmitter {
       name: "com.victronenergy.BusItem",
       methods: {
         GetItems: ["", "a{sa{sv}}", [], ["items"]],
-        GetValue: ["s", "v", ["path"], ["value"]],
-        SetValue: ["sv", "i", ["path", "value"], ["result"]],
-        GetText: ["s", "s", ["path"], ["text"]],
+        GetValue: ["", "v", [], ["value"]],
+        SetValue: ["v", "i", ["value"], ["result"]],
+        GetText: ["", "s", [], ["text"]],
       },
       signals: {
         ItemsChanged: ["a{sa{sv}}", ["changes"]],
@@ -171,73 +171,18 @@ export class VenusClient extends EventEmitter {
         return items;
       },
       
-      GetValue: (path) => {
-        // Handle root path specially
-        if (!path || path === '/') {
-          return this.wrapValue('s', `SignalK Virtual ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)} Service`);
-        }
-        
-        // Check specific management properties
-        if (path === "/Mgmt/Connection") {
-          return this.wrapValue("i", 1);
-        } else if (path === "/ProductName") {
-          return this.wrapValue("s", `SignalK ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)} Sensor`);
-        } else if (path === "/DeviceInstance") {
-          return this.wrapValue("u", deviceInstance);
-        } else if (path === "/CustomName") {
-          return this.wrapValue("s", `SignalK ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)}`);
-        } else if (path === "/Mgmt/ProcessName") {
-          return this.wrapValue("s", `signalk-${sensorType}-sensor`);
-        } else if (path === "/Mgmt/ProcessVersion") {
-          return this.wrapValue("s", "1.0.12");
-        }
-        
-        // Check environment data
-        if (this.envData[path] !== undefined) {
-          return this.wrapValue('d', this.envData[path]);
-        }
-        
-        throw new Error(`Path ${path} not found`);
+      GetValue: () => {
+        // Root object value
+        return this.wrapValue('s', `SignalK Virtual ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)} Service`);
       },
       
-      SetValue: (path, value) => {
-        if (this.envData[path] !== undefined) {
-          const actualValue = Array.isArray(value) ? value[1] : value;
-          this.envData[path] = actualValue;
-          this.emit('valueChanged', path, actualValue);
-          return 0;
-        }
+      SetValue: (value) => {
+        // Root object doesn't support setting values
         return -1; // Error
       },
       
-      GetText: (path) => {
-        // Handle root path specially
-        if (!path || path === '/') {
-          return `SignalK Virtual ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)} Service`;
-        }
-        
-        // Check specific management properties
-        if (path === "/Mgmt/Connection") {
-          return "Connected";
-        } else if (path === "/ProductName") {
-          return "Product name";
-        } else if (path === "/DeviceInstance") {
-          return "Device instance";
-        } else if (path === "/CustomName") {
-          return "Custom name";
-        } else if (path === "/Mgmt/ProcessName") {
-          return "Process name";
-        } else if (path === "/Mgmt/ProcessVersion") {
-          return "Process version";
-        }
-        
-        // Environment-specific paths
-        const envPaths = {
-          '/Temperature': 'Temperature',
-          '/Status': 'Status'
-        };
-        
-        return envPaths[path] || 'Environment property';
+      GetText: () => {
+        return `SignalK Virtual ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)} Service`;
       }
     };
 
