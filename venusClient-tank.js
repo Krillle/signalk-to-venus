@@ -9,8 +9,14 @@ export class VenusClient extends EventEmitter {
     this.bus = null;
     this.tankData = {};
     this.lastInitAttempt = 0;
+    this.tankIndex = 0; // For unique tank indexing
+    this.tankCounts = {}; // Track how many tanks of each type we have
     this.tankInstances = new Map(); // Track tank instances by Signal K base path
+    this.exportedProperties = new Set(); // Track which D-Bus properties have been exported
     this.exportedInterfaces = new Set(); // Track which D-Bus interfaces have been exported
+    this.VBUS_SERVICE = `com.victronenergy.virtual.${deviceType}`;
+    this.SETTINGS_SERVICE = 'com.victronenergy.settings';
+    this.SETTINGS_ROOT = '/Settings/Devices';
     this.managementProperties = {};
   }
 
@@ -763,5 +769,6 @@ export class VenusClient extends EventEmitter {
     this.tankInstances.clear();
     this.exportedProperties.clear();
     this.exportedInterfaces.clear();
+    this.managementProperties = {};
   }
 }
