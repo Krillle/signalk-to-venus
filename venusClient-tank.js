@@ -273,10 +273,14 @@ export class VenusClient extends EventEmitter {
           const tankPaths = {
             'Tank/0/Level': 'Tank level',
             'Tank/0/Capacity': 'Tank capacity',
+            'Tank/0/Volume': 'Tank volume',
+            'Tank/0/Voltage': 'Tank voltage',
             'Tank/0/FluidType': 'Fluid type',
             'Tank/0/Status': 'Tank status',
             'Tank/1/Level': 'Tank level',
             'Tank/1/Capacity': 'Tank capacity',
+            'Tank/1/Volume': 'Tank volume',
+            'Tank/1/Voltage': 'Tank voltage',
             'Tank/1/FluidType': 'Fluid type',
             'Tank/1/Status': 'Tank status'
           };
