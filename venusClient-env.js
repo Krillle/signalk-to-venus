@@ -1,8 +1,20 @@
 import dbusNative from 'dbus-native';
 import EventEmitter from 'events';
 
-export class VenusClient extends EventEmitter {
-  constructor(settings, deviceType) {
+export class VenusClient extends E    // Define the BusItem interface descriptor matching dbus-victron-virtual
+    const busItemInterface = {
+      name: "com.victronenergy.BusItem",
+      methods: {
+        GetItems: ["", "a{sa{sv}}", [], ["items"]],
+        GetValue: ["", "v", [], ["value"]],
+        SetValue: ["sv", "i", ["path", "value"], ["result"]],
+        GetText: ["", "v", [], ["text"]],
+      },
+      signals: {
+        ItemsChanged: ["a{sa{sv}}", ["changes"]],
+        PropertiesChanged: ["a{sv}", ["changes"]],
+      },
+    };  constructor(settings, deviceType) {
     super();
     this.settings = settings;
     this.deviceType = deviceType;

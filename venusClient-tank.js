@@ -190,8 +190,8 @@ export class VenusClient extends EventEmitter {
       methods: {
         GetItems: ["", "a{sa{sv}}", [], ["items"]],
         GetValue: ["", "v", [], ["value"]],
-        SetValue: ["v", "i", ["value"], ["result"]],
-        GetText: ["", "s", [], ["text"]],
+        SetValue: ["sv", "i", ["path", "value"], ["result"]],
+        GetText: ["", "v", [], ["text"]],
       },
       signals: {
         ItemsChanged: ["a{sa{sv}}", ["changes"]],
@@ -237,8 +237,23 @@ export class VenusClient extends EventEmitter {
       },
       
       GetValue: () => {
-        // Root object value
-        return this.wrapValue('s', 'SignalK Virtual Tank Service');
+        // Return dictionary of relative paths and their values (vedbus.py line ~460)
+        // This is for the root object, not individual path lookup
+        const values = {};
+        
+        // Add management properties (as relative paths from root)
+        Object.entries(this.managementProperties).forEach(([path, info]) => {
+          const relativePath = path.startsWith('/') ? path.substring(1) : path;
+          values[relativePath] = this.wrapValue(this.getType(info.value), info.value);
+        });
+
+        // Add tank data properties (as relative paths from root)
+        Object.entries(this.tankData).forEach(([path, value]) => {
+          const relativePath = path.startsWith('/') ? path.substring(1) : path;
+          values[relativePath] = this.wrapValue('d', value);
+        });
+
+        return values;
       },
       
       SetValue: (value) => {
@@ -247,7 +262,32 @@ export class VenusClient extends EventEmitter {
       },
       
       GetText: () => {
-        return 'SignalK Virtual Tank Service';
+        // Return dictionary of relative paths and their text representations (vedbus.py)
+        const texts = {};
+        
+        // Add management properties (as relative paths from root)
+        Object.entries(this.managementProperties).forEach(([path, info]) => {
+          const relativePath = path.startsWith('/') ? path.substring(1) : path;
+          texts[relativePath] = info.text;
+        });
+
+        // Add tank data properties (as relative paths from root)
+        Object.entries(this.tankData).forEach(([path, value]) => {
+          const relativePath = path.startsWith('/') ? path.substring(1) : path;
+          const tankPaths = {
+            'Tank/0/Level': 'Tank level',
+            'Tank/0/Capacity': 'Tank capacity',
+            'Tank/0/FluidType': 'Fluid type',
+            'Tank/0/Status': 'Tank status',
+            'Tank/1/Level': 'Tank level',
+            'Tank/1/Capacity': 'Tank capacity',
+            'Tank/1/FluidType': 'Fluid type',
+            'Tank/1/Status': 'Tank status'
+          };
+          texts[relativePath] = tankPaths[relativePath] || 'Tank property';
+        });
+
+        return texts;
       }
     };
 

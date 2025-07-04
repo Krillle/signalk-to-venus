@@ -327,8 +327,8 @@ export class VenusClient extends EventEmitter {
       methods: {
         GetItems: ["", "a{sa{sv}}", [], ["items"]],
         GetValue: ["", "v", [], ["value"]],
-        SetValue: ["v", "i", ["value"], ["result"]],
-        GetText: ["", "s", [], ["text"]],
+        SetValue: ["sv", "i", ["path", "value"], ["result"]],
+        GetText: ["", "v", [], ["text"]],
       },
       signals: {
         ItemsChanged: ["a{sa{sv}}", ["changes"]],
@@ -373,8 +373,23 @@ export class VenusClient extends EventEmitter {
       },
       
       GetValue: () => {
-        // Root object value
-        return this.wrapValue('s', 'SignalK Virtual Battery Service');
+        // Return dictionary of relative paths and their values (vedbus.py line ~460)
+        // This is for the root object, not individual path lookup
+        const values = {};
+        
+        // Add management properties (as relative paths from root)
+        Object.entries(this.managementProperties).forEach(([path, info]) => {
+          const relativePath = path.startsWith('/') ? path.substring(1) : path;
+          values[relativePath] = this.wrapValue(this.getType(info.value), info.value);
+        });
+
+        // Add battery data properties (as relative paths from root)
+        Object.entries(this.batteryData).forEach(([path, value]) => {
+          const relativePath = path.startsWith('/') ? path.substring(1) : path;
+          values[relativePath] = this.wrapValue('d', value);
+        });
+
+        return values;
       },
       
       SetValue: (value) => {
@@ -383,7 +398,31 @@ export class VenusClient extends EventEmitter {
       },
       
       GetText: () => {
-        return 'SignalK Virtual Battery Service';
+        // Return dictionary of relative paths and their text representations (vedbus.py)
+        const texts = {};
+        
+        // Add management properties (as relative paths from root)
+        Object.entries(this.managementProperties).forEach(([path, info]) => {
+          const relativePath = path.startsWith('/') ? path.substring(1) : path;
+          texts[relativePath] = info.text;
+        });
+
+        // Add battery data properties (as relative paths from root)
+        Object.entries(this.batteryData).forEach(([path, value]) => {
+          const relativePath = path.startsWith('/') ? path.substring(1) : path;
+          const batteryPaths = {
+            'Dc/0/Voltage': 'Voltage',
+            'Dc/0/Current': 'Current',
+            'Soc': 'State of charge',
+            'ConsumedAmphours': 'Consumed Amphours',
+            'TimeToGo': 'Time to go',
+            'Dc/0/Temperature': 'Temperature',
+            'Relay/0/State': 'Relay state'
+          };
+          texts[relativePath] = batteryPaths[relativePath] || 'Battery property';
+        });
+
+        return texts;
       }
     };
 

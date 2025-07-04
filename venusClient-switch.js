@@ -189,8 +189,8 @@ export class VenusClient extends EventEmitter {
       methods: {
         GetItems: ["", "a{sa{sv}}", [], ["items"]],
         GetValue: ["", "v", [], ["value"]],
-        SetValue: ["v", "i", ["value"], ["result"]],
-        GetText: ["", "s", [], ["text"]],
+        SetValue: ["sv", "i", ["path", "value"], ["result"]],
+        GetText: ["", "v", [], ["text"]],
       },
       signals: {
         ItemsChanged: ["a{sa{sv}}", ["changes"]],
@@ -215,10 +215,10 @@ export class VenusClient extends EventEmitter {
         // Add switch data properties
         Object.entries(this.switchData).forEach(([path, value]) => {
           const switchPaths = {
-            '/Switches/0/State': 'Switch state',
-            '/Switches/0/DimLevel': 'Dimming level',
-            '/Switches/1/State': 'Switch state',
-            '/Switches/1/DimLevel': 'Dimming level'
+            '/Switch/0/State': 'Switch state',
+            '/Switch/0/DimLevel': 'Dimming level',
+            '/Switch/1/State': 'Switch state',
+            '/Switch/1/DimLevel': 'Dimming level'
           };
           
           const text = switchPaths[path] || 'Switch property';
@@ -232,17 +232,58 @@ export class VenusClient extends EventEmitter {
       },
       
       GetValue: () => {
-        // Root object value
-        return this.wrapValue('s', 'SignalK Virtual Switch Service');
+        // Return dictionary of relative paths and their values (vedbus.py line ~460)
+        // This is for the root object, not individual path lookup
+        const values = {};
+        
+        // Add management properties (as relative paths from root)
+        Object.entries(this.managementProperties).forEach(([path, info]) => {
+          const relativePath = path.startsWith('/') ? path.substring(1) : path;
+          values[relativePath] = this.wrapValue(this.getType(info.value), info.value);
+        });
+
+        // Add switch data properties (as relative paths from root)
+        Object.entries(this.switchData).forEach(([path, value]) => {
+          const relativePath = path.startsWith('/') ? path.substring(1) : path;
+          values[relativePath] = this.wrapValue('d', value);
+        });
+
+        return values;
       },
       
-      SetValue: (value) => {
-        // Root object doesn't support setting values
+      SetValue: (path, value) => {
+        if (this.switchData[path] !== undefined) {
+          const actualValue = Array.isArray(value) ? value[1] : value;
+          this.switchData[path] = actualValue;
+          this.emit('valueChanged', path, actualValue);
+          return 0;
+        }
         return -1; // Error
       },
       
       GetText: () => {
-        return 'SignalK Virtual Switch Service';
+        // Return dictionary of relative paths and their text representations (vedbus.py)
+        const texts = {};
+        
+        // Add management properties (as relative paths from root)
+        Object.entries(this.managementProperties).forEach(([path, info]) => {
+          const relativePath = path.startsWith('/') ? path.substring(1) : path;
+          texts[relativePath] = info.text;
+        });
+
+        // Add switch data properties (as relative paths from root)
+        Object.entries(this.switchData).forEach(([path, value]) => {
+          const relativePath = path.startsWith('/') ? path.substring(1) : path;
+          const switchPaths = {
+            'Switch/0/State': 'Switch state',
+            'Switch/0/DimLevel': 'Dimming level',
+            'Switch/1/State': 'Switch state',
+            'Switch/1/DimLevel': 'Dimming level'
+          };
+          texts[relativePath] = switchPaths[relativePath] || 'Switch property';
+        });
+
+        return texts;
       }
     };
 
