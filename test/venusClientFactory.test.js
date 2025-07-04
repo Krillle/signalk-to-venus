@@ -1,12 +1,12 @@
-import { describe, it, beforeEach, afterEach, expect, vi } from 'vitest';
-import { VenusClientFactory } from '../venusClientFactory.js';
+import { describe, it, beforeEach, expect, vi } from 'vitest';
 
-// Mock the client classes as constructors
-const mockBatteryClient = vi.fn().mockImplementation(() => ({}));
-const mockTankClient = vi.fn().mockImplementation(() => ({}));
-const mockEnvClient = vi.fn().mockImplementation(() => ({}));
-const mockSwitchClient = vi.fn().mockImplementation(() => ({}));
+// Mock the client classes before any imports
+const mockBatteryClient = vi.fn().mockImplementation(() => ({ type: 'battery' }));
+const mockTankClient = vi.fn().mockImplementation(() => ({ type: 'tank' }));
+const mockEnvClient = vi.fn().mockImplementation(() => ({ type: 'env' }));
+const mockSwitchClient = vi.fn().mockImplementation(() => ({ type: 'switch' }));
 
+// Mock the modules before importing the factory
 vi.mock('../venusClient-battery.js', () => ({
   VenusClient: mockBatteryClient
 }));
@@ -22,6 +22,9 @@ vi.mock('../venusClient-env.js', () => ({
 vi.mock('../venusClient-switch.js', () => ({
   VenusClient: mockSwitchClient
 }));
+
+// Import the factory after the mocks are set up
+const { VenusClientFactory } = await import('../venusClientFactory.js');
 
 describe('VenusClientFactory', () => {
   const mockSettings = {
