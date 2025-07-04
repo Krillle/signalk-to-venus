@@ -25,7 +25,18 @@
   "engines": {
     "node": ">=16.0.0"
   },
+  "scripts": {
+    "test": "cd test && npm test",
+    "test:watch": "cd test && npm run test:watch",
+    "test:coverage": "cd test && npm run test:coverage",
+    "test:setup": "cd test && npm install"
+  },
   "dependencies": {
     "dbus-native": "^0.4.0"
+  },
+  "devDependencies": {
+    "vitest": "^1.0.0",
+    "@vitest/ui": "^1.0.0",
+    "c8": "^8.0.0"
   }
 }
