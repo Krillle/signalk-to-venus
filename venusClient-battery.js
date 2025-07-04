@@ -10,7 +10,6 @@ export class VenusClient extends EventEmitter {
     this.batteryData = {};
     this.lastInitAttempt = 0;
     this.exportedInterfaces = new Set(); // Track which D-Bus interfaces have been exported
-    this.settingsBus = null; // Separate bus for settings
     this.VBUS_SERVICE = `com.victronenergy.virtual.${deviceType}`;
     this.SETTINGS_SERVICE = 'com.victronenergy.settings';
     this.SETTINGS_ROOT = '/Settings/Devices';
@@ -35,13 +34,6 @@ export class VenusClient extends EventEmitter {
     try {
       // Create D-Bus connection using dbus-native with anonymous authentication
       this.bus = dbusNative.createClient({
-        host: this.settings.venusHost,
-        port: 78,
-        authMethods: ['ANONYMOUS']
-      });
-      
-      // Create separate settings bus connection
-      this.settingsBus = dbusNative.createClient({
         host: this.settings.venusHost,
         port: 78,
         authMethods: ['ANONYMOUS']
@@ -430,7 +422,7 @@ export class VenusClient extends EventEmitter {
   }
 
   async _registerBatteryInSettings(batteryInstance) {
-    if (!this.settingsBus) {
+    if (!this.bus) {
       return batteryInstance || 100; // Fallback to default device instance
     }
 
@@ -457,10 +449,9 @@ export class VenusClient extends EventEmitter {
         }
       ];
 
-      // Call the Venus OS Settings API to register the device
-      // This is the critical missing piece - we need to call AddSettings
+      // Call the Venus OS Settings API to register the device using the same bus
       await new Promise((resolve, reject) => {
-        this.settingsBus.invoke(
+        this.bus.invoke(
           'com.victronenergy.settings',
           '/',
           'com.victronenergy.Settings',
@@ -477,7 +468,7 @@ export class VenusClient extends EventEmitter {
         );
       });
 
-      // Also export the D-Bus interfaces for direct access
+      // Also export the D-Bus interfaces for direct access using the same bus
       const busItemInterface = {
         name: "com.victronenergy.BusItem",
         methods: {
@@ -503,7 +494,7 @@ export class VenusClient extends EventEmitter {
         }
       };
 
-      this.settingsBus.exportInterface(classInterface, `/Settings/Devices/${serviceName}/ClassAndVrmInstance`, busItemInterface);
+      this.bus.exportInterface(classInterface, `/Settings/Devices/${serviceName}/ClassAndVrmInstance`, busItemInterface);
 
       // Export CustomName interface
       const nameInterface = {
@@ -518,7 +509,7 @@ export class VenusClient extends EventEmitter {
         }
       };
 
-      this.settingsBus.exportInterface(nameInterface, `/Settings/Devices/${serviceName}/CustomName`, busItemInterface);
+      this.bus.exportInterface(nameInterface, `/Settings/Devices/${serviceName}/CustomName`, busItemInterface);
 
       console.log(`Battery registered in Venus OS Settings: ${serviceName} -> ${proposedInstance}`);
       return batteryInstance || 100;
@@ -537,15 +528,6 @@ export class VenusClient extends EventEmitter {
         // Ignore disconnect errors
       }
       this.bus = null;
-    }
-    
-    if (this.settingsBus) {
-      try {
-        this.settingsBus.end();
-      } catch (err) {
-        // Ignore disconnect errors
-      }
-      this.settingsBus = null;
     }
     
     this.batteryData = {};
