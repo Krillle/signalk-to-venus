@@ -510,23 +510,51 @@ export class VenusClient extends EventEmitter {
   }
 
   _exportProperty(path, config) {
-    // Track exported properties for tests
-    const interfaceKey = `${path}`;
-    
     // Only export if not already exported
-    if (this.exportedInterfaces.has(interfaceKey)) {
+    if (this.exportedInterfaces.has(path)) {
       // Just update the value, don't re-export the interface
       this.tankData[path] = config.value;
       return;
     }
 
     // Mark as exported
-    this.exportedInterfaces.add(interfaceKey);
+    this.exportedInterfaces.add(path);
 
-    // Store the tank data for this path
+    // Define the BusItem interface descriptor for dbus-native
+    const busItemInterface = {
+      name: "com.victronenergy.BusItem",
+      methods: {
+        GetValue: ["", "v", [], ["value"]],
+        SetValue: ["v", "i", ["value"], ["result"]],
+        GetText: ["", "s", [], ["text"]],
+      },
+      signals: {
+        PropertiesChanged: ["a{sv}", ["changes"]]
+      }
+    };
+
+    // Store initial value
     this.tankData[path] = config.value;
-    
-    // Note: In the individual service approach, we don't export individual properties
-    // on the main bus, but we track them for tests and data management
+
+    const propertyInterface = {
+      GetValue: () => {
+        const currentValue = this.tankData[path] || (config.type === 's' ? '' : 0);
+        return this.wrapValue(config.type, currentValue);
+      },
+      SetValue: (val) => {
+        const actualValue = Array.isArray(val) ? val[1] : val;
+        this.tankData[path] = actualValue;
+        this.emit('valueChanged', path, actualValue);
+        return 0; // Success
+      },
+      GetText: () => {
+        return config.text;
+      }
+    };
+
+    // Export the interface using the main bus if available
+    if (this.bus) {
+      this.bus.exportInterface(propertyInterface, path, busItemInterface);
+    }
   }
 }
