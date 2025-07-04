@@ -428,7 +428,7 @@ export class VenusClient extends EventEmitter {
       });
 
       // Extract the actual assigned instance ID from the Settings API result
-      let actualInstance = instance || 100;
+      let actualInstance = deviceInstance || 100;
       let actualProposedInstance = proposedInstance;
       
       if (settingsResult && settingsResult.length > 0) {
@@ -444,13 +444,13 @@ export class VenusClient extends EventEmitter {
                 valueEntry[1] && valueEntry[1][1] && valueEntry[1][1][0]) {
               
               actualProposedInstance = valueEntry[1][1][0]; // Extract the actual assigned value
-              const instanceMatch = actualProposedInstance.match(/environment:(\d+)/);
+              const instanceMatch = actualProposedInstance.match(/:(\d+)/);
               if (instanceMatch) {
                 actualInstance = parseInt(instanceMatch[1]);
-                console.log(`Environment sensor assigned actual instance: ${actualInstance} (${actualProposedInstance})`);
+                console.log(`${sensorType} sensor assigned actual instance: ${actualInstance} (${actualProposedInstance})`);
                 
-                // Update the DeviceInstance to match the assigned instance
-                this.managementProperties['/DeviceInstance'] = { value: actualInstance, text: 'Device instance' };
+                // Update the sensor instance to match the assigned instance
+                this.sensorInstances[sensorType] = actualInstance;
               }
             }
           }
