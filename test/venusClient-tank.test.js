@@ -330,10 +330,10 @@ describe('VenusClient - Tank', () => {
 
   describe('Initialization', () => {
     beforeEach(() => {
-      // Restore the real init method for initialization tests
-      vi.restoreAllMocks();
+      // Don't restore mocks - keep network layer mocked
+      vi.clearAllMocks();
       
-      // Re-setup basic mocks but leave init unmocked
+      // Set up mocks for initialization tests
       mockDbusNative.createClient.mockReturnValue(mockBus);
       mockBus.requestName.mockImplementation((service, flags, callback) => {
         setTimeout(() => callback(null, 1), 0);
