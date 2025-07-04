@@ -127,7 +127,7 @@ describe('VenusClient - Switch', () => {
         '/Switch/456/State',
         expect.objectContaining({
           value: 1, // true should be converted to 1
-          type: 'i',
+          type: 'd', // actual type used in implementation
           text: expect.stringContaining('state')
         })
       );
@@ -143,7 +143,7 @@ describe('VenusClient - Switch', () => {
         '/Switch/456/DimmingLevel',
         expect.objectContaining({
           value: 75, // Should be converted to percentage
-          type: 'i',
+          type: 'd', // actual type used in implementation
           text: expect.stringContaining('dimming')
         })
       );
@@ -159,7 +159,7 @@ describe('VenusClient - Switch', () => {
         '/Switch/456/State',
         expect.objectContaining({
           value: 0, // false should be converted to 0
-          type: 'i'
+          type: 'd' // actual type used in implementation
         })
       );
     });
