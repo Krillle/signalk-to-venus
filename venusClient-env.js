@@ -387,28 +387,28 @@ export class VenusClient extends EventEmitter {
       const proposedInstance = `${sensorType}:${deviceInstance}`;
 
       // Create settings array following Victron's Settings API format
-      // Simplified format for dbus-native - no manual variant wrapping needed
+      // For dbus-native with signature 'aa{sv}' - array of array of dict entries
       const settingsArray = [
-        {
-          'path': `/Settings/Devices/${serviceName}/ClassAndVrmInstance`,
-          'default': proposedInstance,
-          'type': 's', // string type
-          'description': 'Class and VRM instance'
-        },
-        {
-          'path': `/Settings/Devices/${serviceName}/CustomName`,
-          'default': `SignalK ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)}`,
-          'type': 's', // string type  
-          'description': 'Custom name'
-        }
+        [
+          ['path', ['s', `/Settings/Devices/${serviceName}/ClassAndVrmInstance`]],
+          ['default', ['s', proposedInstance]],
+          ['type', ['s', 's']],
+          ['description', ['s', 'Class and VRM instance']]
+        ],
+        [
+          ['path', ['s', `/Settings/Devices/${serviceName}/CustomName`]],
+          ['default', ['s', `SignalK ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)}`]],
+          ['type', ['s', 's']],
+          ['description', ['s', 'Custom name']]
+        ]
       ];
 
       // Call the Venus OS Settings API to register the device using the main bus
       await new Promise((resolve, reject) => {
         console.log('Invoking Settings API with:', JSON.stringify(settingsArray, null, 2));
         
-        // Use the correct dbus-native invoke format with the main bus
-        bus.invoke({
+        // Use the correct dbus-native message format with proper signature
+        bus.message({
           destination: 'com.victronenergy.settings',
           path: '/',
           'interface': 'com.victronenergy.Settings',

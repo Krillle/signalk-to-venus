@@ -434,44 +434,58 @@ export class VenusClient extends EventEmitter {
       const proposedInstance = `battery:${batteryInstance || 100}`;
       
       // Create settings array following Victron's Settings API format
-      // Simplified format for dbus-native - no manual variant wrapping needed
+      // For dbus-native with signature 'aa{sv}' - array of array of dict entries
       const settingsArray = [
-        {
-          'path': `/Settings/Devices/${serviceName}/ClassAndVrmInstance`,
-          'default': proposedInstance,
-          'type': 's', // string type
-          'description': 'Class and VRM instance'
-        },
-        {
-          'path': `/Settings/Devices/${serviceName}/CustomName`,
-          'default': 'SignalK Battery',
-          'type': 's', // string type  
-          'description': 'Custom name'
-        }
+        [
+          ['path', ['s', `/Settings/Devices/${serviceName}/ClassAndVrmInstance`]],
+          ['default', ['s', proposedInstance]],
+          ['type', ['s', 's']],
+          ['description', ['s', 'Class and VRM instance']]
+        ],
+        [
+          ['path', ['s', `/Settings/Devices/${serviceName}/CustomName`]],
+          ['default', ['s', 'SignalK Battery']],
+          ['type', ['s', 's']],
+          ['description', ['s', 'Custom name']]
+        ]
       ];
 
       // Call the Venus OS Settings API to register the device using the same bus
       await new Promise((resolve, reject) => {
         console.log('Invoking Settings API with:', JSON.stringify(settingsArray, null, 2));
         
-        // Use the correct dbus-native invoke format
-        this.bus.invoke({
-          destination: 'com.victronenergy.settings',
+        // Use the correct dbus-native message format (not invoke)
+        this.bus.message({
+          type: 1, // methodCall
           path: '/',
+          destination: 'com.victronenergy.settings',
           'interface': 'com.victronenergy.Settings',
           member: 'AddSettings',
           signature: 'aa{sv}',
           body: [settingsArray]
-        }, (err, result) => {
-          if (err) {
-            console.log('Settings API error:', err);
-            console.dir(err);
-            reject(new Error(`Settings registration failed: ${err.message || err}`));
-          } else {
-            console.log('Settings API result:', result);
-            resolve(result);
-          }
         });
+        
+        // Listen for the method return
+        const onMessage = (msg) => {
+          if (msg.type === 2 && msg.replySerial && msg.sender === 'com.victronenergy.settings') { // methodReturn
+            this.bus.removeListener('message', onMessage);
+            if (msg.errorName) {
+              console.log('Settings API error:', msg.errorName, msg.body);
+              reject(new Error(`Settings registration failed: ${msg.errorName}`));
+            } else {
+              console.log('Settings API result:', msg.body);
+              resolve(msg.body);
+            }
+          }
+        };
+        
+        this.bus.on('message', onMessage);
+        
+        // Set a timeout in case no response comes back
+        setTimeout(() => {
+          this.bus.removeListener('message', onMessage);
+          reject(new Error('Settings registration timeout'));
+        }, 5000);
       });
 
       // Also export the D-Bus interfaces for direct access using the same bus
