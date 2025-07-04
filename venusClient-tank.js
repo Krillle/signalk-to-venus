@@ -184,28 +184,110 @@ export class VenusClient extends EventEmitter {
   }
 
   _exportRootInterface() {
-    // Export root interface for VRM compatibility
+    // Export root interface for VRM compatibility following vedbus.py format
     const rootInterface = {
       name: "com.victronenergy.BusItem",
       methods: {
-        GetValue: ["", "v", [], ["value"]],
-        SetValue: ["v", "i", ["value"], ["result"]],
-        GetText: ["", "s", [], ["text"]],
+        GetItems: ["", "a{sa{sv}}", [], ["items"]],
+        GetValue: ["s", "v", ["path"], ["value"]],
+        SetValue: ["sv", "i", ["path", "value"], ["result"]],
+        GetText: ["s", "s", ["path"], ["text"]],
       },
       signals: {
+        ItemsChanged: ["a{sa{sv}}", ["changes"]],
         PropertiesChanged: ["a{sv}", ["changes"]]
       }
     };
 
     const rootImpl = {
-      GetValue: () => {
-        return this.wrapValue('s', 'SignalK Virtual Tank Service');
+      GetItems: () => {
+        // Return all management properties and tank data in the correct format
+        const items = {};
+        
+        // Add management properties
+        Object.entries(this.managementProperties).forEach(([path, info]) => {
+          items[path] = {
+            Value: this.wrapValue(this.getType(info.value), info.value),
+            Text: this.wrapValue('s', info.text)
+          };
+        });
+
+        // Add tank data properties
+        Object.entries(this.tankData).forEach(([path, value]) => {
+          const tankPaths = {
+            '/Tank/0/Level': 'Tank level',
+            '/Tank/0/Capacity': 'Tank capacity',
+            '/Tank/0/FluidType': 'Fluid type',
+            '/Tank/0/Status': 'Tank status',
+            '/Tank/1/Level': 'Tank level',
+            '/Tank/1/Capacity': 'Tank capacity',
+            '/Tank/1/FluidType': 'Fluid type',
+            '/Tank/1/Status': 'Tank status'
+          };
+          
+          const text = tankPaths[path] || 'Tank property';
+          items[path] = {
+            Value: this.wrapValue('d', value),
+            Text: this.wrapValue('s', text)
+          };
+        });
+
+        return items;
       },
-      SetValue: (val) => {
-        return 0;
+      
+      GetValue: (path) => {
+        // Handle root path specially
+        if (!path || path === '/') {
+          return this.wrapValue('s', 'SignalK Virtual Tank Service');
+        }
+        
+        // Check management properties first
+        if (this.managementProperties[path]) {
+          return this.wrapValue(this.getType(this.managementProperties[path].value), this.managementProperties[path].value);
+        }
+        
+        // Check tank data
+        if (this.tankData[path] !== undefined) {
+          return this.wrapValue('d', this.tankData[path]);
+        }
+        
+        throw new Error(`Path ${path} not found`);
       },
-      GetText: () => {
-        return 'SignalK Virtual Tank Service';
+      
+      SetValue: (path, value) => {
+        if (this.tankData[path] !== undefined) {
+          const actualValue = Array.isArray(value) ? value[1] : value;
+          this.tankData[path] = actualValue;
+          this.emit('valueChanged', path, actualValue);
+          return 0;
+        }
+        return -1; // Error
+      },
+      
+      GetText: (path) => {
+        // Handle root path specially
+        if (!path || path === '/') {
+          return 'SignalK Virtual Tank Service';
+        }
+        
+        // Check management properties first
+        if (this.managementProperties[path]) {
+          return this.managementProperties[path].text;
+        }
+        
+        // Tank-specific paths
+        const tankPaths = {
+          '/Tank/0/Level': 'Tank level',
+          '/Tank/0/Capacity': 'Tank capacity',
+          '/Tank/0/FluidType': 'Fluid type',
+          '/Tank/0/Status': 'Tank status',
+          '/Tank/1/Level': 'Tank level',
+          '/Tank/1/Capacity': 'Tank capacity',
+          '/Tank/1/FluidType': 'Fluid type',
+          '/Tank/1/Status': 'Tank status'
+        };
+        
+        return tankPaths[path] || 'Tank property';
       }
     };
 

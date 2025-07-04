@@ -345,7 +345,7 @@ export class VenusClient extends EventEmitter {
         Object.entries(this.managementProperties).forEach(([path, info]) => {
           items[path] = {
             Value: this.wrapValue(this.getType(info.value), info.value),
-            Text: ['s', info.text]
+            Text: this.wrapValue('s', info.text)
           };
         });
 
@@ -364,14 +364,19 @@ export class VenusClient extends EventEmitter {
           const text = batteryPaths[path] || 'Battery property';
           items[path] = {
             Value: this.wrapValue('d', value),
-            Text: ['s', text]
+            Text: this.wrapValue('s', text)
           };
         });
 
-        return [items];
+        return items;
       },
       
       GetValue: (path) => {
+        // Handle root path specially
+        if (!path || path === '/') {
+          return this.wrapValue('s', 'SignalK Virtual Battery Service');
+        }
+        
         if (this.managementProperties[path]) {
           return this.wrapValue(this.getType(this.managementProperties[path].value), this.managementProperties[path].value);
         }
@@ -392,6 +397,11 @@ export class VenusClient extends EventEmitter {
       },
       
       GetText: (path) => {
+        // Handle root path specially
+        if (!path || path === '/') {
+          return 'SignalK Virtual Battery Service';
+        }
+        
         if (this.managementProperties[path]) {
           return this.managementProperties[path].text;
         }

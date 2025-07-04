@@ -111,9 +111,9 @@ export class VenusClient extends EventEmitter {
       name: "com.victronenergy.BusItem",
       methods: {
         GetItems: ["", "a{sa{sv}}", [], ["items"]],
-        GetValue: ["", "v", [], ["value"]],
-        GetText: ["", "s", [], ["text"]],
-        SetValue: ["v", "i", ["value"], ["result"]],
+        GetValue: ["s", "v", ["path"], ["value"]],
+        SetValue: ["sv", "i", ["path", "value"], ["result"]],
+        GetText: ["s", "s", ["path"], ["text"]],
       },
       signals: {
         ItemsChanged: ["a{sa{sv}}", ["changes"]],
@@ -124,27 +124,118 @@ export class VenusClient extends EventEmitter {
     // Root interface with GetItems and GetValue for all properties
     const rootInterface = {
       GetItems: () => {
-        return [
-          ["/Mgmt/Connection", [["Value", this.wrapValue("i", 1)], ["Text", ["s", "Connected"]]]],
-          ["/ProductName", [["Value", this.wrapValue("s", `SignalK ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)} Sensor`)], ["Text", ["s", "Product name"]]]],
-          ["/DeviceInstance", [["Value", this.wrapValue("u", deviceInstance)], ["Text", ["s", "Device instance"]]]],
-          ["/CustomName", [["Value", this.wrapValue("s", `SignalK ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)}`)], ["Text", ["s", "Custom name"]]]],
-          ["/Mgmt/ProcessName", [["Value", this.wrapValue("s", `signalk-${sensorType}-sensor`)], ["Text", ["s", "Process name"]]]],
-          ["/Mgmt/ProcessVersion", [["Value", this.wrapValue("s", "1.0.12")], ["Text", ["s", "Process version"]]]]
-        ];
+        const items = {};
+        
+        // Add management properties
+        items["/Mgmt/Connection"] = {
+          Value: this.wrapValue("i", 1),
+          Text: this.wrapValue("s", "Connected")
+        };
+        items["/ProductName"] = {
+          Value: this.wrapValue("s", `SignalK ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)} Sensor`),
+          Text: this.wrapValue("s", "Product name")
+        };
+        items["/DeviceInstance"] = {
+          Value: this.wrapValue("u", deviceInstance),
+          Text: this.wrapValue("s", "Device instance")
+        };
+        items["/CustomName"] = {
+          Value: this.wrapValue("s", `SignalK ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)}`),
+          Text: this.wrapValue("s", "Custom name")
+        };
+        items["/Mgmt/ProcessName"] = {
+          Value: this.wrapValue("s", `signalk-${sensorType}-sensor`),
+          Text: this.wrapValue("s", "Process name")
+        };
+        items["/Mgmt/ProcessVersion"] = {
+          Value: this.wrapValue("s", "1.0.12"),
+          Text: this.wrapValue("s", "Process version")
+        };
+
+        // Add environment data properties
+        Object.entries(this.envData).forEach(([path, value]) => {
+          const envPaths = {
+            '/Temperature': 'Temperature',
+            '/Status': 'Status'
+          };
+          
+          const text = envPaths[path] || 'Environment property';
+          items[path] = {
+            Value: this.wrapValue('d', value),
+            Text: this.wrapValue('s', text)
+          };
+        });
+
+        return items;
       },
-      GetValue: () => {
-        return [
-          ["Mgmt/Connection", this.wrapValue("i", 1)],
-          ["ProductName", this.wrapValue("s", `SignalK ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)} Sensor`)],
-          ["DeviceInstance", this.wrapValue("u", deviceInstance)],
-          ["CustomName", this.wrapValue("s", `SignalK ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)}`)],
-          ["Mgmt/ProcessName", this.wrapValue("s", `signalk-${sensorType}-sensor`)],
-          ["Mgmt/ProcessVersion", this.wrapValue("s", "1.0.12")]
-        ];
+      
+      GetValue: (path) => {
+        // Handle root path specially
+        if (!path || path === '/') {
+          return this.wrapValue('s', `SignalK Virtual ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)} Service`);
+        }
+        
+        // Check specific management properties
+        if (path === "/Mgmt/Connection") {
+          return this.wrapValue("i", 1);
+        } else if (path === "/ProductName") {
+          return this.wrapValue("s", `SignalK ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)} Sensor`);
+        } else if (path === "/DeviceInstance") {
+          return this.wrapValue("u", deviceInstance);
+        } else if (path === "/CustomName") {
+          return this.wrapValue("s", `SignalK ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)}`);
+        } else if (path === "/Mgmt/ProcessName") {
+          return this.wrapValue("s", `signalk-${sensorType}-sensor`);
+        } else if (path === "/Mgmt/ProcessVersion") {
+          return this.wrapValue("s", "1.0.12");
+        }
+        
+        // Check environment data
+        if (this.envData[path] !== undefined) {
+          return this.wrapValue('d', this.envData[path]);
+        }
+        
+        throw new Error(`Path ${path} not found`);
       },
-      emit: function(name, args) {
-        // ItemsChanged signal support
+      
+      SetValue: (path, value) => {
+        if (this.envData[path] !== undefined) {
+          const actualValue = Array.isArray(value) ? value[1] : value;
+          this.envData[path] = actualValue;
+          this.emit('valueChanged', path, actualValue);
+          return 0;
+        }
+        return -1; // Error
+      },
+      
+      GetText: (path) => {
+        // Handle root path specially
+        if (!path || path === '/') {
+          return `SignalK Virtual ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)} Service`;
+        }
+        
+        // Check specific management properties
+        if (path === "/Mgmt/Connection") {
+          return "Connected";
+        } else if (path === "/ProductName") {
+          return "Product name";
+        } else if (path === "/DeviceInstance") {
+          return "Device instance";
+        } else if (path === "/CustomName") {
+          return "Custom name";
+        } else if (path === "/Mgmt/ProcessName") {
+          return "Process name";
+        } else if (path === "/Mgmt/ProcessVersion") {
+          return "Process version";
+        }
+        
+        // Environment-specific paths
+        const envPaths = {
+          '/Temperature': 'Temperature',
+          '/Status': 'Status'
+        };
+        
+        return envPaths[path] || 'Environment property';
       }
     };
 
