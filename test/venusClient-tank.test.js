@@ -329,7 +329,12 @@ describe('VenusClient - Tank', () => {
   });
 
   describe('Initialization', () => {
+    let initClient;
+    
     beforeEach(() => {
+      // Create a fresh client for initialization tests
+      initClient = new VenusClient(settings, 'tanks');
+      
       // Don't restore mocks - keep network layer mocked
       vi.clearAllMocks();
       
@@ -343,7 +348,7 @@ describe('VenusClient - Tank', () => {
     });
     
     it('should create D-Bus connections', async () => {
-      await client.init();
+      await initClient.init();
       
       expect(mockDbusNative.createClient).toHaveBeenCalledTimes(2);
       expect(mockDbusNative.createClient).toHaveBeenCalledWith({
@@ -354,7 +359,7 @@ describe('VenusClient - Tank', () => {
     });
 
     it('should request service name', async () => {
-      await client.init();
+      await initClient.init();
       
       expect(mockBus.requestName).toHaveBeenCalledWith(
         'com.victronenergy.virtual.tanks',
@@ -368,7 +373,7 @@ describe('VenusClient - Tank', () => {
         setTimeout(() => callback(new Error('ECONNREFUSED')), 0);
       });
       
-      await expect(client.init()).rejects.toThrow('Cannot connect to Venus OS');
+      await expect(initClient.init()).rejects.toThrow('Cannot connect to Venus OS');
     });
   });
 
