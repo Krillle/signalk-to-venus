@@ -344,15 +344,17 @@ export class VenusClient extends EventEmitter {
       const index = switchInstance.vrmInstanceId || switchInstance.index;
       
       if (path.includes('state')) {
-        // Switch state (0 = off, 1 = on)
-        const switchState = value ? 1 : 0;
-        const statePath = `/Switch/${index}/State`;
-        this._exportProperty(statePath, { 
-          value: switchState, 
-          type: 'd', 
-          text: `${switchName} state` 
-        });
-        this.emit('dataUpdated', 'Switch State', `${switchName}: ${value ? 'ON' : 'OFF'}`);
+        // Switch state (0 = off, 1 = on) - only accept boolean values
+        if (typeof value === 'boolean') {
+          const switchState = value ? 1 : 0;
+          const statePath = `/Switch/${index}/State`;
+          this._exportProperty(statePath, { 
+            value: switchState, 
+            type: 'd', 
+            text: `${switchName} state` 
+          });
+          this.emit('dataUpdated', 'Switch State', `${switchName}: ${value ? 'ON' : 'OFF'}`);
+        }
       }
       else if (path.includes('dimmingLevel')) {
         // Dimming level (0-1 to 0-100 percentage)

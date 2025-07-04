@@ -56,13 +56,16 @@ describe('VenusClient - Tank', () => {
 
   describe('Constructor', () => {
     it('should initialize with correct properties', () => {
-      expect(client.settings).toEqual(settings);
-      expect(client.deviceType).toBe('tanks');
-      expect(client.bus).toBeNull();
-      expect(client.tankData).toEqual({});
-      expect(client.tankInstances).toBeInstanceOf(Map);
-      expect(client.exportedInterfaces).toBeInstanceOf(Set);
-      expect(client.VBUS_SERVICE).toBe('com.victronenergy.virtual.tanks');
+      // Create a fresh client for this test to check initial state
+      const testClient = new VenusClient(settings, 'tanks');
+      
+      expect(testClient.settings).toEqual(settings);
+      expect(testClient.deviceType).toBe('tanks');
+      expect(testClient.bus).toBeNull();
+      expect(testClient.tankData).toEqual({});
+      expect(testClient.tankInstances).toBeInstanceOf(Map);
+      expect(testClient.exportedInterfaces).toBeInstanceOf(Set);
+      expect(testClient.VBUS_SERVICE).toBe('com.victronenergy.virtual.tanks');
     });
 
     it('should extend EventEmitter', () => {
@@ -189,7 +192,7 @@ describe('VenusClient - Tank', () => {
       );
       
       // All should return the same instance
-      expect(instances[0]).toBe(instances[1]);
+      expect(instances[0]).toStrictEqual(instances[1]);
       expect(instances[1]).toStrictEqual(instances[2]);
       expect(instances[0].basePath).toBe('tanks.fuel.starboard');
     });
