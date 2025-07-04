@@ -114,7 +114,7 @@ export class VenusClient extends EventEmitter {
     // Device Instance - Required for unique identification
     const deviceInstanceInterface = {
       GetValue: () => {
-        return this.wrapValue('u', 101); // Base device instance for tank service
+        return this.wrapValue('u', this.managementProperties['/DeviceInstance'].value);
       },
       SetValue: (val) => {
         return 0;
@@ -552,28 +552,72 @@ export class VenusClient extends EventEmitter {
       ];
 
       // Call the Venus OS Settings API to register the device using the same bus
-      await new Promise((resolve, reject) => {
+      const settingsResult = await new Promise((resolve, reject) => {
         console.log('Invoking Settings API with:', JSON.stringify(settingsArray, null, 2));
         
         // Use the correct dbus-native message format with proper signature
         this.bus.message({
+          type: 1, // methodCall
           destination: 'com.victronenergy.settings',
           path: '/',
           'interface': 'com.victronenergy.Settings',
           member: 'AddSettings',
           signature: 'aa{sv}',
           body: [settingsArray]
-        }, (err, result) => {
-          if (err) {
-            console.log('Settings API error:', err);
-            console.dir(err);
-            reject(new Error(`Settings registration failed: ${err.message || err}`));
-          } else {
-            console.log('Settings API result:', result);
-            resolve(result);
-          }
         });
+        
+        // Listen for the method return
+        const onMessage = (msg) => {
+          if (msg.type === 2 && msg.replySerial && msg.sender === 'com.victronenergy.settings') { // methodReturn
+            this.bus.removeListener('message', onMessage);
+            if (msg.errorName) {
+              console.log('Settings API error:', msg.errorName, msg.body);
+              reject(new Error(`Settings registration failed: ${msg.errorName}`));
+            } else {
+              console.log('Settings API result:', msg.body);
+              resolve(msg.body);
+            }
+          }
+        };
+        
+        this.bus.on('message', onMessage);
+        
+        // Set a timeout in case no response comes back
+        setTimeout(() => {
+          this.bus.removeListener('message', onMessage);
+          reject(new Error('Settings registration timeout'));
+        }, 5000);
       });
+
+      // Extract the actual assigned instance ID from the Settings API result
+      let actualInstance = tankInstance || 100;
+      let actualProposedInstance = proposedInstance;
+      
+      if (settingsResult && settingsResult.length > 0) {
+        // Parse the Settings API response format: [[["path",[["s"],["/path"]]],["error",[["i"],[0]]],["value",[["s"],["tank:233"]]]]]
+        for (const result of settingsResult) {
+          if (result && Array.isArray(result)) {
+            // Look for the ClassAndVrmInstance result
+            const pathEntry = result.find(entry => entry && entry[0] === 'path');
+            const valueEntry = result.find(entry => entry && entry[0] === 'value');
+            
+            if (pathEntry && valueEntry && 
+                pathEntry[1] && pathEntry[1][1] && pathEntry[1][1][0] && pathEntry[1][1][0].includes('ClassAndVrmInstance') &&
+                valueEntry[1] && valueEntry[1][1] && valueEntry[1][1][0]) {
+              
+              actualProposedInstance = valueEntry[1][1][0]; // Extract the actual assigned value
+              const instanceMatch = actualProposedInstance.match(/tank:(\d+)/);
+              if (instanceMatch) {
+                actualInstance = parseInt(instanceMatch[1]);
+                console.log(`Tank assigned actual instance: ${actualInstance} (${actualProposedInstance})`);
+                
+                // Update the DeviceInstance to match the assigned instance
+                this.managementProperties['/DeviceInstance'] = { value: actualInstance, text: 'Device instance' };
+              }
+            }
+          }
+        }
+      }
 
       // Also export the D-Bus interfaces for direct access using the same bus
       const busItemInterface = {
@@ -594,7 +638,7 @@ export class VenusClient extends EventEmitter {
       const classInstancePath = `${settingsPath}/ClassAndVrmInstance`;
       const classInstanceInterface = {
         GetValue: () => {
-          return this.wrapValue('s', proposedInstance);
+          return this.wrapValue('s', actualProposedInstance);
         },
         SetValue: (val) => {
           const actualValue = Array.isArray(val) ? val[1] : val;
@@ -623,9 +667,8 @@ export class VenusClient extends EventEmitter {
       this.bus.exportInterface(classInstanceInterface, classInstancePath, busItemInterface);
       this.bus.exportInterface(customNameInterface, customNamePath, busItemInterface);
 
-      // Extract instance ID from the proposed instance string
-      const instanceMatch = proposedInstance.match(/:(\d+)$/);
-      return instanceMatch ? parseInt(instanceMatch[1]) : tankInstance.index;
+      console.log(`Tank registered in Venus OS Settings: ${serviceName} -> ${actualProposedInstance}`);
+      return actualInstance;
 
     } catch (err) {
       console.error(`Settings registration failed for tank ${tankInstance.basePath}:`, err);

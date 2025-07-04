@@ -113,7 +113,7 @@ export class VenusClient extends EventEmitter {
     // Device Instance - Required for unique identification
     const deviceInstanceInterface = {
       GetValue: () => {
-        return this.wrapValue('u', 102); // Unsigned integer for device instance
+        return this.wrapValue('u', this.managementProperties['/DeviceInstance'].value);
       },
       SetValue: (val) => {
         return 0;
@@ -492,7 +492,7 @@ export class VenusClient extends EventEmitter {
       ];
 
       // Call the Venus OS Settings API to register the device using the same bus
-      await new Promise((resolve, reject) => {
+      const settingsResult = await new Promise((resolve, reject) => {
         console.log('Invoking Settings API with:', JSON.stringify(settingsArray, null, 2));
         
         // Use the correct dbus-native message format (not invoke)
@@ -528,6 +528,36 @@ export class VenusClient extends EventEmitter {
           reject(new Error('Settings registration timeout'));
         }, 5000);
       });
+
+      // Extract the actual assigned instance ID from the Settings API result
+      let actualInstance = switchInstance || 100;
+      let actualProposedInstance = proposedInstance;
+      
+      if (settingsResult && settingsResult.length > 0) {
+        // Parse the Settings API response format: [[["path",[["s"],["/path"]]],["error",[["i"],[0]]],["value",[["s"],["switch:233"]]]]]
+        for (const result of settingsResult) {
+          if (result && Array.isArray(result)) {
+            // Look for the ClassAndVrmInstance result
+            const pathEntry = result.find(entry => entry && entry[0] === 'path');
+            const valueEntry = result.find(entry => entry && entry[0] === 'value');
+            
+            if (pathEntry && valueEntry && 
+                pathEntry[1] && pathEntry[1][1] && pathEntry[1][1][0] && pathEntry[1][1][0].includes('ClassAndVrmInstance') &&
+                valueEntry[1] && valueEntry[1][1] && valueEntry[1][1][0]) {
+              
+              actualProposedInstance = valueEntry[1][1][0]; // Extract the actual assigned value
+              const instanceMatch = actualProposedInstance.match(/switch:(\d+)/);
+              if (instanceMatch) {
+                actualInstance = parseInt(instanceMatch[1]);
+                console.log(`Switch assigned actual instance: ${actualInstance} (${actualProposedInstance})`);
+                
+                // Update the DeviceInstance to match the assigned instance
+                this.managementProperties['/DeviceInstance'] = { value: actualInstance, text: 'Device instance' };
+              }
+            }
+          }
+        }
+      }
       
       // Define the BusItem interface descriptor for settings
       const busItemInterface = {
@@ -546,7 +576,7 @@ export class VenusClient extends EventEmitter {
       const classInstancePath = `${this.SETTINGS_ROOT}/${serviceName}/ClassAndVrmInstance`;
       const classInstanceInterface = {
         GetValue: () => {
-          return this.wrapValue('s', proposedInstance);
+          return this.wrapValue('s', actualProposedInstance);
         },
         SetValue: (val) => {
           // Allow VRM to change our instance
@@ -577,11 +607,8 @@ export class VenusClient extends EventEmitter {
       this.bus.exportInterface(classInstanceInterface, classInstancePath, busItemInterface);
       this.bus.exportInterface(customNameInterface, customNamePath, busItemInterface);
 
-      console.log(`Switch registered in Venus OS Settings: ${serviceName} -> ${proposedInstance}`);
-      
-      // Extract instance ID from the proposed instance string
-      const instanceMatch = proposedInstance.match(/:(\d+)$/);
-      return instanceMatch ? parseInt(instanceMatch[1]) : switchInstance.index;
+      console.log(`Switch registered in Venus OS Settings: ${serviceName} -> ${actualProposedInstance}`);
+      return actualInstance;
 
     } catch (err) {
       console.error('Failed to register switch in settings:', err.message);

@@ -404,28 +404,72 @@ export class VenusClient extends EventEmitter {
       ];
 
       // Call the Venus OS Settings API to register the device using the main bus
-      await new Promise((resolve, reject) => {
+      const settingsResult = await new Promise((resolve, reject) => {
         console.log('Invoking Settings API with:', JSON.stringify(settingsArray, null, 2));
         
         // Use the correct dbus-native message format with proper signature
         bus.message({
+          type: 1, // methodCall
           destination: 'com.victronenergy.settings',
           path: '/',
           'interface': 'com.victronenergy.Settings',
           member: 'AddSettings',
           signature: 'aa{sv}',
           body: [settingsArray]
-        }, (err, result) => {
-          if (err) {
-            console.log('Settings API error:', err);
-            console.dir(err);
-            reject(new Error(`Settings registration failed: ${err.message || err}`));
-          } else {
-            console.log('Settings API result:', result);
-            resolve(result);
-          }
         });
+        
+        // Listen for the method return
+        const onMessage = (msg) => {
+          if (msg.type === 2 && msg.replySerial && msg.sender === 'com.victronenergy.settings') { // methodReturn
+            bus.removeListener('message', onMessage);
+            if (msg.errorName) {
+              console.log('Settings API error:', msg.errorName, msg.body);
+              reject(new Error(`Settings registration failed: ${msg.errorName}`));
+            } else {
+              console.log('Settings API result:', msg.body);
+              resolve(msg.body);
+            }
+          }
+        };
+        
+        bus.on('message', onMessage);
+        
+        // Set a timeout in case no response comes back
+        setTimeout(() => {
+          bus.removeListener('message', onMessage);
+          reject(new Error('Settings registration timeout'));
+        }, 5000);
       });
+
+      // Extract the actual assigned instance ID from the Settings API result
+      let actualInstance = instance || 100;
+      let actualProposedInstance = proposedInstance;
+      
+      if (settingsResult && settingsResult.length > 0) {
+        // Parse the Settings API response format: [[["path",[["s"],["/path"]]],["error",[["i"],[0]]],["value",[["s"],["environment:233"]]]]]
+        for (const result of settingsResult) {
+          if (result && Array.isArray(result)) {
+            // Look for the ClassAndVrmInstance result
+            const pathEntry = result.find(entry => entry && entry[0] === 'path');
+            const valueEntry = result.find(entry => entry && entry[0] === 'value');
+            
+            if (pathEntry && valueEntry && 
+                pathEntry[1] && pathEntry[1][1] && pathEntry[1][1][0] && pathEntry[1][1][0].includes('ClassAndVrmInstance') &&
+                valueEntry[1] && valueEntry[1][1] && valueEntry[1][1][0]) {
+              
+              actualProposedInstance = valueEntry[1][1][0]; // Extract the actual assigned value
+              const instanceMatch = actualProposedInstance.match(/environment:(\d+)/);
+              if (instanceMatch) {
+                actualInstance = parseInt(instanceMatch[1]);
+                console.log(`Environment sensor assigned actual instance: ${actualInstance} (${actualProposedInstance})`);
+                
+                // Update the DeviceInstance to match the assigned instance
+                this.managementProperties['/DeviceInstance'] = { value: actualInstance, text: 'Device instance' };
+              }
+            }
+          }
+        }
+      }
 
       // Also export the D-Bus interfaces for direct access
       const busItemInterface = {
@@ -443,7 +487,7 @@ export class VenusClient extends EventEmitter {
       // Export ClassAndVrmInstance interface using the main bus
       const classInterface = {
         GetValue: () => {
-          return this.wrapValue('s', proposedInstance);
+          return this.wrapValue('s', actualProposedInstance);
         },
         SetValue: (val) => {
           return 0; // Success
@@ -470,8 +514,8 @@ export class VenusClient extends EventEmitter {
 
       bus.exportInterface(nameInterface, `/Settings/Devices/${serviceName}/CustomName`, busItemInterface);
 
-      console.log(`${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)} sensor registered in Venus OS Settings: ${serviceName} -> ${proposedInstance}`);
-      return deviceInstance;
+      console.log(`${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)} sensor registered in Venus OS Settings: ${serviceName} -> ${actualProposedInstance}`);
+      return actualInstance;
       
     } catch (err) {
       console.error(`Failed to register ${sensorType} sensor in settings:`, err.message);
