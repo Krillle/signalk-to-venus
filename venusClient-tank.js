@@ -210,10 +210,14 @@ export class VenusClient extends EventEmitter {
           const tankPaths = {
             '/Tank/0/Level': 'Tank level',
             '/Tank/0/Capacity': 'Tank capacity',
+            '/Tank/0/Volume': 'Tank volume',
+            '/Tank/0/Voltage': 'Tank voltage',
             '/Tank/0/FluidType': 'Fluid type',
             '/Tank/0/Status': 'Tank status',
             '/Tank/1/Level': 'Tank level',
             '/Tank/1/Capacity': 'Tank capacity',
+            '/Tank/1/Volume': 'Tank volume',
+            '/Tank/1/Voltage': 'Tank voltage',
             '/Tank/1/FluidType': 'Fluid type',
             '/Tank/1/Status': 'Tank status'
           };
@@ -288,7 +292,8 @@ export class VenusClient extends EventEmitter {
 
   async _getOrCreateTankInstance(path) {
     // Extract the base tank path (e.g., tanks.fuel.starboard from tanks.fuel.starboard.currentLevel)
-    const basePath = path.replace(/\.(currentLevel|capacity|name)$/, '');
+    // We probably just need to remove everything after the last .?
+    const basePath = path.replace(/\.(currentLevel|capacity|name|currentVolume|voltage)$/, '');
     
     if (!this.tankInstances.has(basePath)) {
       // Create a deterministic index based on the path hash to ensure consistency
@@ -476,6 +481,30 @@ export class VenusClient extends EventEmitter {
             text: `${tankName} name` 
           });
           this.emit('dataUpdated', 'Tank Name', `${tankName}: ${value}`);
+        }
+      }
+      else if (path.includes('currentVolume')) {
+        // Current volume in liters
+        if (typeof value === 'number' && !isNaN(value)) {
+          const volumePath = `/Tank/${index}/Volume`;
+          this._exportProperty(volumePath, { 
+            value: value, 
+            type: 'd', 
+            text: `${tankName} volume` 
+          });
+          this.emit('dataUpdated', 'Tank Volume', `${tankName}: ${value.toFixed(1)}L`);
+        }
+      }
+      else if (path.includes('voltage')) {
+        // Tank sensor voltage
+        if (typeof value === 'number' && !isNaN(value)) {
+          const voltagePath = `/Tank/${index}/Voltage`;
+          this._exportProperty(voltagePath, { 
+            value: value, 
+            type: 'd', 
+            text: `${tankName} voltage` 
+          });
+          this.emit('dataUpdated', 'Tank Voltage', `${tankName}: ${value.toFixed(2)}V`);
         }
       }
       else {
