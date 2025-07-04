@@ -12,6 +12,8 @@ export class VenusClient extends EventEmitter {
     this.tankIndex = 0; // For unique tank indexing
     this.tankCounts = {}; // Track how many tanks of each type we have
     this.tankInstances = new Map(); // Track tank instances by Signal K base path
+    this.exportedProperties = new Set(); // Track which D-Bus properties have been exported
+    this.exportedInterfaces = new Set(); // Track which D-Bus interfaces have been exported
     this.VBUS_SERVICE = `com.victronenergy.virtual.${deviceType}`;
     this.managementProperties = {};
   }
@@ -205,8 +207,10 @@ export class VenusClient extends EventEmitter {
     const basePath = path.replace(/\.(currentLevel|capacity|name)$/, '');
     
     if (!this.tankInstances.has(basePath)) {
+      // Create a deterministic index based on the path hash to ensure consistency
+      const index = this._generateStableIndex(basePath);
       this.tankInstances.set(basePath, {
-        index: this.tankIndex++,
+        index: index,
         name: this._getTankName(path),
         basePath: basePath
       });
@@ -215,7 +219,33 @@ export class VenusClient extends EventEmitter {
     return this.tankInstances.get(basePath);
   }
 
+  _generateStableIndex(basePath) {
+    // Generate a stable index based on the base path to ensure the same tank
+    // always gets the same index, even across restarts
+    let hash = 0;
+    for (let i = 0; i < basePath.length; i++) {
+      const char = basePath.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32-bit integer
+    }
+    // Ensure we get a positive number within a reasonable range (0-999)
+    return Math.abs(hash) % 1000;
+  }
+
   _exportProperty(path, config) {
+    // Use a composite key to track both the D-Bus path and the interface
+    const interfaceKey = `${path}`;
+    
+    // Only export if not already exported
+    if (this.exportedInterfaces.has(interfaceKey)) {
+      // Just update the value, don't re-export the interface
+      this.tankData[path] = config.value;
+      return;
+    }
+
+    // Mark as exported
+    this.exportedInterfaces.add(interfaceKey);
+
     // Define the BusItem interface descriptor for dbus-native
     const busItemInterface = {
       name: "com.victronenergy.BusItem",
@@ -379,6 +409,8 @@ export class VenusClient extends EventEmitter {
       this.bus = null;
       this.tankData = {};
       this.tankInstances.clear();
+      this.exportedProperties.clear();
+      this.exportedInterfaces.clear();
     }
   }
 }

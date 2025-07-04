@@ -9,6 +9,7 @@ export class VenusClient extends EventEmitter {
     this.buses = {}; // Multiple buses for different sensor types
     this.envData = {};
     this.lastInitAttempt = 0;
+    this.exportedInterfaces = new Set(); // Track which D-Bus interfaces have been exported
     this.sensorInstances = {
       temperature: 24,
       humidity: 25
@@ -81,6 +82,9 @@ export class VenusClient extends EventEmitter {
           else resolve(result);
         });
       });
+
+      // Add serviceName property for interface tracking
+      bus.serviceName = serviceName;
 
       this.buses[sensorType] = bus;
       this._exportMgmt(bus, sensorType, deviceInstance);
@@ -176,6 +180,20 @@ export class VenusClient extends EventEmitter {
   }
 
   _exportProperty(bus, path, config) {
+    // Create a unique key for this specific bus service and path
+    const serviceKey = bus.serviceName || 'unknown';
+    const interfaceKey = `${serviceKey}${path}`;
+    
+    // Only export if not already exported
+    if (this.exportedInterfaces.has(interfaceKey)) {
+      // Just update the value, don't re-export the interface
+      this.envData[path] = config.value;
+      return;
+    }
+
+    // Mark as exported
+    this.exportedInterfaces.add(interfaceKey);
+
     // Define the BusItem interface descriptor for dbus-native
     const busItemInterface = {
       name: "com.victronenergy.BusItem",
@@ -328,5 +346,6 @@ export class VenusClient extends EventEmitter {
     
     this.buses = {};
     this.envData = {};
+    this.exportedInterfaces.clear();
   }
 }

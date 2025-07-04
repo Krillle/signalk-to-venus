@@ -9,6 +9,7 @@ export class VenusClient extends EventEmitter {
     this.bus = null;
     this.batteryData = {};
     this.lastInitAttempt = 0;
+    this.exportedInterfaces = new Set(); // Track which D-Bus interfaces have been exported
     this.VBUS_SERVICE = `com.victronenergy.virtual.${deviceType}`;
     this.managementProperties = {};
   }
@@ -188,6 +189,19 @@ export class VenusClient extends EventEmitter {
   }
 
   _exportProperty(path, config) {
+    // Use a composite key to track both the D-Bus path and the interface
+    const interfaceKey = `${path}`;
+    
+    // Only export if not already exported
+    if (this.exportedInterfaces.has(interfaceKey)) {
+      // Just update the value, don't re-export the interface
+      this.batteryData[path] = config.value;
+      return;
+    }
+
+    // Mark as exported
+    this.exportedInterfaces.add(interfaceKey);
+
     // Define the BusItem interface descriptor for dbus-native with enhanced signatures
     const busItemInterface = {
       name: "com.victronenergy.BusItem",
@@ -393,6 +407,7 @@ export class VenusClient extends EventEmitter {
       }
       this.bus = null;
       this.batteryData = {};
+      this.exportedInterfaces.clear();
     }
   }
 }
