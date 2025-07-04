@@ -23,18 +23,22 @@ vi.mock('../venusClient-switch.js', () => ({
   VenusClient: mockSwitchClient
 }));
 
-// Import the factory after the mocks are set up
-const { VenusClientFactory } = await import('../venusClientFactory.js');
-
 describe('VenusClientFactory', () => {
+  let VenusClientFactory;
+  
+  beforeEach(async () => {
+    // Clear mocks and dynamically import the factory
+    vi.clearAllMocks();
+    
+    // Re-import the factory to ensure it picks up the mocks
+    const factoryModule = await import('../venusClientFactory.js');
+    VenusClientFactory = factoryModule.VenusClientFactory;
+  });
+
   const mockSettings = {
     venusHost: 'test.local',
     productName: 'Test Device'
   };
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
 
   it('should create battery client for batteries device type', () => {
     const result = VenusClientFactory(mockSettings, 'batteries');
