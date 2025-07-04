@@ -423,12 +423,47 @@ export class VenusClient extends EventEmitter {
     try {
       // Create a unique service name for this tank
       const serviceName = `signalk_tank_${tankInstance.basePath.replace(/[^a-zA-Z0-9]/g, '_')}`;
-      const settingsPath = `${this.SETTINGS_ROOT}/${serviceName}`;
       
       // Proposed class and VRM instance (tank type and instance)
       const proposedInstance = `tank:${tankInstance.index}`;
       
-      // Define the BusItem interface descriptor for settings
+      // Create settings array following Victron's Settings API format
+      const settingsArray = [
+        {
+          'path': [`Settings/Devices/${serviceName}/ClassAndVrmInstance`],
+          'default': [proposedInstance],
+          'type': ['s'], // string type
+          'description': ['Class and VRM instance']
+        },
+        {
+          'path': [`Settings/Devices/${serviceName}/CustomName`],
+          'default': [tankInstance.name],
+          'type': ['s'], // string type  
+          'description': ['Custom name']
+        }
+      ];
+
+      // Call the Venus OS Settings API to register the device
+      // This is the critical missing piece - we need to call AddSettings
+      await new Promise((resolve, reject) => {
+        this.settingsBus.invoke(
+          'com.victronenergy.settings',
+          '/',
+          'com.victronenergy.Settings',
+          'AddSettings',
+          'aa{sv}',
+          [settingsArray],
+          (err, result) => {
+            if (err) {
+              reject(new Error(`Settings registration failed: ${err.message || err}`));
+            } else {
+              resolve(result);
+            }
+          }
+        );
+      });
+
+      // Also export the D-Bus interfaces for direct access
       const busItemInterface = {
         name: "com.victronenergy.BusItem",
         methods: {
@@ -441,14 +476,15 @@ export class VenusClient extends EventEmitter {
         }
       };
 
-      // ClassAndVrmInstance setting
+      // Export settings interfaces for direct D-Bus access
+      const settingsPath = `${this.SETTINGS_ROOT}/${serviceName}`;
+      
       const classInstancePath = `${settingsPath}/ClassAndVrmInstance`;
       const classInstanceInterface = {
         GetValue: () => {
           return this.wrapValue('s', proposedInstance);
         },
         SetValue: (val) => {
-          // Allow VRM to change our instance
           const actualValue = Array.isArray(val) ? val[1] : val;
           return 0; // Success
         },
@@ -457,7 +493,6 @@ export class VenusClient extends EventEmitter {
         }
       };
 
-      // CustomName setting
       const customNamePath = `${settingsPath}/CustomName`;
       const customNameInterface = {
         GetValue: () => {
@@ -481,6 +516,7 @@ export class VenusClient extends EventEmitter {
       return instanceMatch ? parseInt(instanceMatch[1]) : tankInstance.index;
 
     } catch (err) {
+      console.error(`Settings registration failed for tank ${tankInstance.basePath}:`, err);
       // Fallback to hash-based index if settings registration fails
       return tankInstance.index;
     }

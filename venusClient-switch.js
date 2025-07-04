@@ -408,10 +408,45 @@ export class VenusClient extends EventEmitter {
     try {
       // Create a unique service name for this switch
       const serviceName = `signalk_switch_${switchInstance.basePath.replace(/[^a-zA-Z0-9]/g, '_')}`;
-      const settingsPath = `${this.SETTINGS_ROOT}/${serviceName}`;
       
       // Proposed class and VRM instance (switch type and instance)
       const proposedInstance = `switch:${switchInstance.index}`;
+      
+      // Create settings array following Victron's Settings API format
+      const settingsArray = [
+        {
+          'path': [`Settings/Devices/${serviceName}/ClassAndVrmInstance`],
+          'default': [proposedInstance],
+          'type': ['s'], // string type
+          'description': ['Class and VRM instance']
+        },
+        {
+          'path': [`Settings/Devices/${serviceName}/CustomName`],
+          'default': [switchInstance.name],
+          'type': ['s'], // string type  
+          'description': ['Custom name']
+        }
+      ];
+
+      // Call the Venus OS Settings API to register the device
+      // This is the critical missing piece - we need to call AddSettings
+      await new Promise((resolve, reject) => {
+        this.settingsBus.invoke(
+          'com.victronenergy.settings',
+          '/',
+          'com.victronenergy.Settings',
+          'AddSettings',
+          'aa{sv}',
+          [settingsArray],
+          (err, result) => {
+            if (err) {
+              reject(new Error(`Settings registration failed: ${err.message || err}`));
+            } else {
+              resolve(result);
+            }
+          }
+        );
+      });
       
       // Define the BusItem interface descriptor for settings
       const busItemInterface = {
@@ -427,7 +462,7 @@ export class VenusClient extends EventEmitter {
       };
 
       // ClassAndVrmInstance setting
-      const classInstancePath = `${settingsPath}/ClassAndVrmInstance`;
+      const classInstancePath = `${this.SETTINGS_ROOT}/${serviceName}/ClassAndVrmInstance`;
       const classInstanceInterface = {
         GetValue: () => {
           return this.wrapValue('s', proposedInstance);
@@ -443,7 +478,7 @@ export class VenusClient extends EventEmitter {
       };
 
       // CustomName setting
-      const customNamePath = `${settingsPath}/CustomName`;
+      const customNamePath = `${this.SETTINGS_ROOT}/${serviceName}/CustomName`;
       const customNameInterface = {
         GetValue: () => {
           return this.wrapValue('s', switchInstance.name);
@@ -461,11 +496,14 @@ export class VenusClient extends EventEmitter {
       this.settingsBus.exportInterface(classInstanceInterface, classInstancePath, busItemInterface);
       this.settingsBus.exportInterface(customNameInterface, customNamePath, busItemInterface);
 
+      console.log(`Switch registered in Venus OS Settings: ${serviceName} -> ${proposedInstance}`);
+      
       // Extract instance ID from the proposed instance string
       const instanceMatch = proposedInstance.match(/:(\d+)$/);
       return instanceMatch ? parseInt(instanceMatch[1]) : switchInstance.index;
 
     } catch (err) {
+      console.error('Failed to register switch in settings:', err.message);
       // Fallback to hash-based index if settings registration fails
       return switchInstance.index;
     }

@@ -89,6 +89,9 @@ export class VenusClient extends EventEmitter {
       this.buses[sensorType] = bus;
       this._exportMgmt(bus, sensorType, deviceInstance);
       
+      // Register sensor in Venus OS Settings for VRM visibility
+      await this._registerEnvironmentSensorInSettings(sensorType, deviceInstance);
+      
       return bus;
       
     } catch (err) {
@@ -331,8 +334,120 @@ export class VenusClient extends EventEmitter {
     }
   }
 
+  async _registerEnvironmentSensorInSettings(sensorType, deviceInstance) {
+    // Environment sensors don't have separate settings bus, so we'll use the main bus
+    const bus = this.buses[sensorType];
+    if (!bus) {
+      return deviceInstance; // Fallback to default instance
+    }
+
+    try {
+      // Create a unique service name for this sensor
+      const serviceName = `signalk_${sensorType}_${deviceInstance}`;
+      
+      // Proposed class and VRM instance (sensor type and instance)
+      const proposedInstance = `${sensorType}:${deviceInstance}`;
+      
+      // Create a separate settings bus for this sensor
+      const settingsBus = dbusNative.createClient({
+        host: this.settings.venusHost,
+        port: 78,
+        authMethods: ['ANONYMOUS']
+      });
+
+      // Create settings array following Victron's Settings API format
+      const settingsArray = [
+        {
+          'path': [`Settings/Devices/${serviceName}/ClassAndVrmInstance`],
+          'default': [proposedInstance],
+          'type': ['s'], // string type
+          'description': ['Class and VRM instance']
+        },
+        {
+          'path': [`Settings/Devices/${serviceName}/CustomName`],
+          'default': [`SignalK ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)}`],
+          'type': ['s'], // string type  
+          'description': ['Custom name']
+        }
+      ];
+
+      // Call the Venus OS Settings API to register the device
+      // This is the critical missing piece - we need to call AddSettings
+      await new Promise((resolve, reject) => {
+        settingsBus.invoke(
+          'com.victronenergy.settings',
+          '/',
+          'com.victronenergy.Settings',
+          'AddSettings',
+          'aa{sv}',
+          [settingsArray],
+          (err, result) => {
+            if (err) {
+              reject(new Error(`Settings registration failed: ${err.message || err}`));
+            } else {
+              resolve(result);
+            }
+          }
+        );
+      });
+
+      // Also export the D-Bus interfaces for direct access
+      const busItemInterface = {
+        name: "com.victronenergy.BusItem",
+        methods: {
+          GetValue: ["", "v", [], ["value"]],
+          SetValue: ["v", "i", ["value"], ["result"]],
+          GetText: ["", "s", [], ["text"]],
+        },
+        signals: {
+          PropertiesChanged: ["a{sv}", ["changes"]]
+        }
+      };
+
+      // Export ClassAndVrmInstance interface
+      const classInterface = {
+        GetValue: () => {
+          return this.wrapValue('s', proposedInstance);
+        },
+        SetValue: (val) => {
+          return 0; // Success
+        },
+        GetText: () => {
+          return 'Class and VRM instance';
+        }
+      };
+
+      settingsBus.exportInterface(classInterface, `/Settings/Devices/${serviceName}/ClassAndVrmInstance`, busItemInterface);
+
+      // Export CustomName interface
+      const nameInterface = {
+        GetValue: () => {
+          return this.wrapValue('s', `SignalK ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)}`);
+        },
+        SetValue: (val) => {
+          return 0; // Success
+        },
+        GetText: () => {
+          return 'Custom name';
+        }
+      };
+
+      settingsBus.exportInterface(nameInterface, `/Settings/Devices/${serviceName}/CustomName`, busItemInterface);
+
+      // Store the settings bus reference to clean up later
+      this.buses[`${sensorType}_settings`] = settingsBus;
+
+      console.log(`${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)} sensor registered in Venus OS Settings: ${serviceName} -> ${proposedInstance}`);
+      return deviceInstance;
+      
+    } catch (err) {
+      console.error(`Failed to register ${sensorType} sensor in settings:`, err.message);
+      return deviceInstance; // Fallback to default instance
+    }
+  }
+
   async disconnect() {
-    // Disconnect all buses
+    // Disconnect all buses (including settings buses)
     Object.keys(this.buses).forEach(sensorType => {
       const bus = this.buses[sensorType];
       if (bus) {

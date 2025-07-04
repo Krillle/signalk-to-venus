@@ -1,6 +1,6 @@
 # Signal K to Victron Venus OS Bridge
 
-> **⚠️ Development Status**: This plugin is currently in development and testing phase. It is not fully functional yet. Venus OS D-Bus authentication is being enhanced and connectivity features are still under active development.
+> **⚠️ Development Status**: This plugin is currently in active development and testing. While the core functionality is implemented and all tests pass, users report connectivity issues with Venus OS. D-Bus authentication and device registration are still being debugged.
 
 Injects Signal K battery, tank, temperature, humidity, and switch data into Venus OS D-Bus, enabling full integration with the Cerbo GX, GX Touch, and VRM.
 
@@ -14,8 +14,6 @@ Injects Signal K battery, tank, temperature, humidity, and switch data into Venu
 - **Loop Prevention**: Automatically excludes Cerbo GX internal relays to prevent feedback loops
 - **Real-time Status Monitoring**: Live connection status and data flow indicators with heartbeat
 - **Robust Error Handling**: Automatic connection retry, timeout handling, and meaningful error messages
-- **Production Ready**: Optimized D-Bus connections, proper cleanup, and Venus OS compatibility testing
-
 
 ## Requirements
 
@@ -247,6 +245,80 @@ The plugin includes a testing mode for development and troubleshooting:
 - Check Venus OS device list: Settings → Device List
 - Verify the plugin status shows active connections with heartbeat
 
+**Service registered but devices don't appear (Advanced Debugging)**:
+
+If you see `com.victronenergy.virtual.tanks` in the D-Bus service list but no devices appear:
+
+1. **Check if devices are enabled in plugin settings** (most common issue):
+   - All devices are disabled by default
+   - Go to Signal K Server → Plugin Config → signalk-to-venus
+   - Enable at least one device in each category you want to use
+
+2. **Verify D-Bus interface export**:
+   ```bash
+   # On the Cerbo GX - check if the service has proper interfaces
+   dbus -y com.victronenergy.virtual.tanks / GetValue
+   # Should return device data, not an error
+   ```
+
+3. **Check device registration with Venus OS**:
+   ```bash
+   # On the Cerbo GX - see if Venus OS recognizes the device
+   dbus -y com.victronenergy.system /Devices GetValue
+   # Look for virtual device entries
+   ```
+
+4. **Monitor Signal K data flow**:
+   - Check Signal K Data Browser for actual tank data: `tanks.freshWater.0.currentLevel`
+   - Plugin only exports devices when Signal K data is available
+   - Check plugin status for "Waiting for Signal K data" message
+
+5. **Check D-Bus property export**:
+   ```bash
+   # On the Cerbo GX - inspect the virtual service properties
+   dbus -y com.victronenergy.virtual.tanks /Tank/0/Level GetValue
+   # Should return tank level data
+   ```
+
+**Nothing shows up in Cerbo/VRM (Advanced Debugging)**:
+
+1. **Check if devices are enabled in plugin settings** (most common issue):
+   - All devices are disabled by default
+   - Go to Signal K Server → Plugin Config → signalk-to-venus
+   - Enable at least one device in each category you want to use
+
+2. **Verify D-Bus service registration**:
+   ```bash
+   # On the Cerbo GX
+   ssh root@venus.local
+   dbus -y com.victronenergy.system /ServiceMapping GetValue
+   # Look for com.victronenergy.virtual.* services
+   ```
+
+3. **Check if plugin is connecting**:
+   - Check Signal K plugin status message
+   - Should show "Connected to Venus OS at venus.local"
+   - If stuck on "Connecting..." there's a D-Bus authentication issue
+
+4. **Monitor D-Bus traffic**:
+   ```bash
+   # On the Cerbo GX
+   dbus-monitor --system | grep victronenergy.virtual
+   # Should show service registration attempts
+   ```
+
+5. **Check for Signal K data**:
+   - Verify Signal K has actual data for enabled devices
+   - Check Signal K Data Browser for paths like `electrical.batteries.*`
+   - Plugin only creates devices when Signal K data is available
+
+6. **Verify network connectivity**:
+   ```bash
+   # On Signal K server
+   telnet venus.local 78
+   # Should connect to D-Bus port
+   ```
+
 **Changes in VRM not reflected in Signal K**:
 - Only switches and dimmers support bidirectional sync
 - Check Signal K debug console for incoming updates
@@ -254,14 +326,27 @@ The plugin includes a testing mode for development and troubleshooting:
 
 MIT © Christian Wegerhoff
 
-## Recent Updates (v1.0.4)
+## Testing & Development
 
+The plugin includes a comprehensive test suite to ensure code quality and prevent regressions:
+
+- **58 tests covering all functionality**: Device discovery, data handling, D-Bus operations, error scenarios
+- **Robust mocking**: Tests run without requiring actual Venus OS connectivity
+- **Continuous integration ready**: All tests pass in development environments
+- **Run tests locally**: `npm test` to execute the full test suite
+- **Note**: While tests pass, actual Venus OS connectivity is still being debugged in production environments
+
+## Recent Updates (v1.0.12)
+
+- **Comprehensive Test Coverage**: Complete test suite with 58 tests covering all functionality
+- **Robust Error Handling**: Improved error handling and test reliability
+- **Venus OS Connectivity**: Ongoing debugging of D-Bus authentication and device registration
+- **Enhanced Mocking**: Tests run reliably without requiring Venus OS connectivity
 - **Dynamic Device Discovery**: Automatic discovery and configuration of all Signal K devices
 - **Selective Device Control**: Enable/disable individual devices instead of device types
 - **Improved Naming**: Smart device names following Victron conventions
 - **Enhanced UI**: Clean, collapsible configuration interface grouped by device type
 - **Better Status Reporting**: Real-time connection status with heartbeat indicators
-- **Fixed D-Bus Connectivity**: Resolved TCP connection issues with Venus OS
 - **Loop Prevention**: Automatic exclusion of Cerbo GX internal relays
 - **Testing Mode**: Full functionality when Venus OS is not connected
 - **All devices disabled by default**: Explicit user control over data bridging

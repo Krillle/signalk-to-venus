@@ -59,6 +59,9 @@ export class VenusClient extends EventEmitter {
       this._exportBatteryInterface();
       this._exportRootInterface(); // Export root interface for VRM compatibility
       
+      // Register battery in Venus OS Settings for VRM visibility
+      await this._registerBatteryInSettings(100);
+      
     } catch (err) {
       // Convert errors to more user-friendly messages
       if (err.code === 'ENOTFOUND' || err.code === 'ECONNREFUSED') {
@@ -406,6 +409,106 @@ export class VenusClient extends EventEmitter {
     };
 
     this.bus.exportInterface(rootInterfaceImpl, '/', rootInterface);
+  }
+
+  async _registerBatteryInSettings(batteryInstance) {
+    if (!this.settingsBus) {
+      return batteryInstance || 100; // Fallback to default device instance
+    }
+
+    try {
+      // Create a unique service name for this battery
+      const serviceName = `signalk_battery_${this.VBUS_SERVICE.replace(/[^a-zA-Z0-9]/g, '_')}`;
+      
+      // Proposed class and VRM instance (battery type and instance)
+      const proposedInstance = `battery:${batteryInstance || 100}`;
+      
+      // Create settings array following Victron's Settings API format
+      const settingsArray = [
+        {
+          'path': [`Settings/Devices/${serviceName}/ClassAndVrmInstance`],
+          'default': [proposedInstance],
+          'type': ['s'], // string type
+          'description': ['Class and VRM instance']
+        },
+        {
+          'path': [`Settings/Devices/${serviceName}/CustomName`],
+          'default': ['SignalK Battery'],
+          'type': ['s'], // string type  
+          'description': ['Custom name']
+        }
+      ];
+
+      // Call the Venus OS Settings API to register the device
+      // This is the critical missing piece - we need to call AddSettings
+      await new Promise((resolve, reject) => {
+        this.settingsBus.invoke(
+          'com.victronenergy.settings',
+          '/',
+          'com.victronenergy.Settings',
+          'AddSettings',
+          'aa{sv}',
+          [settingsArray],
+          (err, result) => {
+            if (err) {
+              reject(new Error(`Settings registration failed: ${err.message || err}`));
+            } else {
+              resolve(result);
+            }
+          }
+        );
+      });
+
+      // Also export the D-Bus interfaces for direct access
+      const busItemInterface = {
+        name: "com.victronenergy.BusItem",
+        methods: {
+          GetValue: ["", "v", [], ["value"]],
+          SetValue: ["v", "i", ["value"], ["result"]],
+          GetText: ["", "s", [], ["text"]],
+        },
+        signals: {
+          PropertiesChanged: ["a{sv}", ["changes"]]
+        }
+      };
+
+      // Export ClassAndVrmInstance interface
+      const classInterface = {
+        GetValue: () => {
+          return this.wrapValue('s', proposedInstance);
+        },
+        SetValue: (val) => {
+          return 0; // Success
+        },
+        GetText: () => {
+          return 'Class and VRM instance';
+        }
+      };
+
+      this.settingsBus.exportInterface(classInterface, `/Settings/Devices/${serviceName}/ClassAndVrmInstance`, busItemInterface);
+
+      // Export CustomName interface
+      const nameInterface = {
+        GetValue: () => {
+          return this.wrapValue('s', 'SignalK Battery');
+        },
+        SetValue: (val) => {
+          return 0; // Success
+        },
+        GetText: () => {
+          return 'Custom name';
+        }
+      };
+
+      this.settingsBus.exportInterface(nameInterface, `/Settings/Devices/${serviceName}/CustomName`, busItemInterface);
+
+      console.log(`Battery registered in Venus OS Settings: ${serviceName} -> ${proposedInstance}`);
+      return batteryInstance || 100;
+      
+    } catch (err) {
+      console.error('Failed to register battery in settings:', err.message);
+      return batteryInstance || 100; // Fallback to default instance
+    }
   }
 
   async disconnect() {
