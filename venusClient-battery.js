@@ -454,38 +454,24 @@ export class VenusClient extends EventEmitter {
       const settingsResult = await new Promise((resolve, reject) => {
         console.log('Invoking Settings API with:', JSON.stringify(settingsArray, null, 2));
         
-        // Use the correct dbus-native message format (not invoke)
-        this.bus.message({
-          type: 1, // methodCall
-          path: '/',
+        // Use the correct dbus-native invoke format
+        this.bus.invoke({
           destination: 'com.victronenergy.settings',
+          path: '/',
           'interface': 'com.victronenergy.Settings',
           member: 'AddSettings',
           signature: 'aa{sv}',
           body: [settingsArray]
-        });
-        
-        // Listen for the method return
-        const onMessage = (msg) => {
-          if (msg.type === 2 && msg.replySerial && msg.sender === 'com.victronenergy.settings') { // methodReturn
-            this.bus.removeListener('message', onMessage);
-            if (msg.errorName) {
-              console.log('Settings API error:', msg.errorName, msg.body);
-              reject(new Error(`Settings registration failed: ${msg.errorName}`));
-            } else {
-              console.log('Settings API result:', msg.body);
-              resolve(msg.body);
-            }
+        }, (err, result) => {
+          if (err) {
+            console.log('Settings API error:', err);
+            console.dir(err);
+            reject(new Error(`Settings registration failed: ${err.message || err}`));
+          } else {
+            console.log('Settings API result:', result);
+            resolve(result);
           }
-        };
-        
-        this.bus.on('message', onMessage);
-        
-        // Set a timeout in case no response comes back
-        setTimeout(() => {
-          this.bus.removeListener('message', onMessage);
-          reject(new Error('Settings registration timeout'));
-        }, 5000);
+        });
       });
 
       // Extract the actual assigned instance ID from the Settings API result
