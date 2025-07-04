@@ -201,15 +201,15 @@ export class VenusClient extends EventEmitter {
     const rootImpl = {
       GetItems: () => {
         // Return all management properties and switch data in the correct vedbus.py format
-        // Format: a{sa{sv}} - array of dictionary entries with string keys and variant values
-        const items = [];
+        // Format: a{sa{sv}} - dictionary with string keys and variant values
+        const items = {};
         
         // Add management properties
         Object.entries(this.managementProperties).forEach(([path, info]) => {
-          items.push([path, {
+          items[path] = {
             Value: this.wrapValue(this.getType(info.value), info.value),
             Text: this.wrapValue('s', info.text)
-          }]);
+          };
         });
 
         // Add switch data properties
@@ -222,10 +222,10 @@ export class VenusClient extends EventEmitter {
           };
           
           const text = switchPaths[path] || 'Switch property';
-          items.push([path, {
+          items[path] = {
             Value: this.wrapValue('d', value),
             Text: this.wrapValue('s', text)
-          }]);
+          };
         });
 
         return items;
