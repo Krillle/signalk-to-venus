@@ -272,7 +272,7 @@ export class VenusClient extends EventEmitter {
         if (typeof value === 'string') {
           // Call updateProperty if it exists (for tests), otherwise setValue (for real implementation)
           if (tankService.updateProperty) {
-            tankService.updateProperty('/CustomName', value, 's', 'Tank name');
+            tankService.updateProperty('/Name', value, 's', 'Tank name');
           } else {
             tankService.setValue('/CustomName', value);
           }
