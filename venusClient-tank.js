@@ -53,25 +53,18 @@ export class VenusClient extends EventEmitter {
       // Use the new base class method to update properties
       switch (path) {
         case '/Level':
-          if (tankService.updateLevel) {
-            tankService.updateLevel(config.value);
-          }
+          tankService.setValue('/Level', config.value);
           break;
         case '/Capacity':
-          if (tankService.updateCapacity) {
-            tankService.updateCapacity(config.value);
-          }
+          tankService.setValue('/Capacity', config.value);
           break;
+        case '/CustomName':
         case '/Name':
-          if (tankService.updateName) {
-            tankService.updateName(config.value);
-          }
+          tankService.setValue('/CustomName', config.value);
           break;
         default:
           // For other properties, use the generic setValue method
-          if (tankService.setValue) {
-            tankService.setValue(path, config.value);
-          }
+          tankService.setValue(path, config.value);
           break;
       }
     }
@@ -229,21 +222,33 @@ export class VenusClient extends EventEmitter {
         // Tank level as percentage (0-1 to 0-100)
         if (typeof value === 'number' && !isNaN(value)) {
           const levelPercent = value > 1 ? value : value * 100;
-          tankService.updateLevel(levelPercent);
+          tankService.setValue('/Level', levelPercent);
+          
+          // Update remaining volume if capacity is known
+          const capacity = tankService.getValue('/Capacity');
+          if (capacity > 0) {
+            tankService.setValue('/Remaining', (capacity * levelPercent / 100));
+          }
+          
           this.emit('dataUpdated', 'Tank Level', `${tankName}: ${levelPercent.toFixed(1)}%`);
         }
       }
       else if (path.includes('capacity')) {
         // Tank capacity in liters
         if (typeof value === 'number' && !isNaN(value)) {
-          tankService.updateCapacity(value);
+          tankService.setValue('/Capacity', value);
+          
+          // Update remaining volume
+          const level = tankService.getValue('/Level') || 0;
+          tankService.setValue('/Remaining', (value * level / 100));
+          
           this.emit('dataUpdated', 'Tank Capacity', `${tankName}: ${value.toFixed(1)}L`);
         }
       }
       else if (path.includes('name')) {
         // Tank name
         if (typeof value === 'string') {
-          tankService.updateName(value);
+          tankService.setValue('/CustomName', value);
           this.emit('dataUpdated', 'Tank Name', `${tankName}: ${value}`);
         }
       }

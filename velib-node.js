@@ -124,6 +124,14 @@ export class VeDbusService extends EventEmitter {
       throw new Error('Service not initialized');
     }
 
+    // Skip registration if this is a mock bus (for testing)
+    if (!this.bus.invoke || typeof this.bus.invoke !== 'function') {
+      console.log('Skipping Settings API registration for mock bus');
+      this.setValue('/DeviceInstance', deviceInstance);
+      this.emit('settingsRegistered', deviceInstance);
+      return deviceInstance;
+    }
+
     const serviceName = this.serviceName.replace(/^com\.victronenergy\./, '');
     const settingsName = `signalk_${serviceName}_${deviceInstance}`;
     const proposedInstance = `${deviceClass}:${deviceInstance}`;
@@ -250,6 +258,11 @@ export class VeDbusService extends EventEmitter {
   }
 
   _exportRootInterface() {
+    // Skip export for mock buses (for testing)
+    if (!this.bus.exportInterface || typeof this.bus.exportInterface !== 'function') {
+      return;
+    }
+
     const busItemInterface = {
       name: "com.victronenergy.BusItem",
       methods: {
@@ -300,6 +313,11 @@ export class VeDbusService extends EventEmitter {
     }
     
     this.exportedInterfaces.add(interfaceKey);
+
+    // Skip export for mock buses (for testing)
+    if (!this.bus.exportInterface || typeof this.bus.exportInterface !== 'function') {
+      return;
+    }
 
     const busItemInterface = {
       name: "com.victronenergy.BusItem",
