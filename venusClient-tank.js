@@ -221,7 +221,7 @@ export class VenusClient extends EventEmitter {
       const tankInstance = await this._getOrCreateTankInstance(path);
       const tankService = this.tankServices.get(tankInstance.basePath);
       
-      if (!tankService || typeof tankService.setValue !== 'function') {
+      if (!tankService || (typeof tankService.setValue !== 'function' && typeof tankService.updateProperty !== 'function')) {
         console.error(`No tank service found or invalid for ${tankInstance.basePath}`);
         return;
       }
