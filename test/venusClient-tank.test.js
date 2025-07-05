@@ -283,6 +283,7 @@ describe('VenusClient - Tank', () => {
       client.bus = mockBus;
       client.settingsBus = mockBus;
       vi.spyOn(client, '_registerTankInSettings').mockResolvedValue(123);
+      vi.spyOn(client, '_exportProperty').mockImplementation(() => {});
       
       // Create a mock TankService
       mockTankService = {
