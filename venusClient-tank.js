@@ -186,6 +186,7 @@ export class VenusClient extends EventEmitter {
     this.settings = settings;
     this.deviceType = deviceType;
     this.bus = null;
+    this.tankData = {}; // For compatibility with tests
     this.lastInitAttempt = 0;
     this.tankIndex = 0; // For unique tank indexing
     this.tankCounts = {}; // Track how many tanks of each type we have
