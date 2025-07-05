@@ -11,24 +11,8 @@ export class VenusClient extends EventEmitter {
     this.lastInitAttempt = 0;
     this.tankIndex = 0; // For unique tank indexing
     this.tankCounts = {}; // Track how many tanks of each type we have
-    this.tankInstances = new Map(); // Track tank instances by Signal     // Export root interface for this tank service
-    const rootInterfaceKey = `${serviceName}/`;
-    if (!this.exportedInterfaces.has(rootInterfaceKey)) {
-      tankBus.exportInterface(rootInterface, "/", {
-        name: "com.victronenergy.BusItem",
-        methods: {
-          GetItems: ["", "a{sa{sv}}", [], ["items"]],
-          GetValue: ["", "v", [], ["value"]],
-          SetValue: ["v", "i", ["value"], ["result"]],
-          GetText: ["", "s", [], ["text"]],
-        },
-        signals: {
-          ItemsChanged: ["a{sa{sv}}", ["changes"]],
-          PropertiesChanged: ["a{sv}", ["changes"]]
-        }
-      });
-      this.exportedInterfaces.add(rootInterfaceKey);
-    }is.tankServices = new Map(); // Track individual tank services
+    this.tankInstances = new Map(); // Track tank instances by Signal K path
+    this.tankServices = new Map(); // Track individual tank services
     this.exportedProperties = new Set(); // Track which D-Bus properties have been exported
     this.exportedInterfaces = new Set(); // Track which D-Bus interfaces have been exported
     this.VBUS_SERVICE = `com.victronenergy.virtual.${deviceType}`;
