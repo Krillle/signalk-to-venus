@@ -11,8 +11,24 @@ export class VenusClient extends EventEmitter {
     this.lastInitAttempt = 0;
     this.tankIndex = 0; // For unique tank indexing
     this.tankCounts = {}; // Track how many tanks of each type we have
-    this.tankInstances = new Map(); // Track tank instances by Signal K base path
-    this.tankServices = new Map(); // Track individual tank services
+    this.tankInstances = new Map(); // Track tank instances by Signal     // Export root interface for this tank service
+    const rootInterfaceKey = `${serviceName}/`;
+    if (!this.exportedInterfaces.has(rootInterfaceKey)) {
+      tankBus.exportInterface(rootInterface, "/", {
+        name: "com.victronenergy.BusItem",
+        methods: {
+          GetItems: ["", "a{sa{sv}}", [], ["items"]],
+          GetValue: ["", "v", [], ["value"]],
+          SetValue: ["v", "i", ["value"], ["result"]],
+          GetText: ["", "s", [], ["text"]],
+        },
+        signals: {
+          ItemsChanged: ["a{sa{sv}}", ["changes"]],
+          PropertiesChanged: ["a{sv}", ["changes"]]
+        }
+      });
+      this.exportedInterfaces.add(rootInterfaceKey);
+    }is.tankServices = new Map(); // Track individual tank services
     this.exportedProperties = new Set(); // Track which D-Bus properties have been exported
     this.exportedInterfaces = new Set(); // Track which D-Bus interfaces have been exported
     this.VBUS_SERVICE = `com.victronenergy.virtual.${deviceType}`;
@@ -274,9 +290,8 @@ export class VenusClient extends EventEmitter {
       if (path.includes('currentLevel')) {
         // Validate and convert level (0-1 to 0-100 percentage)
         if (typeof value === 'number' && !isNaN(value)) {
-          const levelPath = `/Tank/${index}/Level`;
           const levelPercent = value * 100;
-          this._exportProperty(levelPath, { 
+          this._exportProperty(tankInstance, '/Level', { 
             value: levelPercent, 
             type: 'd', 
             text: `${tankName} level` 
@@ -287,8 +302,7 @@ export class VenusClient extends EventEmitter {
       else if (path.includes('capacity')) {
         // Validate and set capacity
         if (typeof value === 'number' && !isNaN(value)) {
-          const capacityPath = `/Tank/${index}/Capacity`;
-          this._exportProperty(capacityPath, { 
+          this._exportProperty(tankInstance, '/Capacity', { 
             value: value, 
             type: 'd', 
             text: `${tankName} capacity` 
@@ -299,8 +313,7 @@ export class VenusClient extends EventEmitter {
       else if (path.includes('name')) {
         // Tank name/label
         if (typeof value === 'string') {
-          const namePath = `/Tank/${index}/Name`;
-          this._exportProperty(namePath, { 
+          this._exportProperty(tankInstance, '/Name', { 
             value: value, 
             type: 's', 
             text: `${tankName} name` 
@@ -311,8 +324,7 @@ export class VenusClient extends EventEmitter {
       else if (path.includes('currentVolume')) {
         // Current volume in liters
         if (typeof value === 'number' && !isNaN(value)) {
-          const volumePath = `/Tank/${index}/Volume`;
-          this._exportProperty(volumePath, { 
+          this._exportProperty(tankInstance, '/Volume', { 
             value: value, 
             type: 'd', 
             text: `${tankName} volume` 
@@ -323,8 +335,7 @@ export class VenusClient extends EventEmitter {
       else if (path.includes('voltage')) {
         // Tank sensor voltage
         if (typeof value === 'number' && !isNaN(value)) {
-          const voltagePath = `/Tank/${index}/Voltage`;
-          this._exportProperty(voltagePath, { 
+          this._exportProperty(tankInstance, '/Voltage', { 
             value: value, 
             type: 'd', 
             text: `${tankName} voltage` 
@@ -343,11 +354,23 @@ export class VenusClient extends EventEmitter {
   }
 
   async disconnect() {
+    // Disconnect the main bus
     if (this.bus) {
       try {
         this.bus.end();
       } catch (err) {
         // Ignore disconnect errors
+      }
+    }
+    
+    // Disconnect all tank-specific buses
+    for (const serviceInfo of this.tankServices.values()) {
+      if (serviceInfo && serviceInfo.bus) {
+        try {
+          serviceInfo.bus.end();
+        } catch (err) {
+          // Ignore disconnect errors
+        }
       }
     }
     
@@ -366,32 +389,42 @@ export class VenusClient extends EventEmitter {
       return this.tankServices.get(tankInstance.basePath);
     }
 
-    // Create a unique service name for this specific tank
-    const serviceName = `com.victronenergy.virtual.tanks.signalk_tank_${tankInstance.basePath.replace(/[^a-zA-Z0-9]/g, '_')}`;
-
     try {
-      // Request service name for this specific tank on our existing connection
+      // Create a separate D-Bus connection for this tank
+      const tankBus = dbusNative.createClient({
+        host: this.settings.venusHost,
+        port: 78,
+        authMethods: ['ANONYMOUS']
+      });
+
+      // Create a unique service name for this specific tank
+      const serviceName = `com.victronenergy.virtual.tanks.signalk_tank_${tankInstance.basePath.replace(/[^a-zA-Z0-9]/g, '_')}`;
+
+      // Request service name for this specific tank on its own connection
       await new Promise((resolve, reject) => {
-        this.bus.requestName(serviceName, 0, (err, result) => {
+        tankBus.requestName(serviceName, 0, (err, result) => {
           if (err) reject(err);
           else resolve(result);
         });
       });
 
-      // Store the service name for this tank
-      this.tankServices.set(tankInstance.basePath, serviceName);
+      // Store the service info for this tank
+      this.tankServices.set(tankInstance.basePath, {
+        serviceName: serviceName,
+        bus: tankBus
+      });
       
       // Export management interfaces for this specific tank service
-      await this._exportTankMgmt(serviceName, tankInstance);
+      await this._exportTankMgmt(serviceName, tankInstance, tankBus);
       
       return serviceName;
       
     } catch (err) {
-      throw new Error(`Failed to create tank service ${serviceName}: ${err.message}`);
+      throw new Error(`Failed to create tank service for ${tankInstance.basePath}: ${err.message}`);
     }
   }
 
-  async _exportTankMgmt(serviceName, tankInstance) {
+  async _exportTankMgmt(serviceName, tankInstance, tankBus) {
     // Define the BusItem interface descriptor
     const busItemInterface = {
       name: "com.victronenergy.BusItem",
@@ -422,8 +455,8 @@ export class VenusClient extends EventEmitter {
       "/CustomName": { type: "s", value: tankInstance.name, text: "Custom name" }
     };
 
-    // Export the /Mgmt subtree node
-    this._exportMgmtSubtree(managementProperties);
+    // Export the /Mgmt subtree node using the tank-specific bus
+    this._exportMgmtSubtree(managementProperties, tankBus);
 
     // Export individual property interfaces for non-management properties
     Object.entries(managementProperties).forEach(([path, config]) => {
@@ -439,9 +472,28 @@ export class VenusClient extends EventEmitter {
         
         // Only export if not already exported
         if (!this.exportedInterfaces.has(interfaceKey)) {
-          this.bus.exportInterface(propertyInterface, path, busItemInterface);
+          tankBus.exportInterface(propertyInterface, path, busItemInterface);
           this.exportedInterfaces.add(interfaceKey);
         }
+      }
+    });
+
+    // Export individual tank property interfaces
+    const tankPaths = ['/Level', '/Capacity', '/Volume', '/Voltage', '/FluidType', '/Status'];
+    tankPaths.forEach(path => {
+      const propertyInterface = {
+        GetValue: () => {
+          const value = this.tankData[path] || 0;
+          return this.wrapValue('d', value);
+        },
+        SetValue: (val) => 0, // Success
+        GetText: () => 'Tank property'
+      };
+
+      const interfaceKey = `${serviceName}${path}`;
+      if (!this.exportedInterfaces.has(interfaceKey)) {
+        tankBus.exportInterface(propertyInterface, path, busItemInterface);
+        this.exportedInterfaces.add(interfaceKey);
       }
     });
 
@@ -459,14 +511,14 @@ export class VenusClient extends EventEmitter {
           }]);
         });
 
-        // Add tank-specific data properties
+        // Add tank-specific data properties (simplified paths since each service is one tank)
         const tankPaths = [
-          `/Tank/${deviceInstance}/Level`,
-          `/Tank/${deviceInstance}/Capacity`,
-          `/Tank/${deviceInstance}/Volume`,
-          `/Tank/${deviceInstance}/Voltage`,
-          `/Tank/${deviceInstance}/FluidType`,
-          `/Tank/${deviceInstance}/Status`
+          `/Level`,
+          `/Capacity`,
+          `/Volume`,
+          `/Voltage`,
+          `/FluidType`,
+          `/Status`
         ];
 
         tankPaths.forEach(path => {
@@ -512,10 +564,9 @@ export class VenusClient extends EventEmitter {
       this.exportedInterfaces.add(rootInterfaceKey);
     }
 
-    this._exportMgmtSubtree(managementProperties);
   }
 
-  _exportMgmtSubtree(managementProperties) {
+  _exportMgmtSubtree(managementProperties, tankBus) {
     // Extract only the management properties that are under /Mgmt/
     const mgmtProperties = {};
     Object.entries(managementProperties).forEach(([path, config]) => {
@@ -569,7 +620,7 @@ export class VenusClient extends EventEmitter {
     // Export the /Mgmt subtree interface
     const mgmtInterfaceKey = `/Mgmt`;
     if (!this.exportedInterfaces.has(mgmtInterfaceKey)) {
-      this.bus.exportInterface(mgmtInterface, "/Mgmt", busItemInterface);
+      tankBus.exportInterface(mgmtInterface, "/Mgmt", busItemInterface);
       this.exportedInterfaces.add(mgmtInterfaceKey);
     }
 
@@ -586,22 +637,32 @@ export class VenusClient extends EventEmitter {
       
       // Only export if not already exported
       if (!this.exportedInterfaces.has(interfaceKey)) {
-        this.bus.exportInterface(propertyInterface, path, busItemInterface);
+        tankBus.exportInterface(propertyInterface, path, busItemInterface);
         this.exportedInterfaces.add(interfaceKey);
       }
     });
   }
 
-  _exportProperty(path, config) {
+  _exportProperty(tankInstance, path, config) {
+    // Get the tank service info
+    const serviceInfo = this.tankServices.get(tankInstance.basePath);
+    if (!serviceInfo) {
+      console.error(`No service found for tank: ${tankInstance.basePath}`);
+      return;
+    }
+
+    const { serviceName, bus } = serviceInfo;
+    const interfaceKey = `${serviceName}${path}`;
+    
     // Only export if not already exported
-    if (this.exportedInterfaces.has(path)) {
+    if (this.exportedInterfaces.has(interfaceKey)) {
       // Just update the value, don't re-export the interface
       this.tankData[path] = config.value;
       return;
     }
 
     // Mark as exported
-    this.exportedInterfaces.add(path);
+    this.exportedInterfaces.add(interfaceKey);
 
     // Define the BusItem interface descriptor for dbus-native
     const busItemInterface = {
@@ -631,13 +692,10 @@ export class VenusClient extends EventEmitter {
         return 0; // Success
       },
       GetText: () => {
-        return config.text;
+        return config.text; // Native string return
       }
     };
 
-    // Export the interface using the main bus if available
-    if (this.bus) {
-      this.bus.exportInterface(propertyInterface, path, busItemInterface);
-    }
+    bus.exportInterface(propertyInterface, path, busItemInterface);
   }
 }
