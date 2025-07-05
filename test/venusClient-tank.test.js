@@ -40,8 +40,11 @@ describe('VenusClient - Tank', () => {
     mockBus.exportInterface.mockImplementation(() => {});
     mockBus.end.mockImplementation(() => {});
     
-    // Mock init to prevent real network connections
+    // Mock D-Bus related methods to prevent real network connections
     vi.spyOn(client, 'init').mockResolvedValue();
+    vi.spyOn(client, '_createTankService').mockResolvedValue();
+    vi.spyOn(client, '_exportMgmtSubtree').mockImplementation(() => {});
+    vi.spyOn(client, '_exportRootInterface').mockImplementation(() => {});
     
     // Set up mock buses
     client.bus = mockBus;
@@ -207,30 +210,56 @@ describe('VenusClient - Tank', () => {
     });
 
     it('should export interface only once per path', () => {
-      const path = '/Tank/1/Level';
+      // Mock tank instance
+      const mockTankInstance = {
+        basePath: 'tanks.fuel.starboard',
+        vrmInstanceId: 123,
+        name: 'Fuel starboard'
+      };
+      
+      // Mock the tank service
+      client.tankServices.set(mockTankInstance.basePath, {
+        serviceName: 'com.victronenergy.virtual.tanks.test',
+        bus: mockBus
+      });
+      
+      const path = '/Level';
       const config = { value: 50, type: 'd', text: 'Test level' };
       
       // First export
-      client._exportProperty(path, config);
+      client._exportProperty(mockTankInstance, path, config);
       expect(mockBus.exportInterface).toHaveBeenCalledTimes(1);
-      expect(client.exportedInterfaces.has(path)).toBe(true);
+      expect(client.exportedInterfaces.has(`${mockTankInstance.basePath}${path}`)).toBe(true);
       
       // Second export should not call exportInterface again
-      client._exportProperty(path, { value: 75, type: 'd', text: 'Test level' });
+      client._exportProperty(mockTankInstance, path, { value: 75, type: 'd', text: 'Test level' });
       expect(mockBus.exportInterface).toHaveBeenCalledTimes(1);
-      expect(client.tankData[path]).toBe(75); // Value should be updated
+      expect(client.tankData[`${mockTankInstance.basePath}${path}`]).toBe(75); // Value should be updated
     });
 
     it('should export different interfaces for different paths', () => {
-      const path1 = '/Tank/1/Level';
-      const path2 = '/Tank/1/Capacity';
+      // Mock tank instance
+      const mockTankInstance = {
+        basePath: 'tanks.fuel.starboard',
+        vrmInstanceId: 123,
+        name: 'Fuel starboard'
+      };
       
-      client._exportProperty(path1, { value: 50, type: 'd', text: 'Level' });
-      client._exportProperty(path2, { value: 100, type: 'd', text: 'Capacity' });
+      // Mock the tank service
+      client.tankServices.set(mockTankInstance.basePath, {
+        serviceName: 'com.victronenergy.virtual.tanks.test',
+        bus: mockBus
+      });
+      
+      const path1 = '/Level';
+      const path2 = '/Capacity';
+      
+      client._exportProperty(mockTankInstance, path1, { value: 50, type: 'd', text: 'Level' });
+      client._exportProperty(mockTankInstance, path2, { value: 100, type: 'd', text: 'Capacity' });
       
       expect(mockBus.exportInterface).toHaveBeenCalledTimes(2);
-      expect(client.exportedInterfaces.has(path1)).toBe(true);
-      expect(client.exportedInterfaces.has(path2)).toBe(true);
+      expect(client.exportedInterfaces.has(`${mockTankInstance.basePath}${path1}`)).toBe(true);
+      expect(client.exportedInterfaces.has(`${mockTankInstance.basePath}${path2}`)).toBe(true);
     });
   });
 
@@ -251,7 +280,11 @@ describe('VenusClient - Tank', () => {
       await client.handleSignalKUpdate(path, value);
       
       expect(client._exportProperty).toHaveBeenCalledWith(
-        '/Tank/123/Level',
+        expect.objectContaining({
+          basePath: 'tanks.fuel.starboard',
+          vrmInstanceId: 123
+        }),
+        '/Level',
         expect.objectContaining({
           value: 75, // Should be converted to percentage
           type: 'd',
@@ -267,7 +300,11 @@ describe('VenusClient - Tank', () => {
       await client.handleSignalKUpdate(path, value);
       
       expect(client._exportProperty).toHaveBeenCalledWith(
-        '/Tank/123/Capacity',
+        expect.objectContaining({
+          basePath: 'tanks.fuel.starboard',
+          vrmInstanceId: 123
+        }),
+        '/Capacity',
         expect.objectContaining({
           value: 200,
           type: 'd',
@@ -283,7 +320,11 @@ describe('VenusClient - Tank', () => {
       await client.handleSignalKUpdate(path, value);
       
       expect(client._exportProperty).toHaveBeenCalledWith(
-        '/Tank/123/Name',
+        expect.objectContaining({
+          basePath: 'tanks.fuel.starboard',
+          vrmInstanceId: 123
+        }),
+        '/Name',
         expect.objectContaining({
           value: 'Main Fuel Tank',
           type: 's',
