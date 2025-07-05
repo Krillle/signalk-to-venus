@@ -66,6 +66,9 @@ export class VenusClient extends EventEmitter {
   }
 
   _exportMgmt() {
+    // Export the /Mgmt subtree node
+    this._exportMgmtSubtree();
+    
     // Define the BusItem interface descriptor for dbus-native with enhanced signatures
     const busItemInterface = {
       name: "com.victronenergy.BusItem",
@@ -79,100 +82,31 @@ export class VenusClient extends EventEmitter {
       }
     };
 
-    // Export management properties using dbus-native with proper interface descriptors
-    const mgmtInterface = {
-      GetValue: () => {
-        return this.wrapValue('i', 1); // Connected = 1 (integer)
-      },
-      SetValue: (val) => {
-        return 0; // Success
-      },
-      GetText: () => {
-        return 'Connected';
-      }
+    // Export non-management properties
+    const nonMgmtProperties = {
+      '/ProductName': { value: 'SignalK Virtual Battery', text: 'Product name' },
+      '/DeviceInstance': { value: 100, text: 'Device instance' },
+      '/CustomName': { value: 'SignalK Battery', text: 'Custom name' }
     };
 
-    this.bus.exportInterface(mgmtInterface, '/Mgmt/Connection', busItemInterface);
-    this.managementProperties['/Mgmt/Connection'] = { value: 1, text: 'Connected' };
+    Object.entries(nonMgmtProperties).forEach(([path, config]) => {
+      const propertyInterface = {
+        GetValue: () => {
+          const currentValue = this.managementProperties[path]?.value || config.value;
+          const type = path === '/DeviceInstance' ? 'u' : 's';
+          return this.wrapValue(type, currentValue);
+        },
+        SetValue: (val) => {
+          return 0;
+        },
+        GetText: () => {
+          return config.text;
+        }
+      };
 
-    // Product Name - Required for Venus OS recognition
-    const productNameInterface = {
-      GetValue: () => {
-        return this.wrapValue('s', 'SignalK Virtual Battery');
-      },
-      SetValue: (val) => {
-        return 0;
-      },
-      GetText: () => {
-        return 'Product name';
-      }
-    };
-
-    this.bus.exportInterface(productNameInterface, '/ProductName', busItemInterface);
-    this.managementProperties['/ProductName'] = { value: 'SignalK Virtual Battery', text: 'Product name' };
-
-    // Device Instance - Required for unique identification
-    const deviceInstanceInterface = {
-      GetValue: () => {
-        return this.wrapValue('u', this.managementProperties['/DeviceInstance'].value);
-      },
-      SetValue: (val) => {
-        return 0;
-      },
-      GetText: () => {
-        return 'Device instance';
-      }
-    };
-
-    this.bus.exportInterface(deviceInstanceInterface, '/DeviceInstance', busItemInterface);
-    this.managementProperties['/DeviceInstance'] = { value: 100, text: 'Device instance' };
-
-    // Custom Name
-    const customNameInterface = {
-      GetValue: () => {
-        return this.wrapValue('s', 'SignalK Battery');
-      },
-      SetValue: (val) => {
-        return 0;
-      },
-      GetText: () => {
-        return 'Custom name';
-      }
-    };
-
-    this.bus.exportInterface(customNameInterface, '/CustomName', busItemInterface);
-    this.managementProperties['/CustomName'] = { value: 'SignalK Battery', text: 'Custom name' };
-
-    // Process Name and Version - Required for VRM registration
-    const processNameInterface = {
-      GetValue: () => {
-        return this.wrapValue('s', 'signalk-battery-sensor');
-      },
-      SetValue: (val) => {
-        return 0;
-      },
-      GetText: () => {
-        return 'Process name';
-      }
-    };
-
-    this.bus.exportInterface(processNameInterface, '/Mgmt/ProcessName', busItemInterface);
-    this.managementProperties['/Mgmt/ProcessName'] = { value: 'signalk-battery-sensor', text: 'Process name' };
-
-    const processVersionInterface = {
-      GetValue: () => {
-        return this.wrapValue('s', '1.0.12');
-      },
-      SetValue: (val) => {
-        return 0;
-      },
-      GetText: () => {
-        return 'Process version';
-      }
-    };
-
-    this.bus.exportInterface(processVersionInterface, '/Mgmt/ProcessVersion', busItemInterface);
-    this.managementProperties['/Mgmt/ProcessVersion'] = { value: '1.0.12', text: 'Process version' };
+      this.bus.exportInterface(propertyInterface, path, busItemInterface);
+      this.managementProperties[path] = { value: config.value, text: config.text };
+    });
   }
 
   _exportBatteryInterface() {
@@ -554,6 +488,79 @@ export class VenusClient extends EventEmitter {
       console.error('Failed to register battery in settings:', err.message);
       return batteryInstance || 100; // Fallback to default instance
     }
+  }
+
+  _exportMgmtSubtree() {
+    // Define the BusItem interface descriptor for dbus-native
+    const busItemInterface = {
+      name: "com.victronenergy.BusItem",
+      methods: {
+        GetItems: ["", "a{sa{sv}}", [], ["items"]],
+        GetValue: ["", "v", [], ["value"]],
+        SetValue: ["v", "i", ["value"], ["result"]],
+        GetText: ["", "s", [], ["text"]],
+      },
+      signals: {
+        ItemsChanged: ["a{sa{sv}}", ["changes"]],
+        PropertiesChanged: ["a{sv}", ["changes"]]
+      }
+    };
+
+    // Management properties under /Mgmt/
+    const mgmtProperties = {
+      "/Mgmt/ProcessName": { type: "s", value: "signalk-battery-sensor", text: "Process name" },
+      "/Mgmt/ProcessVersion": { type: "s", value: "1.0.12", text: "Process version" },
+      "/Mgmt/Connection": { type: "i", value: 1, text: "Connected" }
+    };
+
+    // Create the /Mgmt subtree interface
+    const mgmtInterface = {
+      GetItems: () => {
+        // Return all management properties under /Mgmt
+        const items = [];
+        Object.entries(mgmtProperties).forEach(([path, config]) => {
+          items.push([path, {
+            Value: this.wrapValue(config.type, config.value),
+            Text: this.wrapValue("s", config.text)
+          }]);
+        });
+        return items;
+      },
+      
+      GetValue: () => {
+        return this.wrapValue('s', 'Management');
+      },
+      
+      SetValue: (value) => {
+        return -1; // Error - mgmt subtree doesn't support setting values
+      },
+      
+      GetText: () => {
+        return 'Management';
+      }
+    };
+
+    // Export the /Mgmt subtree interface
+    if (!this.exportedInterfaces.has('/Mgmt')) {
+      this.bus.exportInterface(mgmtInterface, "/Mgmt", busItemInterface);
+      this.exportedInterfaces.add('/Mgmt');
+    }
+
+    // Export individual management property interfaces
+    Object.entries(mgmtProperties).forEach(([path, config]) => {
+      const propertyInterface = {
+        GetValue: () => this.wrapValue(config.type, config.value),
+        SetValue: (val) => 0, // Success
+        GetText: () => config.text
+      };
+
+      // Only export if not already exported
+      if (!this.exportedInterfaces.has(path)) {
+        this.bus.exportInterface(propertyInterface, path, busItemInterface);
+        this.exportedInterfaces.add(path);
+        this.managementProperties[path] = { value: config.value, text: config.text };
+      }
+    });
   }
 
   async disconnect() {

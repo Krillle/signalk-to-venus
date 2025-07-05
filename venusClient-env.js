@@ -121,6 +121,37 @@ export class VenusClient extends EventEmitter {
       },
     };
 
+    // Export the /Mgmt subtree node
+    this._exportMgmtSubtree(bus, sensorType, deviceInstance);
+
+    // Non-management properties
+    const properties = {
+      "/ProductName": { type: "s", value: `SignalK ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)} Sensor`, text: "Product name" },
+      "/DeviceInstance": { type: "u", value: deviceInstance, text: "Device instance" },
+      "/CustomName": { type: "s", value: `SignalK ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)}`, text: "Custom name" }
+    };
+
+    // Export individual property interfaces for non-management properties
+    Object.entries(properties).forEach(([path, config]) => {
+      const propertyInterface = {
+        GetValue: () => this.wrapValue(config.type, config.value),
+        SetValue: (val) => 0, // Success
+        GetText: () => config.text
+      };
+
+      bus.exportInterface(propertyInterface, path, {
+        name: "com.victronenergy.BusItem",
+        methods: {
+          GetValue: ["", "v", [], ["value"]],
+          SetValue: ["v", "i", ["value"], ["result"]],
+          GetText: ["", "s", [], ["text"]],
+        },
+        signals: {
+          PropertiesChanged: ["a{sv}", ["changes"]]
+        }
+      });
+    });
+
     // Root interface with GetItems and GetValue for all properties
     const rootInterface = {
       GetItems: () => {
@@ -187,36 +218,82 @@ export class VenusClient extends EventEmitter {
     };
 
     bus.exportInterface(rootInterface, "/", busItemInterface);
+  }
 
-    // Individual property interfaces following dbus-victron-virtual pattern
-    const properties = {
-      "/Mgmt/Connection": { type: "i", value: 1, text: "Connected" },
-      "/ProductName": { type: "s", value: `SignalK ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)} Sensor`, text: "Product name" },
-      "/DeviceInstance": { type: "u", value: deviceInstance, text: "Device instance" },
-      "/CustomName": { type: "s", value: `SignalK ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)}`, text: "Custom name" },
-      "/Mgmt/ProcessName": { type: "s", value: `signalk-${sensorType}-sensor`, text: "Process name" },
-      "/Mgmt/ProcessVersion": { type: "s", value: "1.0.12", text: "Process version" }
+  _exportMgmtSubtree(bus, sensorType, deviceInstance) {
+    // Define the BusItem interface descriptor for dbus-native
+    const busItemInterface = {
+      name: "com.victronenergy.BusItem",
+      methods: {
+        GetItems: ["", "a{sa{sv}}", [], ["items"]],
+        GetValue: ["", "v", [], ["value"]],
+        SetValue: ["v", "i", ["value"], ["result"]],
+        GetText: ["", "s", [], ["text"]],
+      },
+      signals: {
+        ItemsChanged: ["a{sa{sv}}", ["changes"]],
+        PropertiesChanged: ["a{sv}", ["changes"]]
+      }
     };
 
-    // Export individual property interfaces
-    Object.entries(properties).forEach(([path, config]) => {
+    // Management properties under /Mgmt/
+    const mgmtProperties = {
+      "/Mgmt/ProcessName": { type: "s", value: `signalk-${sensorType}-sensor`, text: "Process name" },
+      "/Mgmt/ProcessVersion": { type: "s", value: "1.0.12", text: "Process version" },
+      "/Mgmt/Connection": { type: "i", value: 1, text: "Connected" }
+    };
+
+    // Create the /Mgmt subtree interface
+    const mgmtInterface = {
+      GetItems: () => {
+        // Return all management properties under /Mgmt
+        const items = [];
+        Object.entries(mgmtProperties).forEach(([path, config]) => {
+          items.push([path, {
+            Value: this.wrapValue(config.type, config.value),
+            Text: this.wrapValue("s", config.text)
+          }]);
+        });
+        return items;
+      },
+      
+      GetValue: () => {
+        return this.wrapValue('s', 'Management');
+      },
+      
+      SetValue: (value) => {
+        return -1; // Error - mgmt subtree doesn't support setting values
+      },
+      
+      GetText: () => {
+        return 'Management';
+      }
+    };
+
+    // Export the /Mgmt subtree interface
+    const serviceKey = bus.serviceName || 'unknown';
+    const mgmtInterfaceKey = `${serviceKey}/Mgmt`;
+    if (!this.exportedInterfaces.has(mgmtInterfaceKey)) {
+      bus.exportInterface(mgmtInterface, "/Mgmt", busItemInterface);
+      this.exportedInterfaces.add(mgmtInterfaceKey);
+    }
+
+    // Export individual management property interfaces
+    Object.entries(mgmtProperties).forEach(([path, config]) => {
       const propertyInterface = {
         GetValue: () => this.wrapValue(config.type, config.value),
         SetValue: (val) => 0, // Success
         GetText: () => config.text
       };
 
-      bus.exportInterface(propertyInterface, path, {
-        name: "com.victronenergy.BusItem",
-        methods: {
-          GetValue: ["", "v", [], ["value"]],
-          SetValue: ["v", "i", ["value"], ["result"]],
-          GetText: ["", "s", [], ["text"]],
-        },
-        signals: {
-          PropertiesChanged: ["a{sv}", ["changes"]]
-        }
-      });
+      // Create a unique interface key for this path
+      const interfaceKey = `${serviceKey}${path}`;
+      
+      // Only export if not already exported
+      if (!this.exportedInterfaces.has(interfaceKey)) {
+        bus.exportInterface(propertyInterface, path, busItemInterface);
+        this.exportedInterfaces.add(interfaceKey);
+      }
     });
   }
 

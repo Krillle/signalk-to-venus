@@ -84,7 +84,6 @@ export class VenusClient extends EventEmitter {
     // In the individual service approach, root interface is exported per tank
   }
 
-  // ...existing code...
   async _getOrCreateTankInstance(path) {
     // Extract the base tank path (e.g., tanks.fuel.starboard from tanks.fuel.starboard.currentLevel)
     const basePath = path.replace(/\.(currentLevel|capacity|name|currentVolume|voltage)$/, '');
@@ -423,21 +422,26 @@ export class VenusClient extends EventEmitter {
       "/CustomName": { type: "s", value: tankInstance.name, text: "Custom name" }
     };
 
-    // Export individual property interfaces for this tank service
-    Object.entries(managementProperties).forEach(([path, config]) => {
-      const propertyInterface = {
-        GetValue: () => this.wrapValue(config.type, config.value),
-        SetValue: (val) => 0, // Success
-        GetText: () => config.text
-      };
+    // Export the /Mgmt subtree node
+    this._exportMgmtSubtree(managementProperties);
 
-      // Create a unique interface key for this service and path
-      const interfaceKey = `${serviceName}${path}`;
-      
-      // Only export if not already exported
-      if (!this.exportedInterfaces.has(interfaceKey)) {
-        this.bus.exportInterface(propertyInterface, path, busItemInterface);
-        this.exportedInterfaces.add(interfaceKey);
+    // Export individual property interfaces for non-management properties
+    Object.entries(managementProperties).forEach(([path, config]) => {
+      if (!path.startsWith('/Mgmt/')) {
+        const propertyInterface = {
+          GetValue: () => this.wrapValue(config.type, config.value),
+          SetValue: (val) => 0, // Success
+          GetText: () => config.text
+        };
+
+        // Create a unique interface key for this service and path
+        const interfaceKey = `${serviceName}${path}`;
+        
+        // Only export if not already exported
+        if (!this.exportedInterfaces.has(interfaceKey)) {
+          this.bus.exportInterface(propertyInterface, path, busItemInterface);
+          this.exportedInterfaces.add(interfaceKey);
+        }
       }
     });
 
@@ -507,6 +511,85 @@ export class VenusClient extends EventEmitter {
       });
       this.exportedInterfaces.add(rootInterfaceKey);
     }
+
+    this._exportMgmtSubtree(managementProperties);
+  }
+
+  _exportMgmtSubtree(managementProperties) {
+    // Extract only the management properties that are under /Mgmt/
+    const mgmtProperties = {};
+    Object.entries(managementProperties).forEach(([path, config]) => {
+      if (path.startsWith('/Mgmt/')) {
+        mgmtProperties[path] = config;
+      }
+    });
+
+    // Define the BusItem interface descriptor for dbus-native
+    const busItemInterface = {
+      name: "com.victronenergy.BusItem",
+      methods: {
+        GetItems: ["", "a{sa{sv}}", [], ["items"]],
+        GetValue: ["", "v", [], ["value"]],
+        SetValue: ["v", "i", ["value"], ["result"]],
+        GetText: ["", "s", [], ["text"]],
+      },
+      signals: {
+        ItemsChanged: ["a{sa{sv}}", ["changes"]],
+        PropertiesChanged: ["a{sv}", ["changes"]]
+      }
+    };
+
+    // Create the /Mgmt subtree interface
+    const mgmtInterface = {
+      GetItems: () => {
+        // Return all management properties under /Mgmt
+        const items = [];
+        Object.entries(mgmtProperties).forEach(([path, config]) => {
+          items.push([path, {
+            Value: this.wrapValue(config.type, config.value),
+            Text: this.wrapValue("s", config.text)
+          }]);
+        });
+        return items;
+      },
+      
+      GetValue: () => {
+        return this.wrapValue('s', 'Management');
+      },
+      
+      SetValue: (value) => {
+        return -1; // Error - mgmt subtree doesn't support setting values
+      },
+      
+      GetText: () => {
+        return 'Management';
+      }
+    };
+
+    // Export the /Mgmt subtree interface
+    const mgmtInterfaceKey = `/Mgmt`;
+    if (!this.exportedInterfaces.has(mgmtInterfaceKey)) {
+      this.bus.exportInterface(mgmtInterface, "/Mgmt", busItemInterface);
+      this.exportedInterfaces.add(mgmtInterfaceKey);
+    }
+
+    // Export individual management property interfaces
+    Object.entries(mgmtProperties).forEach(([path, config]) => {
+      const propertyInterface = {
+        GetValue: () => this.wrapValue(config.type, config.value),
+        SetValue: (val) => 0, // Success
+        GetText: () => config.text
+      };
+
+      // Create a unique interface key for this path
+      const interfaceKey = path;
+      
+      // Only export if not already exported
+      if (!this.exportedInterfaces.has(interfaceKey)) {
+        this.bus.exportInterface(propertyInterface, path, busItemInterface);
+        this.exportedInterfaces.add(interfaceKey);
+      }
+    });
   }
 
   _exportProperty(path, config) {
