@@ -49,23 +49,27 @@ export class VenusClient extends EventEmitter {
   // Legacy _exportProperty method for compatibility with tests
   _exportProperty(tankInstance, path, config) {
     const tankService = this.tankServices.get(tankInstance.basePath);
-    if (tankService) {
-      // Use the new base class method to update properties
-      switch (path) {
-        case '/Level':
-          tankService.setValue('/Level', config.value);
-          break;
-        case '/Capacity':
-          tankService.setValue('/Capacity', config.value);
-          break;
-        case '/CustomName':
-        case '/Name':
-          tankService.setValue('/CustomName', config.value);
-          break;
-        default:
-          // For other properties, use the generic setValue method
-          tankService.setValue(path, config.value);
-          break;
+    if (tankService && typeof tankService.setValue === 'function') {
+      try {
+        // Use the new base class method to update properties
+        switch (path) {
+          case '/Level':
+            tankService.setValue('/Level', config.value);
+            break;
+          case '/Capacity':
+            tankService.setValue('/Capacity', config.value);
+            break;
+          case '/CustomName':
+          case '/Name':
+            tankService.setValue('/CustomName', config.value);
+            break;
+          default:
+            // For other properties, use the generic setValue method
+            tankService.setValue(path, config.value);
+            break;
+        }
+      } catch (err) {
+        console.error(`Error setting tank property ${path}:`, err);
       }
     }
     
@@ -124,11 +128,12 @@ export class VenusClient extends EventEmitter {
       const tankService = new SignalkTankService(tankInstance, this.bus);
       await tankService.init(this.settings.venusHost, this.settings.port);
       
+      this.tankServices.set(basePath, tankService);
+      
       // Register tank in Venus OS settings and get VRM instance ID
-      const vrmInstanceId = await tankService.registerInSettings('tank', tankInstance.index, tankInstance.name);
+      const vrmInstanceId = await this._registerTankInSettings(tankInstance);
       tankInstance.vrmInstanceId = vrmInstanceId;
       
-      this.tankServices.set(basePath, tankService);
       this.tankInstances.set(basePath, tankInstance);
     }
     
@@ -210,8 +215,8 @@ export class VenusClient extends EventEmitter {
       const tankInstance = await this._getOrCreateTankInstance(path);
       const tankService = this.tankServices.get(tankInstance.basePath);
       
-      if (!tankService) {
-        console.error(`No tank service found for ${tankInstance.basePath}`);
+      if (!tankService || typeof tankService.setValue !== 'function') {
+        console.error(`No tank service found or invalid for ${tankInstance.basePath}`);
         return;
       }
       
@@ -304,17 +309,13 @@ export class VenusClient extends EventEmitter {
 
   // Register tank in Settings API for test compatibility
   async _registerTankInSettings(tankInstance) {
-    try {
-      const tankService = this.tankServices.get(tankInstance.basePath);
-      if (tankService) {
-        // Use the new base class method
-        return await tankService.registerInSettings('tank', tankInstance.index, tankInstance.name);
-      }
-      return tankInstance.index; // Fallback
-    } catch (err) {
-      console.error('Failed to register tank in settings:', err);
-      return tankInstance.index; // Fallback
+    // This method is for backward compatibility with tests
+    // It delegates to the tank service's registerInSettings method
+    const tankService = this.tankServices.get(tankInstance.basePath);
+    if (tankService) {
+      return await tankService.registerInSettings('tank', tankInstance.index, tankInstance.name);
     }
+    return tankInstance.index; // Fallback to original index
   }
 
   // Utility methods for test compatibility
