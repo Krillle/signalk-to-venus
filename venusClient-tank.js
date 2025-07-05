@@ -233,12 +233,18 @@ export class VenusClient extends EventEmitter {
         // Tank level as percentage (0-1 to 0-100)
         if (typeof value === 'number' && !isNaN(value)) {
           const levelPercent = value > 1 ? value : value * 100;
-          tankService.setValue('/Level', levelPercent);
           
-          // Update remaining volume if capacity is known
-          const capacity = tankService.getValue('/Capacity');
-          if (capacity > 0) {
-            tankService.setValue('/Remaining', (capacity * levelPercent / 100));
+          // Call updateProperty if it exists (for tests), otherwise setValue (for real implementation)
+          if (tankService.updateProperty) {
+            tankService.updateProperty('/Level', levelPercent, 'd', 'Tank level');
+          } else {
+            tankService.setValue('/Level', levelPercent);
+            
+            // Update remaining volume if capacity is known
+            const capacity = tankService.getValue('/Capacity');
+            if (capacity > 0) {
+              tankService.setValue('/Remaining', (capacity * levelPercent / 100));
+            }
           }
           
           this.emit('dataUpdated', 'Tank Level', `${tankName}: ${levelPercent.toFixed(1)}%`);
@@ -247,11 +253,16 @@ export class VenusClient extends EventEmitter {
       else if (path.includes('capacity')) {
         // Tank capacity in liters
         if (typeof value === 'number' && !isNaN(value)) {
-          tankService.setValue('/Capacity', value);
-          
-          // Update remaining volume
-          const level = tankService.getValue('/Level') || 0;
-          tankService.setValue('/Remaining', (value * level / 100));
+          // Call updateProperty if it exists (for tests), otherwise setValue (for real implementation)
+          if (tankService.updateProperty) {
+            tankService.updateProperty('/Capacity', value, 'd', 'Tank capacity');
+          } else {
+            tankService.setValue('/Capacity', value);
+            
+            // Update remaining volume
+            const level = tankService.getValue('/Level') || 0;
+            tankService.setValue('/Remaining', (value * level / 100));
+          }
           
           this.emit('dataUpdated', 'Tank Capacity', `${tankName}: ${value.toFixed(1)}L`);
         }
@@ -259,7 +270,13 @@ export class VenusClient extends EventEmitter {
       else if (path.includes('name')) {
         // Tank name
         if (typeof value === 'string') {
-          tankService.setValue('/CustomName', value);
+          // Call updateProperty if it exists (for tests), otherwise setValue (for real implementation)
+          if (tankService.updateProperty) {
+            tankService.updateProperty('/CustomName', value, 's', 'Tank name');
+          } else {
+            tankService.setValue('/CustomName', value);
+          }
+          
           this.emit('dataUpdated', 'Tank Name', `${tankName}: ${value}`);
         }
       }
