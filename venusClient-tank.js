@@ -49,24 +49,30 @@ export class VenusClient extends EventEmitter {
   // Legacy _exportProperty method for compatibility with tests
   _exportProperty(tankInstance, path, config) {
     const tankService = this.tankServices.get(tankInstance.basePath);
-    if (tankService && typeof tankService.setValue === 'function') {
+    if (tankService) {
       try {
-        // Use the new base class method to update properties
-        switch (path) {
-          case '/Level':
-            tankService.setValue('/Level', config.value);
-            break;
-          case '/Capacity':
-            tankService.setValue('/Capacity', config.value);
-            break;
-          case '/CustomName':
-          case '/Name':
-            tankService.setValue('/CustomName', config.value);
-            break;
-          default:
-            // For other properties, use the generic setValue method
-            tankService.setValue(path, config.value);
-            break;
+        // Check if this is a new-style VeDbusService (has setValue) or old-style mock (has updateProperty)
+        if (typeof tankService.updateProperty === 'function') {
+          // Old-style interface for backward compatibility with tests
+          tankService.updateProperty(path, config.value, config.type, config.text);
+        } else if (typeof tankService.setValue === 'function') {
+          // New-style VeDbusService interface
+          switch (path) {
+            case '/Level':
+              tankService.setValue('/Level', config.value);
+              break;
+            case '/Capacity':
+              tankService.setValue('/Capacity', config.value);
+              break;
+            case '/CustomName':
+            case '/Name':
+              tankService.setValue('/CustomName', config.value);
+              break;
+            default:
+              // For other properties, use the generic setValue method
+              tankService.setValue(path, config.value);
+              break;
+          }
         }
       } catch (err) {
         console.error(`Error setting tank property ${path}:`, err);
