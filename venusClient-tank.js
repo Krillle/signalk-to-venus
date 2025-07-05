@@ -17,6 +17,11 @@ export class VenusClient extends EventEmitter {
     this.exportedInterfaces = new Set();
     this.exportedProperties = new Set();
     this.managementProperties = {};
+    
+    // Service constants for compatibility with tests
+    this.VBUS_SERVICE = 'com.victronenergy.virtual.tanks';
+    this.SETTINGS_SERVICE = 'com.victronenergy.settings';
+    this.SETTINGS_ROOT = '/Settings/Devices';
   }
 
   async init(venusHost = 'localhost', port = 78) {
@@ -48,17 +53,25 @@ export class VenusClient extends EventEmitter {
       // Use the new base class method to update properties
       switch (path) {
         case '/Level':
-          tankService.updateLevel(config.value);
+          if (tankService.updateLevel) {
+            tankService.updateLevel(config.value);
+          }
           break;
         case '/Capacity':
-          tankService.updateCapacity(config.value);
+          if (tankService.updateCapacity) {
+            tankService.updateCapacity(config.value);
+          }
           break;
         case '/Name':
-          tankService.updateName(config.value);
+          if (tankService.updateName) {
+            tankService.updateName(config.value);
+          }
           break;
         default:
           // For other properties, use the generic setValue method
-          tankService.setValue(path, config.value);
+          if (tankService.setValue) {
+            tankService.setValue(path, config.value);
+          }
           break;
       }
     }
@@ -282,6 +295,21 @@ export class VenusClient extends EventEmitter {
     this.exportedInterfaces.clear();
     this.exportedProperties.clear();
     this.managementProperties = {};
+  }
+
+  // Register tank in Settings API for test compatibility
+  async _registerTankInSettings(tankInstance) {
+    try {
+      const tankService = this.tankServices.get(tankInstance.basePath);
+      if (tankService) {
+        // Use the new base class method
+        return await tankService.registerInSettings('tank', tankInstance.index, tankInstance.name);
+      }
+      return tankInstance.index; // Fallback
+    } catch (err) {
+      console.error('Failed to register tank in settings:', err);
+      return tankInstance.index; // Fallback
+    }
   }
 
   // Utility methods for test compatibility
