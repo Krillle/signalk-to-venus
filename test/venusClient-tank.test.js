@@ -73,7 +73,6 @@ describe('VenusClient - Tank', () => {
       expect(testClient.tankData).toEqual({});
       expect(testClient.tankInstances).toBeInstanceOf(Map);
       expect(testClient.exportedInterfaces).toBeInstanceOf(Set);
-      expect(testClient.VBUS_SERVICE).toBe('com.victronenergy.virtual.tanks');
     });
 
     it('should extend EventEmitter', () => {
