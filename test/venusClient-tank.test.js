@@ -47,7 +47,6 @@ describe('VenusClient - Tank', () => {
     mockBus.end.mockImplementation(() => {});
     
     // Mock D-Bus related methods to prevent real network connections
-    vi.spyOn(client, 'init').mockResolvedValue();
     vi.spyOn(client, '_exportMgmtSubtree').mockImplementation(() => {});
     vi.spyOn(client, '_exportRootInterface').mockImplementation(() => {});
     
