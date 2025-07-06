@@ -97,12 +97,40 @@ class TankService {
       }
     };
 
+    // Add introspection interface to root interface
+    const rootBusItemInterface = {
+      name: "com.victronenergy.BusItem",
+      methods: {
+        GetItems: ["", "a{sa{sv}}", [], ["items"]],
+        GetValue: ["", "v", [], ["value"]],
+        SetValue: ["v", "i", ["value"], ["result"]],
+        GetText: ["", "s", [], ["text"]],
+      },
+      signals: {
+        ItemsChanged: ["a{sa{sv}}", ["changes"]],
+        PropertiesChanged: ["a{sv}", ["changes"]]
+      },
+      // Add introspection interface
+      interfaces: [
+        {
+          name: "org.freedesktop.DBus.Introspectable",
+          methods: {
+            Introspect: ["", "s", [], ["data"]]
+          }
+        }
+      ]
+    };
+
     // Management properties
     const mgmtProperties = {
       "/Mgmt/ProcessName": { type: "s", value: "signalk-tank", text: "Process name" },
       "/Mgmt/ProcessVersion": { type: "s", value: "1.0.12", text: "Process version" },
       "/Mgmt/Connection": { type: "i", value: 1, text: "Connected" },
       "/ProductName": { type: "s", value: "SignalK Virtual Tank", text: "Product name" },
+      "/ProductId": { type: "u", value: 0xB012, text: "Product ID" },
+      "/FirmwareVersion": { type: "s", value: "1.0.12", text: "Firmware version" },
+      "/HardwareVersion": { type: "s", value: "1.0", text: "Hardware version" },
+      "/Connected": { type: "i", value: 1, text: "Connected" },
       "/DeviceInstance": { type: "u", value: this.tankInstance.vrmInstanceId, text: "Device instance" },
       "/CustomName": { type: "s", value: this.tankInstance.name, text: "Custom name" }
     };
@@ -127,7 +155,9 @@ class TankService {
             '/Capacity': 'Tank capacity',
             '/FluidType': 'Fluid type',
             '/Status': 'Tank status',
-            '/Name': 'Tank name'
+            '/Name': 'Tank name',
+            '/Volume': 'Tank volume',
+            '/Voltage': 'Tank voltage'
           };
           
           const text = pathMappings[path] || 'Tank property';
@@ -140,12 +170,28 @@ class TankService {
         return items;
       },
       
-      GetValue: () => this._wrapValue('s', 'SignalK Virtual Tank Service'),
-      SetValue: () => -1, // Error
+      GetValue: () => {
+        // Return root object as a dictionary of all properties (like vedbus.py)
+        const items = [];
+        
+        // Add management properties  
+        Object.entries(mgmtProperties).forEach(([path, config]) => {
+          items.push([path, this._wrapValue(config.type, config.value)]);
+        });
+        
+        // Add tank data properties
+        Object.entries(this.tankData).forEach(([path, value]) => {
+          items.push([path, this._wrapValue('d', value)]);
+        });
+
+        return this._wrapValue('a{sv}', items);
+      },
+      
+      SetValue: () => 1, // NOT OK - root interface doesn't support setting values
       GetText: () => 'SignalK Virtual Tank Service'
     };
 
-    this.bus.exportInterface(rootInterface, "/", busItemInterface);
+    this.bus.exportInterface(rootInterface, "/", rootBusItemInterface);
 
     // Export individual property interfaces
     Object.entries(mgmtProperties).forEach(([path, config]) => {
@@ -281,6 +327,7 @@ export class VenusClient extends EventEmitter {
     this.lastInitAttempt = 0;
     this.tankIndex = 0; // For unique tank indexing
     this.tankCounts = {}; // Track how many tanks of each type we have
+    this.tankCreating = new Map(); // Prevent race conditions in tank creation
     this.tankInstances = new Map(); // Track tank instances by Signal K path
     this.tankServices = new Map(); // Track individual tank services
     this.exportedProperties = new Set(); // Track which D-Bus properties have been exported
@@ -343,24 +390,36 @@ export class VenusClient extends EventEmitter {
     const basePath = path.replace(/\.(currentLevel|capacity|name|currentVolume|voltage)$/, '');
     
     if (!this.tankInstances.has(basePath)) {
-      // Create a deterministic index based on the path hash to ensure consistency
-      const index = this._generateStableIndex(basePath);
-      const tankInstance = {
-        index: index,
-        name: this._getTankName(path),
-        basePath: basePath
-      };
+      // Prevent race condition - check if already creating
+      if (this.tankCreating.has(basePath)) {
+        return null; // Signal to caller to skip this update
+      }
       
-      // Register tank in Venus OS settings and get VRM instance ID
-      const vrmInstanceId = await this._registerTankInSettings(tankInstance);
-      tankInstance.vrmInstanceId = vrmInstanceId;
+      this.tankCreating.set(basePath, true);
       
-      // Create tank service for this tank with its own D-Bus connection
-      const tankService = new TankService(tankInstance, this.settings);
-      await tankService.init(); // Initialize the tank service
-      this.tankServices.set(basePath, tankService);
-      
-      this.tankInstances.set(basePath, tankInstance);
+      try {
+        // Create a deterministic index based on the path hash to ensure consistency
+        const index = this._generateStableIndex(basePath);
+        const tankInstance = {
+          index: index,
+          name: this._getTankName(path),
+          basePath: basePath
+        };
+        
+        // Register tank in Venus OS settings and get VRM instance ID
+        const vrmInstanceId = await this._registerTankInSettings(tankInstance);
+        tankInstance.vrmInstanceId = vrmInstanceId;
+        
+        // Create tank service for this tank with its own D-Bus connection
+        const tankService = new TankService(tankInstance, this.settings);
+        await tankService.init(); // Initialize the tank service
+        this.tankServices.set(basePath, tankService);
+        
+        this.tankInstances.set(basePath, tankInstance);
+      } finally {
+        // Always clear the creating flag
+        this.tankCreating.delete(basePath);
+      }
     }
     
     return this.tankInstances.get(basePath);
@@ -624,6 +683,9 @@ export class VenusClient extends EventEmitter {
       
       // Get or create tank instance
       const tankInstance = await this._getOrCreateTankInstance(path);
+      if (!tankInstance) {
+        return; // Skip if tank is being created by another call
+      }
       const tankService = this.tankServices.get(tankInstance.basePath);
       
       if (!tankService) {
@@ -701,6 +763,7 @@ export class VenusClient extends EventEmitter {
     this.tankData = {};
     this.tankInstances.clear();
     this.tankServices.clear();
+    this.tankCreating.clear(); // Clear race condition tracking
     this.exportedInterfaces.clear();
     this.exportedProperties.clear();
     this.managementProperties = {};
