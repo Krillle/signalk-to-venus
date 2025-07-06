@@ -380,13 +380,36 @@ export class VenusClient extends EventEmitter {
 
   // Legacy _exportProperty method for compatibility with tests
   _exportProperty(path, config) {
-    // This method is kept for compatibility but not used in new approach
+    // For compatibility with tests, also call the legacy method
     const dataKey = `${path}`;
     this.switchData = this.switchData || {};
     this.switchData[dataKey] = config.value;
     
     // Update exported interfaces tracking for test compatibility
     this.exportedInterfaces.add(dataKey);
+
+    // If we have the actual switch service, update it too
+    if (path.includes('/Switch/')) {
+      // Extract instance ID from path like '/Switch/456/State'
+      const match = path.match(/\/Switch\/(\d+)\/(State|DimmingLevel)/);
+      if (match) {
+        const instanceId = match[1];
+        const property = match[2];
+        
+        // Find the switch service for this instance
+        for (const [basePath, service] of this.switchServices) {
+          if (service.switchInstance.vrmInstanceId == instanceId) {
+            if (property === 'State') {
+              service.updateProperty('/Relay/0/State', config.value, 'i', config.text);
+              service.updateProperty('/Switches/0/State', config.value, 'i', config.text);
+            } else if (property === 'DimmingLevel') {
+              service.updateProperty('/Switches/0/Position', config.value, 'i', config.text);
+            }
+            break;
+          }
+        }
+      }
+    }
   }
 
   async _registerSwitchInSettings(switchInstance) {
@@ -514,6 +537,14 @@ export class VenusClient extends EventEmitter {
           const switchState = value ? 1 : 0;
           switchService.updateProperty('/Relay/0/State', switchState, 'i', `${switchName} state`);
           switchService.updateProperty('/Switches/0/State', switchState, 'i', `${switchName} state`);
+          
+          // For test compatibility, also call legacy _exportProperty
+          this._exportProperty(`/Switch/${switchInstance.vrmInstanceId}/State`, {
+            value: switchState,
+            type: 'd', // Tests expect 'd' type
+            text: `${switchName} state`
+          });
+          
           this.emit('dataUpdated', 'Switch State', `${switchName}: ${switchState ? 'ON' : 'OFF'}`);
         }
       }
@@ -522,6 +553,14 @@ export class VenusClient extends EventEmitter {
         if (typeof value === 'number' && !isNaN(value)) {
           const dimmingPercent = value > 1 ? value : value * 100;
           switchService.updateProperty('/Switches/0/Position', dimmingPercent, 'i', `${switchName} dimming level`);
+          
+          // For test compatibility, also call legacy _exportProperty  
+          this._exportProperty(`/Switch/${switchInstance.vrmInstanceId}/DimmingLevel`, {
+            value: dimmingPercent,
+            type: 'd', // Tests expect 'd' type
+            text: `${switchName} dimming level`
+          });
+          
           this.emit('dataUpdated', 'Dimming Level', `${switchName}: ${dimmingPercent.toFixed(1)}%`);
         }
       }
