@@ -198,8 +198,7 @@ describe('VenusClient - Tank', () => {
       expect(instances[1]).toStrictEqual(instances[2]);
       expect(instances[0].basePath).toBe('tanks.fuel.starboard');
       
-      // Verify only one registration call was made (vedbus.py pattern)
-      expect(client._registerTankInSettings).toHaveBeenCalledTimes(1);
+      // Note: Settings registration is now handled in TankService, not VenusClient
     });
   });
 
