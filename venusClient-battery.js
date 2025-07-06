@@ -386,16 +386,12 @@ export class VenusClient extends EventEmitter {
     this.settings = settings;
     this.deviceType = deviceType;
     this.bus = null;
-    this.batteryData = {}; // For compatibility with tests
-    this.lastInitAttempt = 0;
     this.batteryIndex = 0; // For unique battery indexing
+    this.batteryCounts = {}; // Track how many batteries of each type we have
+    this.batteryCreating = new Map(); // Prevent race conditions in battery creation
     this.batteryInstances = new Map(); // Track battery instances by Signal K path
     this.batteryServices = new Map(); // Track individual battery services
     this.exportedInterfaces = new Set(); // Track which D-Bus interfaces have been exported
-    this.VBUS_SERVICE = `com.victronenergy.virtual.${deviceType}`;
-    this.SETTINGS_SERVICE = 'com.victronenergy.settings';
-    this.SETTINGS_ROOT = '/Settings/Devices';
-    this.managementProperties = {};
   }
 
   // Helper function to wrap values in D-Bus variant format
@@ -566,60 +562,84 @@ export class VenusClient extends EventEmitter {
   async handleSignalKUpdate(path, value) {
     try {
       // Validate input parameters
-      if (typeof value !== 'number' || value === null || value === undefined || isNaN(value)) {
+      if (value === null || value === undefined) {
         // Skip invalid battery values silently
         return;
       }
       
-      if (!this.bus) {
-        // Only try to initialize once every 30 seconds to avoid spam
-        const now = Date.now();
-        if (!this.lastInitAttempt || (now - this.lastInitAttempt) > 30000) {
-          this.lastInitAttempt = now;
-          await this.init();
-        } else {
-          // Skip silently if we recently failed to connect
-          return;
-        }
+      // Ignore non-battery paths
+      if (!path.startsWith('electrical.batteries.')) {
+        return;
+      }
+
+      // Initialize if not already done
+      const batteryInstance = await this._getOrCreateBatteryInstance(path);
+      if (!batteryInstance)
+        return;
+
+      // Get or create battery instance
+      const batteryService = this.batteryServices.get(batteryInstance.basePath);
+      
+      if (!batteryService) {
+        console.error(`No battery service found for ${batteryInstance.basePath}`);
+        return;
       }
       
+      const batteryName = batteryInstance.name;
+      
+      // Handle different battery properties
       if (path.includes('voltage')) {
-        this._updateValue('/Dc/0/Voltage', value);
-        this.emit('dataUpdated', 'Battery Voltage', `${value.toFixed(2)}V`);
-      }
-      else if (path.includes('current')) {
-        this._updateValue('/Dc/0/Current', value);
-        this.emit('dataUpdated', 'Battery Current', `${value.toFixed(1)}A`);
-      }
-      else if (path.includes('stateOfCharge') || (path.includes('capacity') && path.includes('state'))) {
-        this._updateValue('/Soc', value);
-        this.emit('dataUpdated', 'State of Charge', `${Math.round(value * 100)}%`);
-      }
-      else if (path.includes('consumed') || (path.includes('capacity') && path.includes('consumed'))) {
-        this._updateValue('/ConsumedAmphours', value);
-        this.emit('dataUpdated', 'Consumed Ah', `${value.toFixed(1)}Ah`);
-      }
-      else if (path.includes('timeRemaining') || (path.includes('capacity') && path.includes('time'))) {
-        if (value !== null) {
-          this._updateValue('/TimeToGo', value);
-          this.emit('dataUpdated', 'Time Remaining', `${Math.round(value/60)}min`);
+        // Battery voltage
+        if (typeof value === 'number' && !isNaN(value)) {
+          batteryService.updateProperty('/Dc/0/Voltage', value, 'd', `${batteryName} voltage`);
+          this.emit('dataUpdated', 'Battery Voltage', `${batteryName}: ${value.toFixed(2)}V`);
         }
       }
-      else if (path.includes('relay')) {
-        this._updateValue('/Relay/0/State', value);
-        this.emit('dataUpdated', 'Relay', value ? 'On' : 'Off');
+      else if (path.includes('current')) {
+        // Battery current
+        if (typeof value === 'number' && !isNaN(value)) {
+          batteryService.updateProperty('/Dc/0/Current', value, 'd', `${batteryName} current`);
+          this.emit('dataUpdated', 'Battery Current', `${batteryName}: ${value.toFixed(1)}A`);
+        }
+      }
+      else if (path.includes('stateOfCharge') || (path.includes('capacity') && path.includes('state'))) {
+        // State of charge as percentage (0-1 to 0-100)
+        if (typeof value === 'number' && !isNaN(value)) {
+          const socPercent = value > 1 ? value : value * 100;
+          batteryService.updateProperty('/Soc', socPercent, 'd', `${batteryName} state of charge`);
+          this.emit('dataUpdated', 'Battery SoC', `${batteryName}: ${socPercent.toFixed(1)}%`);
+        }
+      }
+      else if (path.includes('consumed') || (path.includes('capacity') && path.includes('consumed'))) {
+        // Consumed amp hours
+        if (typeof value === 'number' && !isNaN(value)) {
+          batteryService.updateProperty('/ConsumedAmphours', value, 'd', `${batteryName} consumed Ah`);
+          this.emit('dataUpdated', 'Battery Consumed Ah', `${batteryName}: ${value.toFixed(1)}Ah`);
+        }
+      }
+      else if (path.includes('timeRemaining') || (path.includes('capacity') && path.includes('time'))) {
+        // Time remaining in seconds
+        if (typeof value === 'number' && !isNaN(value)) {
+          batteryService.updateProperty('/TimeToGo', value, 'd', `${batteryName} time to go`);
+          this.emit('dataUpdated', 'Battery Time Remaining', `${batteryName}: ${Math.round(value/60)}min`);
+        }
       }
       else if (path.includes('temperature')) {
-        this._updateValue('/Dc/0/Temperature', value);
-        this.emit('dataUpdated', 'Battery Temp', `${value.toFixed(1)}°C`);
+        // Battery temperature
+        if (typeof value === 'number' && !isNaN(value)) {
+          batteryService.updateProperty('/Dc/0/Temperature', value, 'd', `${batteryName} temperature`);
+          this.emit('dataUpdated', 'Battery Temperature', `${batteryName}: ${value.toFixed(1)}°C`);
+        }
       }
       else if (path.includes('name')) {
-        // Handle battery name/label - not updating D-Bus value, just for logging
-        this.emit('dataUpdated', 'Battery Name', value);
+        // Battery name
+        if (typeof value === 'string') {
+          batteryService.updateProperty('/Name', value, 's', `${batteryName} name`);
+          this.emit('dataUpdated', 'Battery Name', `${batteryName}: ${value}`);
+        }
       }
       else {
-        // Silently ignore unknown battery paths instead of throwing errors
-        // Silently ignore unknown battery paths
+        // Skip unknown battery properties silently
         return;
       }
       
@@ -628,7 +648,7 @@ export class VenusClient extends EventEmitter {
     }
   }
 
-  _exportRootInterface() {
+  async disconnect() {
     // Export a root interface for VRM compatibility - includes all management properties
     const rootInterface = {
       name: "com.victronenergy.BusItem",
@@ -946,16 +966,26 @@ export class VenusClient extends EventEmitter {
   }
 
   async disconnect() {
+    // Disconnect individual battery services
+    for (const batteryService of this.batteryServices.values()) {
+      if (batteryService) {
+        batteryService.disconnect();
+      }
+    }
+    
+    // Disconnect the main bus
     if (this.bus) {
       try {
         this.bus.end();
       } catch (err) {
         // Ignore disconnect errors
       }
-      this.bus = null;
     }
     
-    this.batteryData = {};
+    this.bus = null;
+    this.batteryInstances.clear();
+    this.batteryServices.clear();
+    this.batteryCreating.clear(); // Clear race condition tracking
     this.exportedInterfaces.clear();
   }
 }
