@@ -103,7 +103,7 @@ class TankService {
       "/Mgmt/ProcessVersion": { type: "s", value: "1.0.12", text: "Process version" },
       "/Mgmt/Connection": { type: "i", value: 1, text: "Connected" },
       "/ProductName": { type: "s", value: "SignalK Virtual Tank", text: "Product name" },
-      "/DeviceInstance": { type: "i", value: this.tankInstance.vrmInstanceId, text: "Device instance" },
+      "/DeviceInstance": { type: "u", value: this.tankInstance.vrmInstanceId, text: "Device instance" },
       "/CustomName": { type: "s", value: this.tankInstance.name, text: "Custom name" }
     };
 
@@ -145,7 +145,7 @@ class TankService {
       GetText: () => 'SignalK Virtual Tank Service'
     };
 
-    this.bus.exportInterface(rootInterface, "", busItemInterface);
+    this.bus.exportInterface(rootInterface, "/", busItemInterface);
 
     // Export individual property interfaces
     Object.entries(mgmtProperties).forEach(([path, config]) => {
@@ -199,13 +199,29 @@ class TankService {
       },
       SetValue: (val) => {
         if (path.startsWith('/Mgmt/') || path.startsWith('/Product') || path.startsWith('/Device') || path.startsWith('/Custom')) {
-          return -1; // Error - management properties are read-only
+          return 1; // NOT OK - management properties are read-only (vedbus.py pattern)
         }
         const actualValue = Array.isArray(val) ? val[1] : val;
+        
+        // Check if value actually changed (vedbus.py pattern)
+        if (this.tankData[path] === actualValue) {
+          return 0; // OK - no change needed
+        }
+        
         this.tankData[path] = actualValue;
-        return 0; // Success
+        return 0; // OK - value set successfully
       },
-      GetText: () => config.text
+      GetText: () => {
+        // Handle invalid values like vedbus.py
+        if (path.startsWith('/Mgmt/') || path.startsWith('/Product') || path.startsWith('/Device') || path.startsWith('/Custom')) {
+          return config.text;
+        }
+        const currentValue = this.tankData[path];
+        if (currentValue === null || currentValue === undefined) {
+          return '---'; // vedbus.py pattern for invalid values
+        }
+        return config.text;
+      }
     };
 
     this.bus.exportInterface(propertyInterface, path, busItemInterface);
@@ -213,9 +229,28 @@ class TankService {
 
   updateProperty(path, value, type = 'd', text = 'Tank property') {
     this._exportProperty(path, { value, type, text });
+    
+    // Emit ItemsChanged signal when values change (like vedbus.py)
+    if (this.bus && typeof this.bus.emitSignal === 'function') {
+      const changes = {};
+      changes[path] = {
+        Value: this._wrapValue(type, value),
+        Text: this._wrapValue('s', text)
+      };
+      
+      try {
+        this.bus.emitSignal('/', 'com.victronenergy.BusItem', 'ItemsChanged', 'a{sa{sv}}', [changes]);
+      } catch (err) {
+        // Ignore signal emission errors in test mode
+      }
+    }
   }
 
   _wrapValue(type, value) {
+    // Handle null/undefined values like vedbus.py (invalid values)
+    if (value === null || value === undefined) {
+      return ["ai", []]; // Invalid value as empty array (vedbus.py pattern)
+    }
     return [type, value];
   }
 

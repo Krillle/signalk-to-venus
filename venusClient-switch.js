@@ -103,7 +103,7 @@ class SwitchService {
       "/Mgmt/ProcessVersion": { type: "s", value: "1.0.12", text: "Process version" },
       "/Mgmt/Connection": { type: "i", value: 1, text: "Connected" },
       "/ProductName": { type: "s", value: "SignalK Virtual Switch", text: "Product name" },
-      "/DeviceInstance": { type: "i", value: this.switchInstance.vrmInstanceId, text: "Device instance" },
+      "/DeviceInstance": { type: "u", value: this.switchInstance.vrmInstanceId, text: "Device instance" },
       "/CustomName": { type: "s", value: this.switchInstance.name, text: "Custom name" }
     };
 
@@ -144,7 +144,7 @@ class SwitchService {
       GetText: () => 'SignalK Virtual Switch Service'
     };
 
-    this.bus.exportInterface(rootInterface, "", busItemInterface);
+    this.bus.exportInterface(rootInterface, "/", busItemInterface);
 
     // Export individual property interfaces
     Object.entries(mgmtProperties).forEach(([path, config]) => {
@@ -215,6 +215,10 @@ class SwitchService {
   }
 
   _wrapValue(type, value) {
+    // Handle null/undefined values like vedbus.py (invalid values)
+    if (value === null || value === undefined) {
+      return ["ai", []]; // Invalid value as empty array (vedbus.py pattern)
+    }
     return [type, value];
   }
 
