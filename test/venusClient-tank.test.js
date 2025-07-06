@@ -160,14 +160,11 @@ describe('VenusClient - Tank', () => {
     it('should create new tank instance for new path', async () => {
       const path = 'tanks.fuel.starboard.currentLevel';
       
-      // Mock settings registration
-      vi.spyOn(client, '_registerTankInSettings').mockResolvedValue(123);
-      
       const instance = await client._getOrCreateTankInstance(path);
       
       expect(instance.basePath).toBe('tanks.fuel.starboard');
       expect(instance.name).toBe('Fuel starboard');
-      expect(instance.vrmInstanceId).toBe(123);
+      expect(instance.index).toBeDefined();
       expect(client.tankInstances.has('tanks.fuel.starboard')).toBe(true);
     });
 
@@ -175,18 +172,14 @@ describe('VenusClient - Tank', () => {
       const path1 = 'tanks.fuel.starboard.currentLevel';
       const path2 = 'tanks.fuel.starboard.capacity';
       
-      vi.spyOn(client, '_registerTankInSettings').mockResolvedValue(123);
-      
       const instance1 = await client._getOrCreateTankInstance(path1);
       const instance2 = await client._getOrCreateTankInstance(path2);
       
       expect(instance1).toBe(instance2);
-      expect(client._registerTankInSettings).toHaveBeenCalledTimes(1);
+      expect(client.tankInstances.size).toBe(1);
     });
 
     it('should extract correct base path from different property paths', async () => {
-      vi.spyOn(client, '_registerTankInSettings').mockResolvedValue(123);
-      
       const paths = [
         'tanks.fuel.starboard.currentLevel',
         'tanks.fuel.starboard.capacity',
@@ -212,8 +205,7 @@ describe('VenusClient - Tank', () => {
 
   describe('D-Bus Interface Export Protection', () => {
     beforeEach(async () => {
-      // Mock the init method to avoid actual network connections
-      vi.spyOn(client, 'init').mockResolvedValue();
+      // Set up mock bus for these tests
       client.bus = mockBus;
       client.settingsBus = mockBus;
     });
@@ -288,11 +280,9 @@ describe('VenusClient - Tank', () => {
     let mockTankService;
     
     beforeEach(async () => {
-      // Mock the init method to avoid actual network connections
-      vi.spyOn(client, 'init').mockResolvedValue();
+      // Set up mock bus for these tests
       client.bus = mockBus;
       client.settingsBus = mockBus;
-      vi.spyOn(client, '_registerTankInSettings').mockResolvedValue(123);
       vi.spyOn(client, '_exportProperty').mockImplementation(() => {});
       
       // Create a mock TankService
@@ -421,8 +411,7 @@ describe('VenusClient - Tank', () => {
 
   describe('Cleanup', () => {
     beforeEach(async () => {
-      // Mock the init method to avoid actual network connections
-      vi.spyOn(client, 'init').mockResolvedValue();
+      // Set up mock bus for these tests
       client.bus = mockBus;
       client.settingsBus = mockBus;
     });
