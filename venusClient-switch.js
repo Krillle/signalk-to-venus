@@ -6,7 +6,8 @@ class SwitchService {
   constructor(switchInstance, settings) {
     this.switchInstance = switchInstance;
     this.settings = settings;
-    this.serviceName = `com.victronenergy.switch.signalk_${switchInstance.index}`;
+    this.serviceName = `signalk_${switchInstance.index}`;
+    this.dbusServiceName = `com.victronenergy.switch.${this.serviceName}`;
     this.switchData = {};
     this.exportedInterfaces = new Set();
     this.bus = null; // Each switch service gets its own D-Bus connection
@@ -17,6 +18,10 @@ class SwitchService {
   async init() {
     // Create own D-Bus connection and register service
     await this._createBusConnection();
+
+    // Register this service on its own D-Bus connection
+    await this._registerSwitchInSettings();
+    await this._registerService();
   }
 
   async _createBusConnection() {
@@ -52,32 +57,109 @@ class SwitchService {
       }
 
       // Register this service on its own D-Bus connection
-      await this._registerService();
       
     } catch (err) {
-      console.error(`Failed to create D-Bus connection for switch service ${this.serviceName}:`, err);
+      console.error(`Failed to create D-Bus connection for switch service ${this.dbusServiceName}:`, err);
       throw err;
+    }
+  }
+
+  async _registerSwitchInSettings() {
+    console.log(`switchInstanceName: ${this.switchInstance.name}`)
+    try {
+      // Proposed class and VRM instance (switch type and instance)
+      const proposedInstance = `switch:${this.switchInstance.index}`;
+
+      // Create settings array following Victron's Settings API format
+      const settingsArray = [
+        [
+          ['path', ['s', `/Settings/Devices/${this.serviceName}/ClassAndVrmInstance`]],
+          ['default', ['s', proposedInstance]],
+          ['type', ['s', 's']],
+          ['description', ['s', 'Class and VRM instance']]
+        ],
+        [
+          ['path', ['s', `/Settings/Devices/${this.serviceName}/CustomName`]],
+          ['default', ['s', this.switchInstance.name]],
+          ['type', ['s', 's']],
+          ['description', ['s', 'Custom name']]
+        ]
+      ];
+
+      // Call the Venus OS Settings API to register the device
+      const settingsResult = await new Promise((resolve, reject) => {
+        console.log('Invoking Settings API with:', JSON.stringify(settingsArray, null, 2));
+        
+        this.bus.invoke({
+          destination: 'com.victronenergy.settings',
+          path: '/',
+          'interface': 'com.victronenergy.Settings',
+          member: 'AddSettings',
+          signature: 'aa{sv}',
+          body: [settingsArray]
+        }, (err, result) => {
+          if (err) {
+            console.log('Settings API error:', err);
+            reject(new Error(`Settings registration failed: ${err.message || err}`));
+          } else {
+            console.log('Settings API result:', result);
+            resolve(result);
+          }
+        });
+      });
+
+      // Extract the actual assigned instance ID from the Settings API result
+      let actualInstance = this.switchInstance.index;
+      
+      if (settingsResult && settingsResult.length > 0) {
+        // Parse the Settings API response format
+        for (const result of settingsResult) {
+          if (result && Array.isArray(result)) {
+            // Look for the ClassAndVrmInstance result
+            const pathEntry = result.find(entry => entry && entry[0] === 'path');
+            const valueEntry = result.find(entry => entry && entry[0] === 'value');
+            
+            if (pathEntry && valueEntry && 
+                pathEntry[1] && pathEntry[1][1] && pathEntry[1][1][0] && pathEntry[1][1][0].includes('ClassAndVrmInstance') &&
+                valueEntry[1] && valueEntry[1][1] && valueEntry[1][1][0]) {
+              
+              const actualProposedInstance = valueEntry[1][1][0]; // Extract the actual assigned value
+              const instanceMatch = actualProposedInstance.match(/switch:(\d+)/);
+              if (instanceMatch) {
+                actualInstance = parseInt(instanceMatch[1]);
+                console.log(`Switch assigned actual instance: ${actualInstance} (${actualProposedInstance})`);
+                
+                // Update the switch instance to match the assigned instance
+                this.vrmInstanceId = actualInstance;
+              }
+            }
+          }
+        }
+      }
+
+      console.log(`Switch registered in Venus OS Settings: ${this.serviceName} -> switch:${actualInstance}`);
+    } catch (err) {
+      console.error(`Settings registration failed for switch ${this.serviceName}:`, err);
     }
   }
 
   async _registerService() {
     try {
+      // Export management and switch interfaces
+      this._exportManagementInterface();
+
       // Request service name on our own bus connection
       await new Promise((resolve, reject) => {
-        this.bus.requestName(this.serviceName, 0, (err, result) => {
+        this.bus.requestName(this.dbusServiceName, 0, (err, result) => {
           if (err) reject(err);
           else resolve(result);
         });
       });
 
-      // Export management and switch interfaces
-      this._exportManagementInterface();
-      this._exportSwitchInterface();
-      
-      console.log(`Successfully registered switch service ${this.serviceName} on D-Bus`);
+      console.log(`Successfully registered switch service ${this.dbusServiceName} on D-Bus`);
       
     } catch (err) {
-      console.error(`Failed to register switch service ${this.serviceName}:`, err);
+      console.error(`Failed to register switch service ${this.dbusServiceName}:`, err);
       throw err;
     }
   }
@@ -102,9 +184,18 @@ class SwitchService {
       "/Mgmt/ProcessName": { type: "s", value: "signalk-switch", text: "Process name" },
       "/Mgmt/ProcessVersion": { type: "s", value: "1.0.12", text: "Process version" },
       "/Mgmt/Connection": { type: "i", value: 1, text: "Connected" },
+      "/DeviceInstance": { type: "i", value: this.vrmInstanceId, text: "Device instance" },
+      "/ProductId": { type: "i", value: 0, text: "Product ID" },
       "/ProductName": { type: "s", value: "SignalK Virtual Switch", text: "Product name" },
-      "/DeviceInstance": { type: "u", value: this.switchInstance.vrmInstanceId, text: "Device instance" },
-      "/CustomName": { type: "s", value: this.switchInstance.name, text: "Custom name" }
+      "/FirmwareVersion": { type: "i", value: 0, text: "Firmware Version" },
+      "/HardwareVersion": { type: "i", value: 0, text: "Hardware Version" },
+      "/Connected": { type: "i", value: 1, text: "Connected" },
+      "/CustomName": { type: "s", value: this.switchInstance.name, text: "Custom name" },
+      // Switch specific properties
+      "/Relay/0/State": { type: "i", value: 0, text: "Switch state" },
+      "/Switches/0/State": { type: "i", value: 0, text: "Switch state" },
+      "/Switches/0/Position": { type: "i", value: 0, text: "Switch position" },
+      "/Switches/0/Name": { type: "s", value: this.switchInstance.name, text: "Switch name" },
     };
 
     // Export root interface with GetItems
@@ -114,10 +205,10 @@ class SwitchService {
         
         // Add management properties
         Object.entries(mgmtProperties).forEach(([path, config]) => {
-          items.push([path, {
-            Value: this._wrapValue(config.type, config.value),
-            Text: this._wrapValue("s", config.text)
-          }]);
+          items.push([path, [
+            ["Value", this._wrapValue(config.type, config.value)],
+            ["Text", this._wrapValue("s", config.text)],
+          ]]);
         });
         
         // Add switch data properties
@@ -130,18 +221,36 @@ class SwitchService {
           };
           
           const text = pathMappings[path] || 'Switch property';
-          items.push([path, {
-            Value: this._wrapValue('i', value),
-            Text: this._wrapValue('s', text)
-          }]);
+          items.push([path, [
+            ["Value", this._wrapValue('i', value)],
+            ["Text", this._wrapValue('s', text)],
+          ]]);
         });
 
         return items;
       },
       
-      GetValue: () => this._wrapValue('s', 'SignalK Virtual Switch Service'),
-      SetValue: () => -1, // Error
-      GetText: () => 'SignalK Virtual Switch Service'
+      GetValue: () => {
+        const items = [];
+        
+        // Add management properties
+        Object.entries(mgmtProperties).forEach(([path, config]) => {
+          items.push([path.slice(1), this._wrapValue(config.type, config.value)]);
+        });
+        
+        // Add switch data properties
+        Object.entries(this.switchData).forEach(([path, value]) => {
+          items.push([path.slice(1), this._wrapValue('i', value)]);
+        });
+
+        return this._wrapValue('a{sv}', [items]);
+      },
+      SetValue: () => {
+        return -1; // Error
+      },
+      GetText: () => {
+        return 'SignalK Virtual Switch Service';
+      }
     };
 
     this.bus.exportInterface(rootInterface, "/", busItemInterface);
@@ -157,9 +266,7 @@ class SwitchService {
   }
 
   _exportProperty(path, config) {
-    const interfaceKey = `${this.serviceName}${path}`;
-    
-    if (this.exportedInterfaces.has(interfaceKey)) {
+    if (this.exportedInterfaces.has(path)) {
       // Just update the value
       if (path.startsWith('/Mgmt/') || path.startsWith('/Product') || path.startsWith('/Device') || path.startsWith('/Custom')) {
         // Management properties are static
@@ -169,7 +276,7 @@ class SwitchService {
       return;
     }
 
-    this.exportedInterfaces.add(interfaceKey);
+    this.exportedInterfaces.add(path);
 
     const busItemInterface = {
       name: "com.victronenergy.BusItem",
@@ -198,13 +305,29 @@ class SwitchService {
       },
       SetValue: (val) => {
         if (path.startsWith('/Mgmt/') || path.startsWith('/Product') || path.startsWith('/Device') || path.startsWith('/Custom')) {
-          return -1; // Error - management properties are read-only
+          return 1; // NOT OK - management properties are read-only (vedbus.py pattern)
         }
         const actualValue = Array.isArray(val) ? val[1] : val;
+        
+        // Check if value actually changed (vedbus.py pattern)
+        if (this.switchData[path] === actualValue) {
+          return 0; // OK - no change needed
+        }
+        
         this.switchData[path] = actualValue;
-        return 0; // Success
+        return 0; // OK - value set successfully
       },
-      GetText: () => config.text
+      GetText: () => {
+        // Handle invalid values like vedbus.py
+        if (path.startsWith('/Mgmt/') || path.startsWith('/Product') || path.startsWith('/Device') || path.startsWith('/Custom')) {
+          return config.text;
+        }
+        const currentValue = this.switchData[path];
+        if (currentValue === null || currentValue === undefined) {
+          return '---'; // vedbus.py pattern for invalid values
+        }
+        return config.text;
+      }
     };
 
     this.bus.exportInterface(propertyInterface, path, busItemInterface);
@@ -212,6 +335,21 @@ class SwitchService {
 
   updateProperty(path, value, type = 'i', text = 'Switch property') {
     this._exportProperty(path, { value, type, text });
+    
+    // Emit ItemsChanged signal when values change (like vedbus.py)
+    if (this.bus && typeof this.bus.emitSignal === 'function') {
+      const changes = {};
+      changes[path] = {
+        Value: this._wrapValue(type, value),
+        Text: this._wrapValue('s', text)
+      };
+      
+      try {
+        this.bus.emitSignal('/', 'com.victronenergy.BusItem', 'ItemsChanged', 'a{sa{sv}}', [changes]);
+      } catch (err) {
+        // Ignore signal emission errors in test mode
+      }
+    }
   }
 
   _wrapValue(type, value) {
