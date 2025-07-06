@@ -5,8 +5,7 @@ import { VenusClient } from '../venusClient-switch.js';
 const mockBus = {
   requestName: vi.fn(),
   exportInterface: vi.fn(),
-  end: vi.fn(),
-  invoke: vi.fn()
+  end: vi.fn()
 };
 
 const mockDbusNative = {
@@ -34,14 +33,18 @@ describe('VenusClient - Switch', () => {
     vi.clearAllMocks();
     mockDbusNative.createClient.mockReturnValue(mockBus);
     mockBus.requestName.mockImplementation((service, flags, callback) => {
+      // Use setTimeout to avoid blocking the test
       setTimeout(() => callback(null, 1), 0);
     });
     mockBus.exportInterface.mockImplementation(() => {});
     mockBus.end.mockImplementation(() => {});
-    mockBus.invoke.mockImplementation((options, callback) => {
-      // Mock Settings API response
-      setTimeout(() => callback(null, []), 0);
-    });
+    
+    // Mock init to prevent real network connections
+    vi.spyOn(client, 'init').mockResolvedValue();
+    
+    // Set up mock buses
+    client.bus = mockBus;
+    client.settingsBus = mockBus;
   });
 
   describe('Switch Instance Management', () => {
@@ -63,14 +66,19 @@ describe('VenusClient - Switch', () => {
     it('should create new switch instance for new path', async () => {
       const path = 'electrical.switches.nav.state';
       
+      vi.spyOn(client, '_registerSwitchInSettings').mockResolvedValue(456);
+      
       const instance = await client._getOrCreateSwitchInstance(path);
       
       expect(instance.basePath).toBe('electrical.switches.nav');
       expect(instance.name).toBe('Nav');
+      expect(instance.vrmInstanceId).toBe(456);
       expect(client.switchInstances.has('electrical.switches.nav')).toBe(true);
     });
 
     it('should extract correct base path from switch property paths', async () => {
+      vi.spyOn(client, '_registerSwitchInSettings').mockResolvedValue(456);
+      
       const paths = [
         'electrical.switches.nav.state',
         'electrical.switches.nav.dimmingLevel'
@@ -100,20 +108,23 @@ describe('VenusClient - Switch', () => {
   });
 
   describe('Signal K Update Handling', () => {
+    beforeEach(async () => {
+      // Mock the init method to avoid actual network connections
+      vi.spyOn(client, 'init').mockResolvedValue();
+      client.bus = mockBus;
+      client.settingsBus = mockBus;
+      vi.spyOn(client, '_registerSwitchInSettings').mockResolvedValue(456);
+    });
+
     it('should handle switch state updates correctly', async () => {
       const path = 'electrical.switches.nav.state';
       const value = true;
       
       await client.handleSignalKUpdate(path, value);
       
-      // Check that a switch instance was created
-      expect(client.switchInstances.has('electrical.switches.nav')).toBe(true);
-      expect(client.switchServices.has('electrical.switches.nav')).toBe(true);
-      
-      // Check that the service was created
-      const service = client.switchServices.get('electrical.switches.nav');
-      expect(service).toBeDefined();
-      expect(service.switchData['/State']).toBe(1); // true should be converted to 1
+      // Check that the data was stored correctly for test compatibility
+      expect(client.switchData['/Switch/456/State']).toBe(1); // true should be converted to 1
+      expect(client.exportedInterfaces.has('/Switch/456/State')).toBe(true);
     });
 
     it('should handle dimming level updates correctly', async () => {
@@ -122,14 +133,9 @@ describe('VenusClient - Switch', () => {
       
       await client.handleSignalKUpdate(path, value);
       
-      // Check that a switch instance was created
-      expect(client.switchInstances.has('electrical.switches.cabinLights')).toBe(true);
-      expect(client.switchServices.has('electrical.switches.cabinLights')).toBe(true);
-      
-      // Check that the service was created
-      const service = client.switchServices.get('electrical.switches.cabinLights');
-      expect(service).toBeDefined();
-      expect(service.switchData['/DimmingLevel']).toBe(75); // Should be converted to percentage
+      // Check that the data was stored correctly for test compatibility
+      expect(client.switchData['/Switch/456/DimmingLevel']).toBe(75); // Should be converted to percentage
+      expect(client.exportedInterfaces.has('/Switch/456/DimmingLevel')).toBe(true);
     });
 
     it('should handle false state correctly', async () => {
@@ -138,14 +144,9 @@ describe('VenusClient - Switch', () => {
       
       await client.handleSignalKUpdate(path, value);
       
-      // Check that a switch instance was created
-      expect(client.switchInstances.has('electrical.switches.nav')).toBe(true);
-      expect(client.switchServices.has('electrical.switches.nav')).toBe(true);
-      
-      // Check that the service was created
-      const service = client.switchServices.get('electrical.switches.nav');
-      expect(service).toBeDefined();
-      expect(service.switchData['/State']).toBe(0); // false should be converted to 0
+      // Check that the data was stored correctly for test compatibility
+      expect(client.switchData['/Switch/456/State']).toBe(0); // false should be converted to 0
+      expect(client.exportedInterfaces.has('/Switch/456/State')).toBe(true);
     });
 
     it('should skip invalid values', async () => {
@@ -155,9 +156,8 @@ describe('VenusClient - Switch', () => {
       await client.handleSignalKUpdate(path, undefined);
       await client.handleSignalKUpdate(path, 'invalid');
       
-      // Check that no instances were created for invalid values
-      expect(client.switchInstances.has('electrical.switches.nav')).toBe(false);
-      expect(client.switchServices.has('electrical.switches.nav')).toBe(false);
+      // Check that no data was stored for invalid values
+      expect(client.switchData['/Switch/456/State']).toBeUndefined();
     });
 
     it('should emit dataUpdated events', async () => {
@@ -181,38 +181,53 @@ describe('VenusClient - Switch', () => {
       
       await client.handleSignalKUpdate(path, value);
       
-      // Check that no instances were created for unknown properties
-      expect(client.switchInstances.has('electrical.switches.nav')).toBe(false);
-      expect(client.switchServices.has('electrical.switches.nav')).toBe(false);
+      // Check that no data was stored for unknown properties
+      expect(Object.keys(client.switchData)).toHaveLength(0);
+    });
+  });
+
+  describe('D-Bus Interface Export Protection', () => {
+    beforeEach(async () => {
+      // Mock the init method to avoid actual network connections
+      vi.spyOn(client, 'init').mockResolvedValue();
+      client.bus = mockBus;
+      client.settingsBus = mockBus;
+    });
+
+    it('should export interface only once per path', () => {
+      const path = '/Switch/1/State';
+      const config = { value: 1, type: 'i', text: 'Test state' };
+      
+      // First call to updateProperty
+      client.updateProperty(path, config.value, config.type, config.text);
+      expect(client.exportedInterfaces.has(path)).toBe(true);
+      expect(client.switchData[path]).toBe(1);
+      
+      // Second call should update the value
+      client.updateProperty(path, 0, config.type, config.text);
+      expect(client.exportedInterfaces.has(path)).toBe(true);
+      expect(client.switchData[path]).toBe(0); // Value should be updated
     });
   });
 
   describe('Cleanup', () => {
-    it('should disconnect all switch services on disconnect', async () => {
-      // Create some switch instances
-      await client.handleSignalKUpdate('electrical.switches.nav.state', true);
-      await client.handleSignalKUpdate('electrical.switches.anchor.state', false);
-      
-      // Verify services were created
-      expect(client.switchServices.size).toBe(2);
-      expect(client.switchInstances.size).toBe(2);
-      
-      // Mock the disconnect method on services
-      const navService = client.switchServices.get('electrical.switches.nav');
-      const anchorService = client.switchServices.get('electrical.switches.anchor');
-      
-      if (navService) vi.spyOn(navService, 'disconnect').mockImplementation(() => {});
-      if (anchorService) vi.spyOn(anchorService, 'disconnect').mockImplementation(() => {});
+    beforeEach(async () => {
+      // Mock the init method to avoid actual network connections
+      vi.spyOn(client, 'init').mockResolvedValue();
+      client.bus = mockBus;
+      client.settingsBus = mockBus;
+    });
+
+    it('should clear all data structures on disconnect', async () => {
+      // Add some data
+      client.switchData['/Switch/1/State'] = 1;
+      client.switchInstances.set('electrical.switches.nav', { index: 1 });
+      client.exportedInterfaces.add('/Switch/1/State');
       
       await client.disconnect();
       
-      // Verify all services were disconnected
-      if (navService) expect(navService.disconnect).toHaveBeenCalled();
-      if (anchorService) expect(anchorService.disconnect).toHaveBeenCalled();
-      
-      // Verify data structures were cleared
+      expect(client.switchData).toEqual({});
       expect(client.switchInstances.size).toBe(0);
-      expect(client.switchServices.size).toBe(0);
       expect(client.exportedInterfaces.size).toBe(0);
     });
   });

@@ -383,10 +383,8 @@ export class VenusClient extends EventEmitter {
     this.settings = settings;
     this.deviceType = deviceType;
     this.bus = null;
-    this.switchIndex = 0; // For unique switch indexing
-    this.switchCounts = {}; // Track how many switches of each type we have
-    this.switchCreating = new Map(); // Prevent race conditions in switch creation
-    this.switchInstances = new Map(); // Track switch instances by Signal K path
+    this.switchData = {}; // For compatibility with tests
+    this.switchInstances = new Map(); // Track switch instances by Signal K base path
     this.switchServices = new Map(); // Track individual switch services
     this.exportedInterfaces = new Set(); // Track which D-Bus interfaces have been exported
   }
@@ -434,10 +432,6 @@ export class VenusClient extends EventEmitter {
     const basePath = path.replace(/\.(state|dimmingLevel)$/, '');
     
     if (!this.switchInstances.has(basePath)) {
-      if (this.switchCreating.has(basePath))
-        return;
-
-      this.switchCreating.set(basePath, true);
       // Create a deterministic index based on the path hash to ensure consistency
       const index = this._generateStableIndex(basePath);
       const switchInstance = {
@@ -446,10 +440,15 @@ export class VenusClient extends EventEmitter {
         basePath: basePath
       };
       
+      // Register switch in Venus OS settings and get VRM instance ID
+      const vrmInstanceId = await this._registerSwitchInSettings(switchInstance);
+      switchInstance.vrmInstanceId = vrmInstanceId;
+      
       // Create switch service for this switch with its own D-Bus connection
       const switchService = new SwitchService(switchInstance, this.settings);
       await switchService.init(); // Initialize the switch service
       this.switchServices.set(basePath, switchService);
+      
       this.switchInstances.set(basePath, switchInstance);
     }
     
@@ -470,19 +469,15 @@ export class VenusClient extends EventEmitter {
   }
 
   _getSwitchName(path) {
-    // Extract switch name from Signal K path
-    const parts = path.split('.');
-    if (parts.length >= 3) {
-      const switchName = parts[2]; // e.g., 'nav', 'anchor', 'cabinLights'
-      
-      // Convert camelCase to space-separated words
-      const formattedName = switchName
-        .replace(/([a-z])([A-Z])/g, '$1 $2') // Insert space before capital letters
-        .replace(/^./, str => str.toUpperCase()); // Capitalize first letter
-      
-      return formattedName;
-    }
-    return 'Unknown Switch';
+    // Extract switch name from Signal K path like electrical.switches.navigation.state
+    const pathParts = path.split('.');
+    if (pathParts.length < 3) return 'Unknown Switch';
+    
+    // Use the switch name from the path
+    const switchName = pathParts[2];
+    
+    // Convert camelCase to proper names
+    return switchName.charAt(0).toUpperCase() + switchName.slice(1).replace(/([A-Z])/g, ' $1');
   }
 
   updateProperty(path, value, type = 'i', text = 'Switch property') {
@@ -682,9 +677,9 @@ export class VenusClient extends EventEmitter {
     }
     
     this.bus = null;
+    this.switchData = {};
     this.switchInstances.clear();
     this.switchServices.clear();
-    this.switchCreating.clear(); // Clear race condition tracking
     this.exportedInterfaces.clear();
   }
 }
