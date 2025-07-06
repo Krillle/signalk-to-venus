@@ -372,19 +372,6 @@ export class VenusClient extends EventEmitter {
     }
   }
 
-  // Legacy methods for compatibility with tests
-  _exportMgmt() {
-    // Legacy method - not used in new approach
-  }
-
-  _exportRootInterface() {
-    // Legacy method - not used in new approach
-  }
-
-  _exportMgmtSubtree() {
-    // Legacy method - not used in new approach
-  }
-
   async _getOrCreateTankInstance(path) {
     // Extract the base tank path (e.g., tanks.fuel.starboard from tanks.fuel.starboard.currentLevel)
     const basePath = path.replace(/\.(currentLevel|capacity|name|currentVolume|voltage)$/, '');
