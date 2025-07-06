@@ -103,7 +103,7 @@ class SwitchService {
       "/Mgmt/ProcessVersion": { type: "s", value: "1.0.12", text: "Process version" },
       "/Mgmt/Connection": { type: "i", value: 1, text: "Connected" },
       "/ProductName": { type: "s", value: "SignalK Virtual Switch", text: "Product name" },
-      "/DeviceInstance": { type: "i", value: this.switchInstance.vrmInstanceId, text: "Device instance" },
+      "/DeviceInstance": { type: "u", value: this.switchInstance.vrmInstanceId, text: "Device instance" },
       "/CustomName": { type: "s", value: this.switchInstance.name, text: "Custom name" }
     };
 
@@ -144,7 +144,7 @@ class SwitchService {
       GetText: () => 'SignalK Virtual Switch Service'
     };
 
-    this.bus.exportInterface(rootInterface, "", busItemInterface);
+    this.bus.exportInterface(rootInterface, "/", busItemInterface);
 
     // Export individual property interfaces
     Object.entries(mgmtProperties).forEach(([path, config]) => {
@@ -215,6 +215,10 @@ class SwitchService {
   }
 
   _wrapValue(type, value) {
+    // Handle null/undefined values like vedbus.py (invalid values)
+    if (value === null || value === undefined) {
+      return ["ai", []]; // Invalid value as empty array (vedbus.py pattern)
+    }
     return [type, value];
   }
 
@@ -242,16 +246,9 @@ export class VenusClient extends EventEmitter {
     this.deviceType = deviceType;
     this.bus = null;
     this.switchData = {}; // For compatibility with tests
-    this.lastInitAttempt = 0;
-    this.switchIndex = 0; // For unique switch indexing
     this.switchInstances = new Map(); // Track switch instances by Signal K base path
     this.switchServices = new Map(); // Track individual switch services
-    this.exportedProperties = new Set(); // Track which D-Bus properties have been exported
     this.exportedInterfaces = new Set(); // Track which D-Bus interfaces have been exported
-    this.VBUS_SERVICE = `com.victronenergy.virtual.${deviceType}`;
-    this.SETTINGS_SERVICE = 'com.victronenergy.settings';
-    this.SETTINGS_ROOT = '/Settings/Devices';
-    this.managementProperties = {};
   }
 
   // Helper function to wrap values in D-Bus variant format
@@ -290,40 +287,7 @@ export class VenusClient extends EventEmitter {
     }
   }
 
-  // Legacy methods for compatibility with tests
-  _exportMgmt() {
-    // Legacy method for compatibility with tests
-    // In the individual service approach, management is exported per switch
-    const busItemInterface = {
-      name: "com.victronenergy.BusItem",
-      methods: {
-        GetValue: ["", "v", [], ["value"]],
-        SetValue: ["v", "i", ["value"], ["result"]],
-        GetText: ["", "s", [], ["text"]],
-      },
-      signals: {
-        PropertiesChanged: ["a{sv}", ["changes"]]
-      }
-    };
 
-    // Set up basic management properties for compatibility
-    this.managementProperties['/Mgmt/Connection'] = { value: 1, text: 'Connected' };
-    this.managementProperties['/ProductName'] = { value: 'SignalK Virtual Switch', text: 'Product name' };
-    this.managementProperties['/DeviceInstance'] = { value: 102, text: 'Device instance' };
-    this.managementProperties['/CustomName'] = { value: 'SignalK Switch', text: 'Custom name' };
-    this.managementProperties['/Mgmt/ProcessName'] = { value: 'signalk-switch', text: 'Process name' };
-    this.managementProperties['/Mgmt/ProcessVersion'] = { value: '1.0.12', text: 'Process version' };
-  }
-
-  _exportRootInterface() {
-    // Legacy method for compatibility with tests
-    // In the individual service approach, root interface is exported per switch
-  }
-
-  _exportMgmtSubtree() {
-    // Legacy method for compatibility with tests
-    // In the individual service approach, management subtree is exported per switch
-  }
 
   async _getOrCreateSwitchInstance(path) {
     // Extract the base switch path (e.g., electrical.switches.nav from electrical.switches.nav.state)
@@ -378,15 +342,27 @@ export class VenusClient extends EventEmitter {
     return switchName.charAt(0).toUpperCase() + switchName.slice(1).replace(/([A-Z])/g, ' $1');
   }
 
-  // Legacy _exportProperty method for compatibility with tests
-  _exportProperty(path, config) {
-    // This method is kept for compatibility but not used in new approach
-    const dataKey = `${path}`;
-    this.switchData = this.switchData || {};
-    this.switchData[dataKey] = config.value;
+  updateProperty(path, value, type = 'i', text = 'Switch property') {
+    // Get the switch service for this path
+    const switchService = this._findSwitchServiceForPath(path);
+    if (switchService) {
+      switchService.updateProperty(path, value, type, text);
+    }
     
-    // Update exported interfaces tracking for test compatibility
-    this.exportedInterfaces.add(dataKey);
+    // For test compatibility, also update legacy data
+    this.switchData[path] = value;
+    this.exportedInterfaces.add(path);
+  }
+
+  _findSwitchServiceForPath(path) {
+    // Helper method to find the correct switch service for a D-Bus path
+    for (const [basePath, service] of this.switchServices) {
+      // Check if this path belongs to this switch instance
+      if (path.includes(`/Switch/${service.switchInstance.vrmInstanceId}/`)) {
+        return service;
+      }
+    }
+    return null;
   }
 
   async _registerSwitchInSettings(switchInstance) {
@@ -514,6 +490,11 @@ export class VenusClient extends EventEmitter {
           const switchState = value ? 1 : 0;
           switchService.updateProperty('/Relay/0/State', switchState, 'i', `${switchName} state`);
           switchService.updateProperty('/Switches/0/State', switchState, 'i', `${switchName} state`);
+          
+          // For test compatibility, also update legacy data
+          this.switchData[`/Switch/${switchInstance.vrmInstanceId}/State`] = switchState;
+          this.exportedInterfaces.add(`/Switch/${switchInstance.vrmInstanceId}/State`);
+          
           this.emit('dataUpdated', 'Switch State', `${switchName}: ${switchState ? 'ON' : 'OFF'}`);
         }
       }
@@ -522,6 +503,11 @@ export class VenusClient extends EventEmitter {
         if (typeof value === 'number' && !isNaN(value)) {
           const dimmingPercent = value > 1 ? value : value * 100;
           switchService.updateProperty('/Switches/0/Position', dimmingPercent, 'i', `${switchName} dimming level`);
+          
+          // For test compatibility, also update legacy data
+          this.switchData[`/Switch/${switchInstance.vrmInstanceId}/DimmingLevel`] = dimmingPercent;
+          this.exportedInterfaces.add(`/Switch/${switchInstance.vrmInstanceId}/DimmingLevel`);
+          
           this.emit('dataUpdated', 'Dimming Level', `${switchName}: ${dimmingPercent.toFixed(1)}%`);
         }
       }
@@ -557,7 +543,5 @@ export class VenusClient extends EventEmitter {
     this.switchInstances.clear();
     this.switchServices.clear();
     this.exportedInterfaces.clear();
-    this.exportedProperties.clear();
-    this.managementProperties = {};
   }
 }

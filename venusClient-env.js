@@ -6,14 +6,8 @@ export class VenusClient extends EventEmitter {
     super();
     this.settings = settings;
     this.deviceType = deviceType;
-    this.buses = {}; // Multiple buses for different sensor types
-    this.envData = {};
-    this.lastInitAttempt = 0;
-    this.exportedInterfaces = new Set(); // Track which D-Bus interfaces have been exported
-    this.sensorInstances = {
-      temperature: 24,
-      humidity: 25
-    };
+    this.sensorServices = new Map(); // Map of sensor paths to EnvironmentService instances
+    this.nextInstance = 24; // Start from instance 24 for environment sensors
   }
 
   // Helper function to wrap values in D-Bus variant format  
@@ -25,6 +19,7 @@ export class VenusClient extends EventEmitter {
       case "b": return ["b", value];
       case "s": return ["s", value];
       case "i": return ["i", value];
+      case "u": return ["u", value];
       case "d": return ["d", value];
       default: return type.type ? this.wrapValue(type.type, value) : value;
     }
@@ -43,56 +38,133 @@ export class VenusClient extends EventEmitter {
   }
 
   async init() {
-    // This method will be called for each sensor type as needed
-    // We don't initialize all buses upfront, only when needed
+    // Individual sensor services are created when needed
   }
 
-  async _initSensorBus(sensorType) {
-    if (this.buses[sensorType]) {
-      return this.buses[sensorType]; // Already initialized
-    }
-
+  async handleSignalKUpdate(path, value) {
     try {
-      // Create D-Bus connection using dbus-native with anonymous authentication
-      const bus = dbusNative.createClient({
+      // Validate input parameters
+      if (value === null || value === undefined) {
+        // Skip invalid environment values silently
+        return;
+      }
+      
+      // Determine sensor type and process value
+      let sensorType, processedValue, displayName;
+      
+      if (path.includes('temperature')) {
+        sensorType = 'temperature';
+        // Temperature in Celsius (Signal K spec uses Kelvin, convert to Celsius for Venus OS)
+        processedValue = value > 200 ? value - 273.15 : value;
+        
+        // Extract sensor location from path (e.g., environment.water.temperature -> Water)
+        const tempMatch = path.match(/environment\.([^.]+)\.temperature|propulsion\.([^.]+)\.temperature/);
+        if (tempMatch) {
+          const location = tempMatch[1] || tempMatch[2];
+          displayName = `${location.charAt(0).toUpperCase() + location.slice(1)} Temperature`;
+        } else {
+          displayName = 'Temperature Sensor';
+        }
+      }
+      else if (path.includes('humidity') || path.includes('relativeHumidity')) {
+        sensorType = 'humidity';
+        // Humidity as percentage (0-1 to 0-100)
+        processedValue = value > 1 ? value : value * 100;
+        
+        // Extract sensor location from path
+        const humMatch = path.match(/environment\.([^.]+)\.(humidity|relativeHumidity)/);
+        if (humMatch) {
+          const location = humMatch[1];
+          displayName = `${location.charAt(0).toUpperCase() + location.slice(1)} Humidity`;
+        } else {
+          displayName = 'Humidity Sensor';
+        }
+      }
+      else {
+        // Silently ignore unknown environment paths (no logging to avoid spam)
+        return;
+      }
+      
+      // Get or create sensor service for this specific sensor path
+      if (!this.sensorServices.has(path)) {
+        const instance = this.nextInstance++;
+        const service = new EnvironmentService(
+          this.settings,
+          path,
+          sensorType,
+          instance,
+          displayName
+        );
+        
+        await service.init();
+        this.sensorServices.set(path, service);
+      }
+      
+      // Update the sensor value
+      const service = this.sensorServices.get(path);
+      await service.updateValue(processedValue);
+      
+      this.emit('dataUpdated', displayName, 
+        sensorType === 'temperature' ? `${processedValue.toFixed(1)}°C` : `${processedValue.toFixed(1)}%`);
+        
+    } catch (err) {
+      throw new Error(err.message);
+    }
+  }
+
+  async disconnect() {
+    // Disconnect all sensor services
+    for (const [path, service] of this.sensorServices) {
+      try {
+        await service.disconnect();
+      } catch (err) {
+        // Ignore disconnect errors
+      }
+    }
+    
+    this.sensorServices.clear();
+  }
+}
+
+// Individual Environment Service class for each sensor instance
+class EnvironmentService {
+  constructor(settings, sensorPath, sensorType, instance, displayName) {
+    this.settings = settings;
+    this.sensorPath = sensorPath;
+    this.sensorType = sensorType;
+    this.instance = instance;
+    this.displayName = displayName;
+    this.bus = null;
+    this.serviceName = `com.victronenergy.temperature.tty${instance}`;
+    this.currentValue = null;
+    this.exportedInterfaces = new Set();
+  }
+
+  async init() {
+    try {
+      // Create D-Bus connection
+      this.bus = dbusNative.createClient({
         host: this.settings.venusHost,
         port: 78,
         authMethods: ['ANONYMOUS']
       });
       
-      // Use appropriate service name for sensor type
-      let serviceName;
-      let deviceInstance;
-      
-      if (sensorType === 'temperature') {
-        serviceName = `com.victronenergy.temperature.tty${this.sensorInstances.temperature}`;
-        deviceInstance = this.sensorInstances.temperature;
-      } else if (sensorType === 'humidity') {
-        // Venus OS doesn't have a specific humidity service, use temperature service with different instance
-        serviceName = `com.victronenergy.temperature.tty${this.sensorInstances.humidity}`;
-        deviceInstance = this.sensorInstances.humidity;
-      } else {
-        throw new Error(`Unsupported sensor type: ${sensorType}`);
-      }
-      
       // Request service name
       await new Promise((resolve, reject) => {
-        bus.requestName(serviceName, 0, (err, result) => {
+        this.bus.requestName(this.serviceName, 0, (err, result) => {
           if (err) reject(err);
           else resolve(result);
         });
       });
 
       // Add serviceName property for interface tracking
-      bus.serviceName = serviceName;
+      this.bus.serviceName = this.serviceName;
 
-      this.buses[sensorType] = bus;
-      this._exportMgmt(bus, sensorType, deviceInstance);
+      // Export D-Bus interfaces
+      this._exportDbusInterfaces();
       
-      // Register sensor in Venus OS Settings for VRM visibility
-      await this._registerEnvironmentSensorInSettings(sensorType, deviceInstance);
-      
-      return bus;
+      // Register in Venus OS Settings
+      await this._registerInSettings();
       
     } catch (err) {
       // Convert errors to more user-friendly messages
@@ -105,8 +177,8 @@ export class VenusClient extends EventEmitter {
     }
   }
 
-  _exportMgmt(bus, sensorType, deviceInstance) {
-    // Define the BusItem interface descriptor matching dbus-victron-virtual
+  _exportDbusInterfaces() {
+    // Define the BusItem interface descriptor matching vedbus.py
     const busItemInterface = {
       name: "com.victronenergy.BusItem",
       methods: {
@@ -121,136 +193,64 @@ export class VenusClient extends EventEmitter {
       },
     };
 
-    // Export the /Mgmt subtree node
-    this._exportMgmtSubtree(bus, sensorType, deviceInstance);
-
-    // Non-management properties
-    const properties = {
-      "/ProductName": { type: "s", value: `SignalK ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)} Sensor`, text: "Product name" },
-      "/DeviceInstance": { type: "u", value: deviceInstance, text: "Device instance" },
-      "/CustomName": { type: "s", value: `SignalK ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)}`, text: "Custom name" }
-    };
-
-    // Export individual property interfaces for non-management properties
-    Object.entries(properties).forEach(([path, config]) => {
-      const propertyInterface = {
-        GetValue: () => this.wrapValue(config.type, config.value),
-        SetValue: (val) => 0, // Success
-        GetText: () => config.text
-      };
-
-      bus.exportInterface(propertyInterface, path, {
-        name: "com.victronenergy.BusItem",
-        methods: {
-          GetValue: ["", "v", [], ["value"]],
-          SetValue: ["v", "i", ["value"], ["result"]],
-          GetText: ["", "s", [], ["text"]],
-        },
-        signals: {
-          PropertiesChanged: ["a{sv}", ["changes"]]
-        }
-      });
-    });
-
-    // Root interface with GetItems and GetValue for all properties
-    const rootInterface = {
-      GetItems: () => {
-        // Return all management properties in the correct vedbus.py format
-        // Format: a{sa{sv}} - array of dictionary entries with string keys and variant values
-        const items = [];
-        
-        // Add management properties
-        items.push(["/Mgmt/Connection", {
-          Value: this.wrapValue("i", 1),
-          Text: this.wrapValue("s", "Connected")
-        }]);
-        items.push(["/ProductName", {
-          Value: this.wrapValue("s", `SignalK ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)} Sensor`),
-          Text: this.wrapValue("s", "Product name")
-        }]);
-        items.push(["/DeviceInstance", {
-          Value: this.wrapValue("u", deviceInstance),
-          Text: this.wrapValue("s", "Device instance")
-        }]);
-        items.push(["/CustomName", {
-          Value: this.wrapValue("s", `SignalK ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)}`),
-          Text: this.wrapValue("s", "Custom name")
-        }]);
-        items.push(["/Mgmt/ProcessName", {
-          Value: this.wrapValue("s", `signalk-${sensorType}-sensor`),
-          Text: this.wrapValue("s", "Process name")
-        }]);
-        items.push(["/Mgmt/ProcessVersion", {
-          Value: this.wrapValue("s", "1.0.12"),
-          Text: this.wrapValue("s", "Process version")
-        }]);
-        
-        // Add environment data properties
-        Object.entries(this.envData).forEach(([path, value]) => {
-          const envPaths = {
-            '/Temperature': 'Temperature',
-            '/Status': 'Status'
-          };
-          
-          const text = envPaths[path] || 'Environment property';
-          items.push([path, {
-            Value: this.wrapValue('d', value),
-            Text: this.wrapValue('s', text)
-          }]);
-        });
-
-        return items;
-      },
-      
-      GetValue: () => {
-        // Root object value
-        return this.wrapValue('s', `SignalK Virtual ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)} Service`);
-      },
-      
-      SetValue: (value) => {
-        // Root object doesn't support setting values
-        return -1; // Error
-      },
-      
-      GetText: () => {
-        return `SignalK Virtual ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)} Service`;
-      }
-    };
-
-    bus.exportInterface(rootInterface, "/", busItemInterface);
-  }
-
-  _exportMgmtSubtree(bus, sensorType, deviceInstance) {
-    // Define the BusItem interface descriptor for dbus-native
-    const busItemInterface = {
-      name: "com.victronenergy.BusItem",
-      methods: {
-        GetItems: ["", "a{sa{sv}}", [], ["items"]],
-        GetValue: ["", "v", [], ["value"]],
-        SetValue: ["v", "i", ["value"], ["result"]],
-        GetText: ["", "s", [], ["text"]],
-      },
-      signals: {
-        ItemsChanged: ["a{sa{sv}}", ["changes"]],
-        PropertiesChanged: ["a{sv}", ["changes"]]
-      }
-    };
-
-    // Management properties under /Mgmt/
+    // Management properties
     const mgmtProperties = {
-      "/Mgmt/ProcessName": { type: "s", value: `signalk-${sensorType}-sensor`, text: "Process name" },
+      "/Mgmt/ProcessName": { type: "s", value: `signalk-${this.sensorType}-sensor`, text: "Process name" },
       "/Mgmt/ProcessVersion": { type: "s", value: "1.0.12", text: "Process version" },
       "/Mgmt/Connection": { type: "i", value: 1, text: "Connected" }
     };
 
-    // Create the /Mgmt subtree interface
-    const mgmtInterface = {
+    // Device properties
+    const deviceProperties = {
+      "/ProductName": { type: "s", value: `SignalK ${this.sensorType.charAt(0).toUpperCase() + this.sensorType.slice(1)} Sensor`, text: "Product name" },
+      "/DeviceInstance": { type: "u", value: this.instance, text: "Device instance" },
+      "/CustomName": { type: "s", value: this.displayName, text: "Custom name" },
+      "/Temperature": { type: "d", value: this.currentValue || 0, text: this.sensorType === 'temperature' ? 'Temperature' : 'Humidity' },
+      "/Status": { type: "i", value: 0, text: "Status" }
+    };
+
+    // Combine all properties
+    const allProperties = { ...mgmtProperties, ...deviceProperties };
+
+    // Export individual property interfaces
+    Object.entries(allProperties).forEach(([path, config]) => {
+      const propertyInterface = {
+        GetValue: () => {
+          if (path === '/Temperature') {
+            return this.wrapValue(config.type, this.currentValue || 0);
+          }
+          return this.wrapValue(config.type, config.value);
+        },
+        SetValue: (val) => {
+          if (path === '/Temperature') {
+            const actualValue = Array.isArray(val) ? val[1] : val;
+            this.currentValue = actualValue;
+            return 0; // Success
+          }
+          return 0; // Success for other properties
+        },
+        GetText: () => config.text
+      };
+
+      const interfaceKey = `${this.serviceName}${path}`;
+      if (!this.exportedInterfaces.has(interfaceKey)) {
+        this.bus.exportInterface(propertyInterface, path, busItemInterface);
+        this.exportedInterfaces.add(interfaceKey);
+      }
+    });
+
+    // Root interface with GetItems
+    const rootInterface = {
       GetItems: () => {
-        // Return all management properties under /Mgmt
         const items = [];
-        Object.entries(mgmtProperties).forEach(([path, config]) => {
+        Object.entries(allProperties).forEach(([path, config]) => {
+          let value = config.value;
+          if (path === '/Temperature') {
+            value = this.currentValue || 0;
+          }
+          
           items.push([path, {
-            Value: this.wrapValue(config.type, config.value),
+            Value: this.wrapValue(config.type, value),
             Text: this.wrapValue("s", config.text)
           }]);
         });
@@ -258,211 +258,35 @@ export class VenusClient extends EventEmitter {
       },
       
       GetValue: () => {
-        return this.wrapValue('s', 'Management');
+        return this.wrapValue('s', `SignalK Virtual ${this.sensorType.charAt(0).toUpperCase() + this.sensorType.slice(1)} Service`);
       },
       
       SetValue: (value) => {
-        return -1; // Error - mgmt subtree doesn't support setting values
+        return -1; // Error - root doesn't support setting values
       },
       
       GetText: () => {
-        return 'Management';
+        return `SignalK Virtual ${this.sensorType.charAt(0).toUpperCase() + this.sensorType.slice(1)} Service`;
       }
     };
 
-    // Export the /Mgmt subtree interface
-    const serviceKey = bus.serviceName || 'unknown';
-    const mgmtInterfaceKey = `${serviceKey}/Mgmt`;
-    if (!this.exportedInterfaces.has(mgmtInterfaceKey)) {
-      bus.exportInterface(mgmtInterface, "/Mgmt", busItemInterface);
-      this.exportedInterfaces.add(mgmtInterfaceKey);
-    }
-
-    // Export individual management property interfaces
-    Object.entries(mgmtProperties).forEach(([path, config]) => {
-      const propertyInterface = {
-        GetValue: () => this.wrapValue(config.type, config.value),
-        SetValue: (val) => 0, // Success
-        GetText: () => config.text
-      };
-
-      // Create a unique interface key for this path
-      const interfaceKey = `${serviceKey}${path}`;
-      
-      // Only export if not already exported
-      if (!this.exportedInterfaces.has(interfaceKey)) {
-        bus.exportInterface(propertyInterface, path, busItemInterface);
-        this.exportedInterfaces.add(interfaceKey);
-      }
-    });
+    this.bus.exportInterface(rootInterface, "/", busItemInterface);
   }
 
-  _exportProperty(bus, path, config) {
-    // Create a unique key for this specific bus service and path
-    const serviceKey = bus.serviceName || 'unknown';
-    const interfaceKey = `${serviceKey}${path}`;
-    
-    // Only export if not already exported
-    if (this.exportedInterfaces.has(interfaceKey)) {
-      // Just update the value, don't re-export the interface
-      this.envData[path] = config.value;
-      return;
-    }
-
-    // Mark as exported
-    this.exportedInterfaces.add(interfaceKey);
-
-    // Define the BusItem interface descriptor for dbus-native
-    const busItemInterface = {
-      name: "com.victronenergy.BusItem",
-      methods: {
-        GetValue: ["", "v", [], ["value"]],
-        SetValue: ["v", "i", ["value"], ["result"]],
-        GetText: ["", "s", [], ["text"]],
-      },
-      signals: {
-        PropertiesChanged: ["a{sv}", ["changes"]]
-      }
-    };
-
-    // Store initial value
-    this.envData[path] = config.value;
-
-    const propertyInterface = {
-      GetValue: () => {
-        const currentValue = this.envData[path] || (config.type === 's' ? '' : 0);
-        return this.wrapValue(config.type, currentValue);
-      },
-      SetValue: (val) => {
-        const actualValue = Array.isArray(val) ? val[1] : val;
-        this.envData[path] = actualValue;
-        this.emit('valueChanged', path, actualValue);
-        return 0; // Success
-      },
-      GetText: () => {
-        return config.text; // Native string return
-      }
-    };
-
-    bus.exportInterface(propertyInterface, path, busItemInterface);
+  async updateValue(value) {
+    this.currentValue = value;
+    // Value updates are handled by the D-Bus interface GetValue methods
   }
 
-  _updateValue(path, value) {
-    if (this.envData.hasOwnProperty(path)) {
-      this.envData[path] = value;
-    }
-  }
-
-  async handleSignalKUpdate(path, value) {
-    try {
-      // Validate input parameters
-      if (value === null || value === undefined) {
-        // Skip invalid environment values silently
-        return;
-      }
-      
-      let sensorType;
-      let bus;
-      
-      if (path.includes('temperature')) {
-        sensorType = 'temperature';
-        // Initialize temperature sensor bus if needed
-        if (!this.buses.temperature) {
-          // Only try to initialize once every 30 seconds to avoid spam
-          const now = Date.now();
-          if (!this.lastInitAttempt || (now - this.lastInitAttempt) > 30000) {
-            this.lastInitAttempt = now;
-            await this._initSensorBus('temperature');
-          } else {
-            // Skip silently if we recently failed to connect
-            return;
-          }
-        }
-        bus = this.buses.temperature;
-        
-        // Temperature in Celsius (Signal K spec uses Kelvin, convert to Celsius for Venus OS)
-        let tempC = value;
-        if (value > 200) {
-          // Assume Kelvin, convert to Celsius
-          tempC = value - 273.15;
-        }
-        this._exportProperty(bus, '/Temperature', { 
-          value: tempC, 
-          type: 'd', 
-          text: 'Temperature' 
-        });
-        
-        // Export status (0 = OK)
-        this._exportProperty(bus, '/Status', { 
-          value: 0, 
-          type: 'i', 
-          text: 'OK' 
-        });
-        
-        this.emit('dataUpdated', 'Temperature', `${tempC.toFixed(1)}°C`);
-      }
-      else if (path.includes('humidity') || path.includes('relativeHumidity')) {
-        sensorType = 'humidity';
-        // Initialize humidity sensor bus if needed
-        if (!this.buses.humidity) {
-          // Only try to initialize once every 30 seconds to avoid spam
-          const now = Date.now();
-          if (!this.lastInitAttempt || (now - this.lastInitAttempt) > 30000) {
-            this.lastInitAttempt = now;
-            await this._initSensorBus('humidity');
-          } else {
-            // Skip silently if we recently failed to connect
-            return;
-          }
-        }
-        bus = this.buses.humidity;
-        
-        // Humidity as percentage (0-1 to 0-100)
-        const humidityPercent = value > 1 ? value : value * 100;
-        this._exportProperty(bus, '/Temperature', { 
-          value: humidityPercent, 
-          type: 'd', 
-          text: 'Humidity' 
-        });
-        
-        // Export status (0 = OK)
-        this._exportProperty(bus, '/Status', { 
-          value: 0, 
-          type: 'i', 
-          text: 'OK' 
-        });
-        
-        this.emit('dataUpdated', 'Humidity', `${humidityPercent.toFixed(1)}%`);
-      }
-      else if (path.includes('pressure')) {
-        // Pressure sensors would need their own implementation
-        // For now, silently ignore pressure sensors
-        return;
-      }
-      else {
-        // Silently ignore unknown environment paths (no logging to avoid spam)
-        return;
-      }
-      
-    } catch (err) {
-      throw new Error(err.message);
-    }
-  }
-
-  async _registerEnvironmentSensorInSettings(sensorType, deviceInstance) {
-    if (!this.buses[sensorType]) {
-      return deviceInstance; // Fallback to default instance
-    }
-
+  async _registerInSettings() {
     try {
       // Create a unique service name for this sensor
-      const serviceName = `signalk_${sensorType}_${deviceInstance}`;
+      const serviceName = `signalk_${this.sensorType}_${this.instance}`;
       
-      // Proposed class and VRM instance (environment type and instance)
-      const proposedInstance = `environment:${deviceInstance}`;
+      // Proposed class and VRM instance
+      const proposedInstance = `environment:${this.instance}`;
 
       // Create settings array following Victron's Settings API format
-      // For dbus-native with signature 'aa{sv}' - array of array of dict entries
       const settingsArray = [
         [
           ['path', ['s', `/Settings/Devices/${serviceName}/ClassAndVrmInstance`]],
@@ -472,18 +296,15 @@ export class VenusClient extends EventEmitter {
         ],
         [
           ['path', ['s', `/Settings/Devices/${serviceName}/CustomName`]],
-          ['default', ['s', `SignalK ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)}`]],
+          ['default', ['s', this.displayName]],
           ['type', ['s', 's']],
           ['description', ['s', 'Custom name']]
         ]
       ];
 
-      // Call the Venus OS Settings API to register the device using the sensor bus
-      const settingsResult = await new Promise((resolve, reject) => {
-        console.log('Invoking Settings API with:', JSON.stringify(settingsArray, null, 2));
-        
-        // Use the correct dbus-native invoke format
-        this.buses[sensorType].invoke({
+      // Call the Venus OS Settings API
+      await new Promise((resolve, reject) => {
+        this.bus.invoke({
           destination: 'com.victronenergy.settings',
           path: '/',
           'interface': 'com.victronenergy.Settings',
@@ -492,70 +313,38 @@ export class VenusClient extends EventEmitter {
           body: [settingsArray]
         }, (err, result) => {
           if (err) {
-            console.log('Settings API error:', err);
-            console.dir(err);
             reject(new Error(`Settings registration failed: ${err.message || err}`));
           } else {
-            console.log('Settings API result:', result);
             resolve(result);
           }
         });
       });
 
-      // Extract the actual assigned instance ID from the Settings API result
-      let actualInstance = deviceInstance || 100;
-      let actualProposedInstance = proposedInstance;
-      
-      if (settingsResult && settingsResult.length > 0) {
-        // Parse the Settings API response format: [[["path",[["s"],["/path"]]],["error",[["i"],[0]]],["value",[["s"],["environment:233"]]]]]
-        for (const result of settingsResult) {
-          if (result && Array.isArray(result)) {
-            // Look for the ClassAndVrmInstance result
-            const pathEntry = result.find(entry => entry && entry[0] === 'path');
-            const valueEntry = result.find(entry => entry && entry[0] === 'value');
-            
-            if (pathEntry && valueEntry && 
-                pathEntry[1] && pathEntry[1][1] && pathEntry[1][1][0] && pathEntry[1][1][0].includes('ClassAndVrmInstance') &&
-                valueEntry[1] && valueEntry[1][1] && valueEntry[1][1][0]) {
-              
-              actualProposedInstance = valueEntry[1][1][0]; // Extract the actual assigned value
-              const instanceMatch = actualProposedInstance.match(/environment:(\d+)/);
-              if (instanceMatch) {
-                actualInstance = parseInt(instanceMatch[1]);
-                console.log(`${sensorType} sensor assigned actual instance: ${actualInstance} (${actualProposedInstance})`);
-                
-                // Update the sensor instance to match the assigned instance
-                this.sensorInstances[sensorType] = actualInstance;
-              }
-            }
-          }
-        }
-      }
-
-      console.log(`${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)} sensor registered in Venus OS Settings: ${serviceName} -> ${actualProposedInstance}`);
-      return actualInstance;
+      console.log(`${this.displayName} registered in Venus OS Settings: ${serviceName} -> ${proposedInstance}`);
       
     } catch (err) {
-      console.error(`Failed to register ${sensorType} sensor in settings:`, err.message);
-      return deviceInstance; // Fallback to default instance
+      console.error(`Failed to register ${this.displayName} in settings:`, err.message);
     }
   }
 
   async disconnect() {
-    // Disconnect all buses (including settings buses)
-    Object.keys(this.buses).forEach(sensorType => {
-      const bus = this.buses[sensorType];
-      if (bus) {
-        try {
-          bus.end();
-        } catch (err) {
-          // Ignore disconnect errors
-        }
+    if (this.bus) {
+      try {
+        this.bus.end();
+      } catch (err) {
+        // Ignore disconnect errors
       }
-    });
-    
-    this.buses = {};
-    this.envData = {};
+    }
+    this.bus = null;
     this.exportedInterfaces.clear();
+  }
+
+  // Legacy method for compatibility with existing tests
+  _exportProperty(bus, path, config) {
+    // This method is maintained for compatibility but the new architecture
+    // exports all properties in _exportDbusInterfaces
+    if (path === '/Temperature') {
+      this.currentValue = config.value;
+    }
   }
 }

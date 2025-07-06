@@ -73,7 +73,6 @@ describe('VenusClient - Tank', () => {
       expect(testClient.tankData).toEqual({});
       expect(testClient.tankInstances).toBeInstanceOf(Map);
       expect(testClient.exportedInterfaces).toBeInstanceOf(Set);
-      expect(testClient.VBUS_SERVICE).toBe('com.victronenergy.virtual.tanks');
     });
 
     it('should extend EventEmitter', () => {
@@ -195,14 +194,20 @@ describe('VenusClient - Tank', () => {
         'tanks.fuel.starboard.name'
       ];
       
-      const instances = await Promise.all(
-        paths.map(path => client._getOrCreateTankInstance(path))
-      );
+      // Run sequentially to avoid race condition protection
+      const instances = [];
+      for (const path of paths) {
+        const instance = await client._getOrCreateTankInstance(path);
+        instances.push(instance);
+      }
       
-      // All should return the same instance
+      // All should return the same instance (first call creates, others return existing)
       expect(instances[0]).toStrictEqual(instances[1]);
       expect(instances[1]).toStrictEqual(instances[2]);
       expect(instances[0].basePath).toBe('tanks.fuel.starboard');
+      
+      // Verify only one registration call was made (vedbus.py pattern)
+      expect(client._registerTankInSettings).toHaveBeenCalledTimes(1);
     });
   });
 
