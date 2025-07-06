@@ -11,8 +11,12 @@ class TankService {
     this.exportedInterfaces = new Set();
     this.bus = null; // Each tank service gets its own D-Bus connection
     
+    // Don't create connection in constructor - do it in init()
+  }
+
+  async init() {
     // Create own D-Bus connection and register service
-    this._createBusConnection();
+    await this._createBusConnection();
   }
 
   async _createBusConnection() {
@@ -24,11 +28,13 @@ class TankService {
         authMethods: ['ANONYMOUS']
       });
 
-      // Wait for bus to be ready
-      await new Promise((resolve, reject) => {
-        this.bus.on('connect', resolve);
-        this.bus.on('error', reject);
-      });
+      // Wait for bus to be ready (if it has event support)
+      if (typeof this.bus.on === 'function') {
+        await new Promise((resolve, reject) => {
+          this.bus.on('connect', resolve);
+          this.bus.on('error', reject);
+        });
+      }
 
       // Register this service on its own D-Bus connection
       await this._registerService();
@@ -301,6 +307,7 @@ export class VenusClient extends EventEmitter {
       
       // Create tank service for this tank with its own D-Bus connection
       const tankService = new TankService(tankInstance, this.settings);
+      await tankService.init(); // Initialize the tank service
       this.tankServices.set(basePath, tankService);
       
       this.tankInstances.set(basePath, tankInstance);
@@ -403,33 +410,6 @@ export class VenusClient extends EventEmitter {
   _exportRootInterface() {
     // Legacy method for compatibility with tests
     // In the individual service approach, root interface is exported per tank
-  }
-
-  async _getOrCreateTankInstance(path) {
-    // Extract the base tank path (e.g., tanks.fuel.starboard from tanks.fuel.starboard.currentLevel)
-    const basePath = path.replace(/\.(currentLevel|capacity|name|currentVolume|voltage)$/, '');
-    
-    if (!this.tankInstances.has(basePath)) {
-      // Create a deterministic index based on the path hash to ensure consistency
-      const index = this._generateStableIndex(basePath);
-      const tankInstance = {
-        index: index,
-        name: this._getTankName(path),
-        basePath: basePath
-      };
-      
-      // Register tank in Venus OS settings and get VRM instance ID
-      const vrmInstanceId = await this._registerTankInSettings(tankInstance);
-      tankInstance.vrmInstanceId = vrmInstanceId;
-      
-      // Create tank service for this tank using the shared bus
-      const tankService = new TankService(this.bus, tankInstance, this.settings);
-      this.tankServices.set(basePath, tankService);
-      
-      this.tankInstances.set(basePath, tankInstance);
-    }
-    
-    return this.tankInstances.get(basePath);
   }
 
   _generateStableIndex(basePath) {

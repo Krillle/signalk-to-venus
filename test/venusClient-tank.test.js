@@ -6,7 +6,13 @@ import EventEmitter from 'events';
 const mockBus = {
   requestName: vi.fn(),
   exportInterface: vi.fn(),
-  end: vi.fn()
+  end: vi.fn(),
+  on: vi.fn((event, callback) => {
+    // Simulate immediate connection for tests
+    if (event === 'connect') {
+      setTimeout(callback, 0);
+    }
+  })
 };
 
 const mockDbusNative = {
