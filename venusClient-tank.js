@@ -508,6 +508,11 @@ export class VenusClient extends EventEmitter {
     // In the individual service approach, root interface is exported per tank
   }
 
+  _exportMgmtSubtree() {
+    // Legacy method for compatibility with tests
+    // In the individual service approach, management subtree is exported per tank
+  }
+
   _generateStableIndex(basePath) {
     // Generate a stable index based on the base path to ensure the same tank
     // always gets the same index, even across restarts
