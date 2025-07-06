@@ -3,21 +3,45 @@ import EventEmitter from 'events';
 
 // Individual tank service class
 class TankService {
-  constructor(bus, tankInstance, settings) {
-    this.bus = bus;
+  constructor(tankInstance, settings) {
     this.tankInstance = tankInstance;
     this.settings = settings;
     this.serviceName = `com.victronenergy.tank.signalk_${tankInstance.index}`;
     this.tankData = {};
     this.exportedInterfaces = new Set();
+    this.bus = null; // Each tank service gets its own D-Bus connection
     
-    // Register this service on the shared D-Bus connection
-    this._registerService();
+    // Create own D-Bus connection and register service
+    this._createBusConnection();
+  }
+
+  async _createBusConnection() {
+    try {
+      // Create individual D-Bus connection for this tank service
+      this.bus = dbusNative.createClient({
+        host: this.settings.venusHost,
+        port: this.settings.port || 78,
+        authMethods: ['ANONYMOUS']
+      });
+
+      // Wait for bus to be ready
+      await new Promise((resolve, reject) => {
+        this.bus.on('connect', resolve);
+        this.bus.on('error', reject);
+      });
+
+      // Register this service on its own D-Bus connection
+      await this._registerService();
+      
+    } catch (err) {
+      console.error(`Failed to create D-Bus connection for tank service ${this.serviceName}:`, err);
+      throw err;
+    }
   }
 
   async _registerService() {
     try {
-      // Request service name on the shared bus
+      // Request service name on our own bus connection
       await new Promise((resolve, reject) => {
         this.bus.requestName(this.serviceName, 0, (err, result) => {
           if (err) reject(err);
@@ -28,6 +52,8 @@ class TankService {
       // Export management and tank interfaces
       this._exportManagementInterface();
       this._exportTankInterface();
+      
+      console.log(`Successfully registered tank service ${this.serviceName} on D-Bus`);
       
     } catch (err) {
       console.error(`Failed to register tank service ${this.serviceName}:`, err);
@@ -98,7 +124,7 @@ class TankService {
       GetText: () => 'SignalK Virtual Tank Service'
     };
 
-    this.bus.exportInterface(rootInterface, "/", busItemInterface);
+    this.bus.exportInterface(rootInterface, "", busItemInterface);
 
     // Export individual property interfaces
     Object.entries(mgmtProperties).forEach(([path, config]) => {
@@ -173,8 +199,17 @@ class TankService {
   }
 
   disconnect() {
-    // Individual tank services don't need to disconnect the bus
-    // Just clear their data
+    // Close the individual D-Bus connection
+    if (this.bus) {
+      try {
+        this.bus.end();
+      } catch (err) {
+        console.error(`Error disconnecting tank service ${this.serviceName}:`, err);
+      }
+      this.bus = null;
+    }
+    
+    // Clear data
     this.tankData = {};
     this.exportedInterfaces.clear();
   }
@@ -264,8 +299,8 @@ export class VenusClient extends EventEmitter {
       const vrmInstanceId = await this._registerTankInSettings(tankInstance);
       tankInstance.vrmInstanceId = vrmInstanceId;
       
-      // Create tank service for this tank
-      const tankService = new TankService(this.bus, tankInstance, this.settings);
+      // Create tank service for this tank with its own D-Bus connection
+      const tankService = new TankService(tankInstance, this.settings);
       this.tankServices.set(basePath, tankService);
       
       this.tankInstances.set(basePath, tankInstance);
