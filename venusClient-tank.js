@@ -324,16 +324,12 @@ export class VenusClient extends EventEmitter {
     this.deviceType = deviceType;
     this.bus = null;
     this.tankData = {}; // For compatibility with tests
-    this.lastInitAttempt = 0;
     this.tankIndex = 0; // For unique tank indexing
     this.tankCounts = {}; // Track how many tanks of each type we have
     this.tankCreating = new Map(); // Prevent race conditions in tank creation
     this.tankInstances = new Map(); // Track tank instances by Signal K path
     this.tankServices = new Map(); // Track individual tank services
-    this.exportedProperties = new Set(); // Track which D-Bus properties have been exported
     this.exportedInterfaces = new Set(); // Track which D-Bus interfaces have been exported
-    this.VBUS_SERVICE = `com.victronenergy.virtual.${deviceType}`;
-    this.managementProperties = {};
   }
 
   // Helper function to wrap values in D-Bus variant format
@@ -477,30 +473,6 @@ export class VenusClient extends EventEmitter {
     
     // Update exported interfaces tracking for test compatibility
     this.exportedInterfaces.add(dataKey);
-  }
-
-  _exportMgmt() {
-    // Legacy method for compatibility with tests
-    // In the individual service approach, management is exported per tank
-    const busItemInterface = {
-      name: "com.victronenergy.BusItem",
-      methods: {
-        GetValue: ["", "v", [], ["value"]],
-        SetValue: ["v", "i", ["value"], ["result"]],
-        GetText: ["", "s", [], ["text"]],
-      },
-      signals: {
-        PropertiesChanged: ["a{sv}", ["changes"]]
-      }
-    };
-
-    // Set up basic management properties for compatibility
-    this.managementProperties['/Mgmt/Connection'] = { value: 1, text: 'Connected' };
-    this.managementProperties['/ProductName'] = { value: 'SignalK Virtual Tank', text: 'Product name' };
-    this.managementProperties['/DeviceInstance'] = { value: 100, text: 'Device instance' };
-    this.managementProperties['/CustomName'] = { value: 'SignalK Tank', text: 'Custom name' };
-    this.managementProperties['/Mgmt/ProcessName'] = { value: 'signalk-tank', text: 'Process name' };
-    this.managementProperties['/Mgmt/ProcessVersion'] = { value: '1.0.12', text: 'Process version' };
   }
 
   _exportRootInterface() {
@@ -757,7 +729,5 @@ export class VenusClient extends EventEmitter {
     this.tankServices.clear();
     this.tankCreating.clear(); // Clear race condition tracking
     this.exportedInterfaces.clear();
-    this.exportedProperties.clear();
-    this.managementProperties = {};
   }
 }

@@ -246,15 +246,9 @@ export class VenusClient extends EventEmitter {
     this.deviceType = deviceType;
     this.bus = null;
     this.switchData = {}; // For compatibility with tests
-    this.lastInitAttempt = 0;
-    this.switchIndex = 0; // For unique switch indexing
     this.switchInstances = new Map(); // Track switch instances by Signal K base path
     this.switchServices = new Map(); // Track individual switch services
-    this.exportedProperties = new Set(); // Track which D-Bus properties have been exported
     this.exportedInterfaces = new Set(); // Track which D-Bus interfaces have been exported
-    this.VBUS_SERVICE = `com.victronenergy.virtual.${deviceType}`;
-    this.SETTINGS_SERVICE = 'com.victronenergy.settings';
-    this.SETTINGS_ROOT = '/Settings/Devices';
   }
 
   // Helper function to wrap values in D-Bus variant format
@@ -549,6 +543,5 @@ export class VenusClient extends EventEmitter {
     this.switchInstances.clear();
     this.switchServices.clear();
     this.exportedInterfaces.clear();
-    this.exportedProperties.clear();
   }
 }
