@@ -180,7 +180,9 @@ export class VenusClient extends EventEmitter {
       } else if (sensorType === 'humidity' || sensorType === 'relativeHumidity') {
         return `${environmentType.charAt(0).toUpperCase() + environmentType.slice(1)} Humidity`;
       } else {
-        return `${environmentType.charAt(0).toUpperCase() + environmentType.slice(1)} ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)}`;
+        // Convert camelCase to Title Case with spaces for sensor type
+        const formattedSensorType = sensorType.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+        return `${environmentType.charAt(0).toUpperCase() + environmentType.slice(1)} ${formattedSensorType}`;
       }
     }
     return 'Unknown Environment Sensor';
@@ -256,27 +258,27 @@ export class VenusClient extends EventEmitter {
     if (path.includes('currentLevel')) {
       if (typeof value === 'number' && !isNaN(value)) {
         const levelPercent = value > 1 ? value : value * 100;
-        deviceService.updateProperty('/Level', levelPercent, 'd', `${deviceName} level`);
+        await deviceService.updateProperty('/Level', levelPercent, 'd', `${deviceName} level`);
         this.emit('dataUpdated', 'Tank Level', `${deviceName}: ${levelPercent.toFixed(1)}%`);
       }
     } else if (path.includes('capacity')) {
       if (typeof value === 'number' && !isNaN(value)) {
-        deviceService.updateProperty('/Capacity', value, 'd', `${deviceName} capacity`);
+        await deviceService.updateProperty('/Capacity', value, 'd', `${deviceName} capacity`);
         this.emit('dataUpdated', 'Tank Capacity', `${deviceName}: ${value.toFixed(1)}L`);
       }
     } else if (path.includes('name')) {
       if (typeof value === 'string') {
-        deviceService.updateProperty('/Name', value, 's', `${deviceName} name`);
+        await deviceService.updateProperty('/Name', value, 's', `${deviceName} name`);
         this.emit('dataUpdated', 'Tank Name', `${deviceName}: ${value}`);
       }
     } else if (path.includes('currentVolume')) {
       if (typeof value === 'number' && !isNaN(value)) {
-        deviceService.updateProperty('/Volume', value, 'd', `${deviceName} volume`);
+        await deviceService.updateProperty('/Volume', value, 'd', `${deviceName} volume`);
         this.emit('dataUpdated', 'Tank Volume', `${deviceName}: ${value.toFixed(1)}L`);
       }
     } else if (path.includes('voltage')) {
       if (typeof value === 'number' && !isNaN(value)) {
-        deviceService.updateProperty('/Voltage', value, 'd', `${deviceName} voltage`);
+        await deviceService.updateProperty('/Voltage', value, 'd', `${deviceName} voltage`);
         this.emit('dataUpdated', 'Tank Voltage', `${deviceName}: ${value.toFixed(2)}V`);
       }
     }
@@ -285,29 +287,29 @@ export class VenusClient extends EventEmitter {
   async _handleBatteryUpdate(path, value, deviceService, deviceName) {
     if (path.includes('voltage')) {
       if (typeof value === 'number' && !isNaN(value)) {
-        deviceService.updateProperty('/Dc/0/Voltage', value, 'd', `${deviceName} voltage`);
+        await deviceService.updateProperty('/Dc/0/Voltage', value, 'd', `${deviceName} voltage`);
         this.emit('dataUpdated', 'Battery Voltage', `${deviceName}: ${value.toFixed(2)}V`);
       }
     } else if (path.includes('current')) {
       if (typeof value === 'number' && !isNaN(value)) {
-        deviceService.updateProperty('/Dc/0/Current', value, 'd', `${deviceName} current`);
+        await deviceService.updateProperty('/Dc/0/Current', value, 'd', `${deviceName} current`);
         this.emit('dataUpdated', 'Battery Current', `${deviceName}: ${value.toFixed(1)}A`);
       }
     } else if (path.includes('stateOfCharge') || (path.includes('capacity') && path.includes('state'))) {
       if (typeof value === 'number' && !isNaN(value)) {
         const socPercent = value > 1 ? value : value * 100;
-        deviceService.updateProperty('/Soc', socPercent, 'd', `${deviceName} state of charge`);
+        await deviceService.updateProperty('/Soc', socPercent, 'd', `${deviceName} state of charge`);
         this.emit('dataUpdated', 'Battery SoC', `${deviceName}: ${socPercent.toFixed(1)}%`);
       }
     } else if (path.includes('power')) {
       if (typeof value === 'number' && !isNaN(value)) {
-        deviceService.updateProperty('/Dc/0/Power', value, 'd', `${deviceName} power`);
+        await deviceService.updateProperty('/Dc/0/Power', value, 'd', `${deviceName} power`);
         this.emit('dataUpdated', 'Battery Power', `${deviceName}: ${value.toFixed(1)}W`);
       }
     } else if (path.includes('temperature')) {
       if (typeof value === 'number' && !isNaN(value)) {
         const tempCelsius = value > 200 ? value - 273.15 : value; // Convert from Kelvin if needed
-        deviceService.updateProperty('/Dc/0/Temperature', tempCelsius, 'd', `${deviceName} temperature`);
+        await deviceService.updateProperty('/Dc/0/Temperature', tempCelsius, 'd', `${deviceName} temperature`);
         this.emit('dataUpdated', 'Battery Temperature', `${deviceName}: ${tempCelsius.toFixed(1)}°C`);
       }
     }
@@ -317,18 +319,18 @@ export class VenusClient extends EventEmitter {
     if (path.includes('state')) {
       if (typeof value === 'boolean') {
         const stateValue = value ? 1 : 0;
-        deviceService.updateProperty('/State', stateValue, 'i', `${deviceName} state`);
+        await deviceService.updateProperty('/State', stateValue, 'i', `${deviceName} state`);
         this.emit('dataUpdated', 'Switch State', `${deviceName}: ${value ? 'ON' : 'OFF'}`);
       }
     } else if (path.includes('dimmingLevel')) {
       if (typeof value === 'number' && !isNaN(value)) {
         const levelPercent = value > 1 ? value : value * 100;
-        deviceService.updateProperty('/DimmingLevel', levelPercent, 'i', `${deviceName} dimming level`);
+        await deviceService.updateProperty('/DimmingLevel', levelPercent, 'i', `${deviceName} dimming level`);
         this.emit('dataUpdated', 'Switch Dimming', `${deviceName}: ${levelPercent.toFixed(0)}%`);
       }
     } else if (path.includes('position')) {
       if (typeof value === 'number' && !isNaN(value)) {
-        deviceService.updateProperty('/Position', value, 'i', `${deviceName} position`);
+        await deviceService.updateProperty('/Position', value, 'i', `${deviceName} position`);
         this.emit('dataUpdated', 'Switch Position', `${deviceName}: ${value}`);
       }
     }
@@ -338,13 +340,13 @@ export class VenusClient extends EventEmitter {
     if (path.includes('temperature')) {
       if (typeof value === 'number' && !isNaN(value)) {
         const tempCelsius = value > 200 ? value - 273.15 : value; // Convert from Kelvin if needed
-        deviceService.updateProperty('/Temperature', tempCelsius, 'd', `${deviceName} temperature`);
+        await deviceService.updateProperty('/Temperature', tempCelsius, 'd', `${deviceName} temperature`);
         this.emit('dataUpdated', 'Environment Temperature', `${deviceName}: ${tempCelsius.toFixed(1)}°C`);
       }
     } else if (path.includes('humidity') || path.includes('relativeHumidity')) {
       if (typeof value === 'number' && !isNaN(value)) {
         const humidityPercent = value > 1 ? value : value * 100;
-        deviceService.updateProperty('/Humidity', humidityPercent, 'd', `${deviceName} humidity`);
+        await deviceService.updateProperty('/Humidity', humidityPercent, 'd', `${deviceName} humidity`);
         this.emit('dataUpdated', 'Environment Humidity', `${deviceName}: ${humidityPercent.toFixed(1)}%`);
       }
     }
@@ -353,8 +355,12 @@ export class VenusClient extends EventEmitter {
   async disconnect() {
     // Disconnect individual device services
     for (const deviceService of this.deviceServices.values()) {
-      if (deviceService) {
-        deviceService.disconnect();
+      if (deviceService && typeof deviceService.disconnect === 'function') {
+        try {
+          deviceService.disconnect();
+        } catch (err) {
+          // Ignore disconnect errors
+        }
       }
     }
     
