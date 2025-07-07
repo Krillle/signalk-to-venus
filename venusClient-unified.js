@@ -11,11 +11,24 @@ export class VenusClient extends EventEmitter {
     super();
     this.settings = settings;
     this.deviceType = deviceType;
-    this.deviceConfig = DEVICE_CONFIGS[deviceType];
+    
+    // Map plural device types to singular for internal configuration lookup
+    const deviceTypeMap = {
+      'batteries': 'battery',
+      'tanks': 'tank', 
+      'switches': 'switch',
+      'environment': 'environment'
+    };
+    
+    const configDeviceType = deviceTypeMap[deviceType] || deviceType;
+    this.deviceConfig = DEVICE_CONFIGS[configDeviceType];
     
     if (!this.deviceConfig) {
-      throw new Error(`Unsupported device type: ${deviceType}. Supported types: ${Object.keys(DEVICE_CONFIGS).join(', ')}`);
+      throw new Error(`Unsupported device type: ${deviceType}. Supported types: ${Object.keys(deviceTypeMap).join(', ')}`);
     }
+    
+    // Store the internal config device type for logic operations
+    this._internalDeviceType = configDeviceType;
     
     this.bus = null;
     this.deviceIndex = 0; // For unique device indexing
@@ -74,7 +87,7 @@ export class VenusClient extends EventEmitter {
   }
 
   _extractBasePath(path) {
-    switch (this.deviceType) {
+    switch (this._internalDeviceType) {
       case 'tank':
         return path.replace(/\.(currentLevel|capacity|name|currentVolume|voltage)$/, '');
       case 'battery':
@@ -102,7 +115,7 @@ export class VenusClient extends EventEmitter {
   }
 
   _getDeviceName(path) {
-    switch (this.deviceType) {
+    switch (this._internalDeviceType) {
       case 'tank':
         return this._getTankName(path);
       case 'battery':
@@ -206,7 +219,7 @@ export class VenusClient extends EventEmitter {
   }
 
   _isRelevantPath(path) {
-    switch (this.deviceType) {
+    switch (this._internalDeviceType) {
       case 'tank':
         return path.startsWith('tanks.');
       case 'battery':
@@ -223,7 +236,7 @@ export class VenusClient extends EventEmitter {
   async _handleDeviceSpecificUpdate(path, value, deviceService, deviceInstance) {
     const deviceName = deviceInstance.name;
     
-    switch (this.deviceType) {
+    switch (this._internalDeviceType) {
       case 'tank':
         await this._handleTankUpdate(path, value, deviceService, deviceName);
         break;
