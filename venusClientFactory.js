@@ -8,14 +8,6 @@ export function VenusClientFactory(settings, deviceType) {
     throw new Error(`Unsupported device type: ${deviceType}. Supported types: ${supportedTypes.join(', ')}`);
   }
   
-  // Map plural device types to singular for configuration lookup
-  const deviceTypeMap = {
-    'batteries': 'battery',
-    'tanks': 'tank', 
-    'switches': 'switch',
-    'environment': 'environment'
-  };
-  
-  const configDeviceType = deviceTypeMap[deviceType] || deviceType;
-  return new VenusClient(settings, configDeviceType);
+  // Pass the original device type to VenusClient - it will handle the mapping internally
+  return new VenusClient(settings, deviceType);
 }
