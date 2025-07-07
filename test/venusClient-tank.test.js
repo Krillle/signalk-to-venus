@@ -1,5 +1,5 @@
 import { describe, it, beforeEach, afterEach, expect, vi } from 'vitest';
-import { VenusClient } from '../venusClient-tank.js';
+import { VenusClient } from '../venusClient.js';
 import EventEmitter from 'events';
 
 // Mock dbus-native

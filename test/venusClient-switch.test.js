@@ -1,5 +1,5 @@
 import { describe, it, beforeEach, expect, vi } from 'vitest';
-import { VenusClient } from '../venusClient-switch.js';
+import { VenusClient } from '../venusClient.js';
 
 // Mock dbus-native
 const mockBus = {

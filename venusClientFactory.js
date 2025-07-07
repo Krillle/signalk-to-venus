@@ -1,4 +1,4 @@
-import { VenusClient } from './venusClient-unified.js';
+import { VenusClient } from './venusClient.js';
 
 export function VenusClientFactory(settings, deviceType) {
   // All clients now use the unified VenusClient with device-specific configurations
