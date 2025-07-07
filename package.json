@@ -18,7 +18,20 @@
     "dimmer"
   ],
   "signalk-plugin-enabled-by-default": true,
-  "author": "Christian Wegerhoff",
+  "author": {
+    "name": "Scott Bender",
+    "email": "scott@scottbender.net"
+  },
+  "Christian Wegerhoff": {
+    "name": "Christian Wegerhoff",
+    "email": "christian.wegerhoff@icloud.com"
+  },
+  "contributors": [
+    {
+      "name": "Chris Roberts (night199uk)"
+    }
+  ],
+  
   "license": "MIT",
   "main": "index.js",
   "type": "module",
