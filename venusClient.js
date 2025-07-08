@@ -33,7 +33,6 @@ export class VenusClient extends EventEmitter {
     this.bus = null;
     this.deviceIndex = 0; // For unique device indexing
     this.deviceCounts = {}; // Track how many devices of each type we have
-    this.deviceCreating = new Map(); // Prevent race conditions in device creation
     this.deviceInstances = new Map(); // Track device instances by Signal K path
     this.deviceServices = new Map(); // Track individual device services
     this.exportedInterfaces = new Set(); // Track which D-Bus interfaces have been exported
@@ -58,10 +57,8 @@ export class VenusClient extends EventEmitter {
     const basePath = this._extractBasePath(path);
     
     if (!this.deviceInstances.has(basePath)) {
-      if (this.deviceCreating.has(basePath))
-        return;
+      this.deviceInstances.set(basePath, null);
 
-      this.deviceCreating.set(basePath, true);
       // Create a deterministic index based on the path hash to ensure consistency
       const index = this._generateStableIndex(basePath);
       const deviceInstance = {
@@ -77,12 +74,26 @@ export class VenusClient extends EventEmitter {
         this.settings,
         this.deviceConfig
       );
+
       await deviceService.init(); // Initialize the device service
+
+      // we should really have a vedbus-tank, vedbus-battery, etc to get rid of this.
+      switch (this._internalDeviceType) {
+        case 'tank':
+          await deviceService.updateProperty('/FluidType', this._getFluidType(path), 'i', `Fluid Type`);
+          break;
+
+        case 'battery':
+        case 'switch':
+        case 'environment':
+        default:
+          break;
+      }
       this.deviceServices.set(basePath, deviceService);
       this.deviceInstances.set(basePath, deviceInstance);
-      this.deviceCreating.delete(basePath);
     }
     
+    // can return null if the device instance is not yet created
     return this.deviceInstances.get(basePath);
   }
 
@@ -131,23 +142,25 @@ export class VenusClient extends EventEmitter {
 
   _getTankName(path) {
     const parts = path.split('.');
+    let tankName = 'Unknown Tank';
     if (parts.length >= 3) {
       const tankType = parts[1]; // e.g., 'fuel', 'freshWater', 'wasteWater'
       const tankLocation = parts[2]; // e.g., 'starboard', 'port', 'main'
       
-      if (tankType === 'fuel') {
-        return `Fuel ${tankLocation}`;
-      } else if (tankType === 'freshWater') {
-        return tankLocation === 'main' ? 'Freshwater' : `Freshwater ${tankLocation}`;
-      } else if (tankType === 'wasteWater') {
-        return tankLocation === 'primary' ? 'Wastewater' : `Wastewater ${tankLocation}`;
-      } else if (tankType === 'blackWater') {
-        return tankLocation === 'primary' ? 'Blackwater' : `Blackwater ${tankLocation}`;
-      } else {
-        return `${tankType.charAt(0).toUpperCase() + tankType.slice(1)} ${tankLocation}`;
-      }
+      tankName = `${this.deviceConfig.fluidTypes[tankType].name} ${tankLocation}`;
     }
-    return 'Unknown Tank';
+    return tankName;
+  }
+
+  _getFluidType(path) {
+    const parts = path.split('.');
+    let fluidType = 0;
+    if (parts.length >= 3) {
+      const tankType = parts[1]; // e.g., 'fuel', 'freshWater', 'wasteWater'
+
+      fluidType = this.deviceConfig.fluidTypes[tankType].value ?? 0;
+    }
+    return fluidType;
   }
 
   _getBatteryName(path) {
@@ -257,8 +270,12 @@ export class VenusClient extends EventEmitter {
   async _handleTankUpdate(path, value, deviceService, deviceName) {
     if (path.includes('currentLevel')) {
       if (typeof value === 'number' && !isNaN(value)) {
-        const levelPercent = value > 1 ? value : value * 100;
+        const levelPercent = value * 100;
         await deviceService.updateProperty('/Level', levelPercent, 'd', `${deviceName} level`);
+        if ("/Capacity" in deviceService.deviceData)
+        {
+          await deviceService.updateProperty('/Remaining', value * deviceService.deviceData["/Capacity"], 'd', `${deviceName} level`);
+        }
         this.emit('dataUpdated', 'Tank Level', `${deviceName}: ${levelPercent.toFixed(1)}%`);
       }
     } else if (path.includes('capacity')) {
@@ -268,7 +285,7 @@ export class VenusClient extends EventEmitter {
       }
     } else if (path.includes('name')) {
       if (typeof value === 'string') {
-        await deviceService.updateProperty('/Name', value, 's', `${deviceName} name`);
+        await deviceService.updateProperty('/CustomName', value, 's', `${deviceName}`);
         this.emit('dataUpdated', 'Tank Name', `${deviceName}: ${value}`);
       }
     } else if (path.includes('currentVolume')) {
@@ -278,7 +295,8 @@ export class VenusClient extends EventEmitter {
       }
     } else if (path.includes('voltage')) {
       if (typeof value === 'number' && !isNaN(value)) {
-        await deviceService.updateProperty('/Voltage', value, 'd', `${deviceName} voltage`);
+        await deviceService.updateProperty('/RawUnit', 'V', 's', `${deviceName} voltage`);
+        await deviceService.updateProperty('/RawValue', value, 'd', `${deviceName} voltage`);
         this.emit('dataUpdated', 'Tank Voltage', `${deviceName}: ${value.toFixed(2)}V`);
       }
     }
@@ -376,7 +394,6 @@ export class VenusClient extends EventEmitter {
     this.bus = null;
     this.deviceInstances.clear();
     this.deviceServices.clear();
-    this.deviceCreating.clear();
     this.exportedInterfaces.clear();
   }
 }

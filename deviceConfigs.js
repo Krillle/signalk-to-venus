@@ -25,7 +25,10 @@ export const DEVICE_CONFIGS = {
       '/Status': 'Tank status',
       '/Name': 'Tank name',
       '/Volume': 'Tank volume',
-      '/Voltage': 'Tank voltage'
+      '/RawUnit': 'Tank raw unit',
+      '/RawValue': 'Tank raw value',
+      '/RawValueEmpty': 'Tank raw value',
+      '/RawValueFull': 'Tank raw value'
     },
     pathTypes: {
       '/Level': 'd',
@@ -34,8 +37,24 @@ export const DEVICE_CONFIGS = {
       '/Status': 'i',
       '/Name': 's',
       '/Volume': 'd',
-      '/Voltage': 'd'
-    }
+      '/RawUnit': 's',
+      '/RawValue': 'd'
+    },
+    fluidTypes: {
+      // these values are derived from NMEA2K definitions
+      'fuel': { 'value': 0, 'name': 'Fuel' },
+      'freshWater': { 'value': 1, 'name': 'Fresh Water'},
+      'wasteWater': { 'value': 2, 'name': 'Waste Water'},
+      'livewell': { 'value': 3, 'name': 'Live Well'},
+      'oil': { 'value': 4, 'name': 'Oil'},
+      'blackWater': { 'value': 5, 'name': 'Black Water'},
+      'gasoline': { 'value': 6, 'name': 'Gasoline'},
+      'diesel': { 'value': 7, 'name': 'Diesel'},
+      'lpg': { 'value': 8, 'name': 'Liquid Petroleum Gas'},
+      'lng': { 'value': 9, 'name': 'Liquid Natural Gas'},
+      'hydraulicOil': { 'value': 10, 'name': 'Hydraulic Oil'},
+      'rawWater': { 'value': 11, 'name': 'Raw Water'},
+    },
   },
 
   battery: {

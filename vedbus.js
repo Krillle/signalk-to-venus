@@ -14,21 +14,21 @@ export class VEDBusService extends EventEmitter {
     this.deviceConfig = deviceConfig;
     this.dbusServiceName = `com.victronenergy.${deviceConfig.serviceType}.${serviceName}`;
     this.deviceData = {};
-    this.exportedInterfaces = new Set();
+    this.exportedInterfaces = {};
     this.bus = null;
     this.vrmInstanceId = deviceInstance.index;
     
     // Management properties that are common to all devices
     this.managementProperties = {
-      "/Mgmt/ProcessName": { type: "s", value: deviceConfig.processName, text: "Process name" },
-      "/Mgmt/ProcessVersion": { type: "s", value: "1.0.12", text: "Process version" },
-      "/Mgmt/Connection": { type: "i", value: 1, text: "Connected" },
-      "/DeviceInstance": { type: "i", value: this.vrmInstanceId, text: "Device instance" },
-      "/ProductId": { type: "i", value: 0, text: "Product ID" },
-      "/ProductName": { type: "s", value: deviceConfig.productName, text: "Product name" },
-      "/FirmwareVersion": { type: "i", value: 0, text: "Firmware Version" },
-      "/HardwareVersion": { type: "i", value: 0, text: "Hardware Version" },
-      "/Connected": { type: "i", value: 1, text: "Connected" },
+      "/Mgmt/ProcessName": { type: "s", value: deviceConfig.processName, text: "Process name", immutable: true },
+      "/Mgmt/ProcessVersion": { type: "s", value: "1.0.12", text: "Process version", immutable: true },
+      "/Mgmt/Connection": { type: "i", value: 1, text: "Connected", immutable: true },
+      "/DeviceInstance": { type: "i", value: this.vrmInstanceId, text: "Device instance", immutable: true },
+      "/ProductId": { type: "i", value: 0, text: "Product ID", immutable: true },
+      "/ProductName": { type: "s", value: deviceConfig.productName, text: "Product name", immutable: true },
+      "/FirmwareVersion": { type: "i", value: 0, text: "Firmware Version", immutable: true },
+      "/HardwareVersion": { type: "i", value: 0, text: "Hardware Version", immutable: true },
+      "/Connected": { type: "i", value: 1, text: "Connected", immutable: true },
       "/CustomName": { type: "s", value: deviceInstance.name, text: "Custom name" },
       ...deviceConfig.additionalProperties
     };
@@ -202,13 +202,15 @@ export class VEDBusService extends EventEmitter {
         // Add management properties
         Object.entries(this.managementProperties).forEach(([path, config]) => {
           items.push([path, [
-            ["Value", this._wrapValue(config.type, config.value)],
+            ["Value", this._wrapValue(config.type, config.immutable ? config.value : this.deviceData[path])],
             ["Text", this._wrapValue("s", config.text)],
           ]]);
         });
         
         // Add device data properties
         Object.entries(this.deviceData).forEach(([path, value]) => {
+          if (this.managementProperties[path]) return;
+
           const text = this.deviceConfig.pathMappings?.[path] || `${this.deviceConfig.serviceType} property`;
           const type = this.deviceConfig.pathTypes?.[path] || 'd';
           items.push([path, [
@@ -224,16 +226,17 @@ export class VEDBusService extends EventEmitter {
         
         // Add management properties
         Object.entries(this.managementProperties).forEach(([path, config]) => {
-          items.push([path.slice(1), this._wrapValue(config.type, config.value)]);
+          items.push([path.slice(1), this._wrapValue(config.type, config.immutable ? config.value : this.deviceData[path])]);
         });
         
         // Add device data properties
         Object.entries(this.deviceData).forEach(([path, value]) => {
+          if (this.managementProperties[path]) return; 
           const type = this.deviceConfig.pathTypes?.[path] || 'd';
           items.push([path.slice(1), this._wrapValue(type, value)]);
         });
 
-        return this._wrapValue('a{sv}', [items]);
+        return this._wrapValue('a{sv}', items);
       },
       SetValue: () => {
         return -1; // Error
@@ -243,6 +246,10 @@ export class VEDBusService extends EventEmitter {
       }
     };
 
+    // dbus-native has a bug related to Introspection, which means
+    // exporting the root interface will break introspection with
+    // 'dbus -y' CLI.
+    // https://github.com/sidorares/dbus-native/pull/140
     this.bus.exportInterface(rootInterface, "/", busItemInterface);
 
     // Export individual property interfaces
@@ -252,17 +259,22 @@ export class VEDBusService extends EventEmitter {
   }
 
   _exportProperty(path, config) {
-    if (this.exportedInterfaces.has(path)) {
-      // Just update the value
-      if (path.startsWith('/Mgmt/') || path.startsWith('/Product') || path.startsWith('/Device') || path.startsWith('/Custom')) {
-        // Management properties are static
-        return;
-      }
+    // Set/update the value
+    if (!this.managementProperties[path]?.immutable) {
       this.deviceData[path] = config.value;
-      return;
     }
 
-    this.exportedInterfaces.add(path);
+    // If already exported, done.
+    if (path in this.exportedInterfaces) {
+      const changes = [];
+      changes.push([path, [
+        ["Value", this._wrapValue(config.type, config.value)],
+        ["Text", this._wrapValue('s', config.text)],
+      ]]);
+
+      this.exportedInterfaces[path].emit('ItemsChanged', changes);
+      return;
+    }
 
     const busItemInterface = {
       name: "com.victronenergy.BusItem",
@@ -272,25 +284,21 @@ export class VEDBusService extends EventEmitter {
         GetText: ["", "s", [], ["text"]],
       },
       signals: {
-        PropertiesChanged: ["a{sv}", ["changes"]]
+        PropertiesChanged: ["a{sv}", ["changes"]],
+        ItemsChanged: ["a{sa{sv}}", ["changes"]],
       }
     };
 
-    // Store initial value for device data
-    if (!path.startsWith('/Mgmt/') && !path.startsWith('/Product') && !path.startsWith('/Device') && !path.startsWith('/Custom')) {
-      this.deviceData[path] = config.value;
-    }
-
     const propertyInterface = {
       GetValue: () => {
-        if (path.startsWith('/Mgmt/') || path.startsWith('/Product') || path.startsWith('/Device') || path.startsWith('/Custom')) {
+        if (this.managementProperties[path]?.immutable) {
           return this._wrapValue(config.type, config.value);
         }
         const currentValue = this.deviceData[path] || (config.type === 's' ? '' : 0);
         return this._wrapValue(config.type, currentValue);
       },
       SetValue: (val) => {
-        if (path.startsWith('/Mgmt/') || path.startsWith('/Product') || path.startsWith('/Device') || path.startsWith('/Custom')) {
+        if (this.managementProperties[path]?.immutable) {
           return 1; // NOT OK - management properties are read-only (vedbus.py pattern)
         }
         const actualValue = Array.isArray(val) ? val[1] : val;
@@ -300,12 +308,12 @@ export class VEDBusService extends EventEmitter {
           return 0; // OK - no change needed
         }
         
-        this.deviceData[path] = actualValue;
+        this._exportProperty(path, {actualValue, type, text});
         return 0; // OK - value set successfully
       },
       GetText: () => {
         // Handle invalid values like vedbus.py
-        if (path.startsWith('/Mgmt/') || path.startsWith('/Product') || path.startsWith('/Device') || path.startsWith('/Custom')) {
+        if (this.managementProperties[path]?.immutable) {
           return config.text;
         }
         const currentValue = this.deviceData[path];
@@ -313,9 +321,12 @@ export class VEDBusService extends EventEmitter {
           return '---'; // vedbus.py pattern for invalid values
         }
         return config.text;
-      }
+      },
+      emit: (signalName, ...signalOutputParams) => {
+      },
     };
 
+    this.exportedInterfaces[path] = propertyInterface;
     this.bus.exportInterface(propertyInterface, path, busItemInterface);
   }
 
@@ -325,11 +336,11 @@ export class VEDBusService extends EventEmitter {
     
     // Emit ItemsChanged signal when values change (like vedbus.py)
     if (this.bus && typeof this.bus.emitSignal === 'function') {
-      const changes = {};
-      changes[path] = {
-        Value: this._wrapValue(type, value),
-        Text: this._wrapValue('s', text)
-      };
+      const changes = [];
+      changes.push([path, [
+        ["Value", this._wrapValue(type, value)],
+        ["Text", this._wrapValue('s', text)],
+      ]]);
       
       try {
         this.bus.emitSignal('/', 'com.victronenergy.BusItem', 'ItemsChanged', 'a{sa{sv}}', [changes]);
