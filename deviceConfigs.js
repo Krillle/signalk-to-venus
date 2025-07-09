@@ -6,7 +6,7 @@
 export const DEVICE_CONFIGS = {
   tank: {
     serviceType: 'tank',
-    processName: 'signalk-tank',
+    processName: 'signalk-virtual-device',
     productName: 'SignalK Virtual Tank',
     serviceDescription: 'SignalK Virtual Tank Service',
     additionalProperties: {
@@ -59,7 +59,7 @@ export const DEVICE_CONFIGS = {
 
   battery: {
     serviceType: 'battery',
-    processName: 'signalk-battery',
+    processName: 'signalk-virtual-device',
     productName: 'SignalK Virtual Battery',
     serviceDescription: 'SignalK Virtual Battery Service',
     additionalProperties: {
@@ -97,7 +97,7 @@ export const DEVICE_CONFIGS = {
 
   switch: {
     serviceType: 'switch',
-    processName: 'signalk-switch',
+    processName: 'signalk-virtual-device',
     productName: 'SignalK Virtual Switch',
     serviceDescription: 'SignalK Virtual Switch Service',
     additionalProperties: {
@@ -126,7 +126,7 @@ export const DEVICE_CONFIGS = {
 
   environment: {
     serviceType: 'temperature',
-    processName: 'signalk-environment',
+    processName: 'signalk-virtual-device',
     productName: 'SignalK Virtual Environment Sensor',
     serviceDescription: 'SignalK Virtual Environment Service',
     additionalProperties: {
