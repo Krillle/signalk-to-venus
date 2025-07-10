@@ -147,7 +147,12 @@ export class VenusClient extends EventEmitter {
       const tankType = parts[1]; // e.g., 'fuel', 'freshWater', 'wasteWater'
       const tankLocation = parts[2]; // e.g., 'starboard', 'port', 'main'
       
-      tankName = `${this.deviceConfig.fluidTypes[tankType].name} ${tankLocation}`;
+      const fluidTypeConfig = this.deviceConfig.fluidTypes[tankType];
+      if (fluidTypeConfig) {
+        tankName = `${fluidTypeConfig.name} ${tankLocation}`;
+      } else {
+        tankName = `Unknown Tank ${tankLocation}`;
+      }
     }
     return tankName;
   }

@@ -420,6 +420,6 @@ export class VEDBusService extends EventEmitter {
     
     // Clear data
     this.deviceData = {};
-    this.exportedInterfaces.clear();
+    this.exportedInterfaces = {};
   }
 }
