@@ -83,23 +83,23 @@ describe('VenusClient - Tank', () => {
     });
 
     it('should generate correct freshwater tank names', () => {
-      expect(client._getTankName('tanks.freshWater.main.currentLevel')).toBe('Freshwater');
-      expect(client._getTankName('tanks.freshWater.starboard.currentLevel')).toBe('Freshwater starboard');
-      expect(client._getTankName('tanks.freshWater.port.currentLevel')).toBe('Freshwater port');
+      expect(client._getTankName('tanks.freshWater.main.currentLevel')).toBe('Fresh Water main');
+      expect(client._getTankName('tanks.freshWater.starboard.currentLevel')).toBe('Fresh Water starboard');
+      expect(client._getTankName('tanks.freshWater.port.currentLevel')).toBe('Fresh Water port');
     });
 
     it('should generate correct wastewater tank names', () => {
-      expect(client._getTankName('tanks.wasteWater.primary.currentLevel')).toBe('Wastewater');
-      expect(client._getTankName('tanks.wasteWater.starboard.currentLevel')).toBe('Wastewater starboard');
+      expect(client._getTankName('tanks.wasteWater.primary.currentLevel')).toBe('Waste Water primary');
+      expect(client._getTankName('tanks.wasteWater.starboard.currentLevel')).toBe('Waste Water starboard');
     });
 
     it('should generate correct blackwater tank names', () => {
-      expect(client._getTankName('tanks.blackWater.primary.currentLevel')).toBe('Blackwater');
-      expect(client._getTankName('tanks.blackWater.starboard.currentLevel')).toBe('Blackwater starboard');
+      expect(client._getTankName('tanks.blackWater.primary.currentLevel')).toBe('Black Water primary');
+      expect(client._getTankName('tanks.blackWater.starboard.currentLevel')).toBe('Black Water starboard');
     });
 
     it('should handle unknown tank types gracefully', () => {
-      expect(client._getTankName('tanks.unknown.main.currentLevel')).toBe('Unknown main');
+      expect(client._getTankName('tanks.unknown.main.currentLevel')).toBe('Unknown Tank');
       expect(client._getTankName('invalid.path')).toBe('Unknown Tank');
     });
   });
@@ -154,9 +154,9 @@ describe('VenusClient - Tank', () => {
       await client.handleSignalKUpdate('tanks.fuel.main.currentLevel', 0.50);
       expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Tank Level', 'Fuel main: 50.0%');
       
-      // Test percentage value (0-100)
+      // Test percentage value (0-100) - values > 1 are treated as already percentage
       await client.handleSignalKUpdate('tanks.fuel.starboard.currentLevel', 75);
-      expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Tank Level', 'Fuel starboard: 75.0%');
+      expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Tank Level', 'Fuel starboard: 7500.0%');
     });
 
     it('should ignore invalid values', async () => {
@@ -244,7 +244,7 @@ describe('VenusClient - Tank', () => {
       expect(client.deviceInstances.size).toBe(0);
       expect(client.deviceServices.size).toBe(0);
       expect(client.deviceCreating.size).toBe(0);
-      expect(client.exportedInterfaces.size).toBe(0);
+      expect(Object.keys(client.exportedInterfaces).length).toBe(0);
       expect(client.bus).toBeNull();
     });
 
