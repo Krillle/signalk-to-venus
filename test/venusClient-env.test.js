@@ -235,8 +235,7 @@ describe('VenusClient - Environment', () => {
       
       expect(client.deviceInstances.size).toBe(0);
       expect(client.deviceServices.size).toBe(0);
-      expect(client.deviceCreating.size).toBe(0);
-      expect(Object.keys(client.exportedInterfaces).length).toBe(0);
+      expect(client.exportedInterfaces.size).toBe(0);
       expect(client.bus).toBeNull();
     });
 

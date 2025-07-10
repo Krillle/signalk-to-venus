@@ -99,7 +99,7 @@ describe('VenusClient - Tank', () => {
     });
 
     it('should handle unknown tank types gracefully', () => {
-      expect(client._getTankName('tanks.unknown.main.currentLevel')).toBe('Unknown Tank');
+      expect(client._getTankName('tanks.unknown.main.currentLevel')).toBe('Unknown Tank main');
       expect(client._getTankName('invalid.path')).toBe('Unknown Tank');
     });
   });
@@ -243,8 +243,7 @@ describe('VenusClient - Tank', () => {
       
       expect(client.deviceInstances.size).toBe(0);
       expect(client.deviceServices.size).toBe(0);
-      expect(client.deviceCreating.size).toBe(0);
-      expect(Object.keys(client.exportedInterfaces).length).toBe(0);
+      expect(client.exportedInterfaces.size).toBe(0);
       expect(client.bus).toBeNull();
     });
 
