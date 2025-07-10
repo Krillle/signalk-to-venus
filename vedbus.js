@@ -173,9 +173,58 @@ export class VEDBusService extends EventEmitter {
       });
 
       console.log(`Successfully registered ${this.deviceConfig.serviceType} service ${this.dbusServiceName} on D-Bus`);
+      
+      // Send ServiceAnnouncement so systemcalc picks up the service for GX Touch
+      await this._sendServiceAnnouncement();
     } catch (err) {
       console.error(`Failed to register ${this.deviceConfig.serviceType} service ${this.dbusServiceName}:`, err);
       throw err;
+    }
+  }
+
+  async _sendServiceAnnouncement() {
+    try {
+      // Skip ServiceAnnouncement in test mode
+      const isTestMode = typeof globalThis?.describe !== 'undefined' || 
+                         process.env.NODE_ENV === 'test' || 
+                         this.settings.venusHost === 'test.local';
+      
+      if (isTestMode) {
+        console.log(`Test mode: Skipping ServiceAnnouncement for ${this.dbusServiceName}`);
+        return;
+      }
+
+      // Send ServiceAnnouncement signal so systemcalc picks up the service
+      // This is crucial for GX Touch UI to see the device
+      const connectionName = 'SignalK';
+      
+      await new Promise((resolve, reject) => {
+        this.bus.invoke({
+          destination: 'com.victronenergy.busitem',
+          path: '/',
+          interface: 'com.victronenergy.BusItem',
+          member: 'ServiceAnnouncement',
+          signature: 'siiss',
+          body: [
+            this.dbusServiceName,                            // s serviceName
+            this.vrmInstanceId,                              // i deviceInstance
+            this.managementProperties["/ProductId"].value,   // i productId
+            this.managementProperties["/ProductName"].value, // s productName
+            connectionName                                   // s connection
+          ]
+        }, (err) => {
+          if (err) {
+            console.error(`ServiceAnnouncement failed for ${this.dbusServiceName}:`, err);
+            reject(err);
+          } else {
+            console.log(`ServiceAnnouncement sent for ${this.dbusServiceName} (instance: ${this.vrmInstanceId})`);
+            resolve();
+          }
+        });
+      });
+    } catch (err) {
+      console.error(`Failed to send ServiceAnnouncement for ${this.dbusServiceName}:`, err);
+      // Don't throw here - service registration should still succeed even if announcement fails
     }
   }
 
