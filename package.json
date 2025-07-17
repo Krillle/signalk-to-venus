@@ -5,33 +5,37 @@
   "keywords": [
     "signalk-node-server-plugin",
     "signalk-category-output",
-    "victron",
-    "venus",
-    "dbus",
-    "cerbo",
-    "bmv",
     "battery",
-    "tank",
-    "temperature",
+    "bmv",
+    "cerbo",
+    "dbus",
+    "dimmer",
     "humidity",
     "switch",
-    "dimmer"
+    "tank",
+    "temperature",
+    "venus",
+    "victron"
   ],
   "signalk-plugin-enabled-by-default": true,
   "author": {
-    "name": "Scott Bender",
-    "email": "scott@scottbender.net"
-  },
-  "Christian Wegerhoff": {
     "name": "Christian Wegerhoff",
     "email": "christian.wegerhoff@icloud.com"
   },
   "contributors": [
     {
-      "name": "Chris Roberts (night199uk)"
+      "name": "Chris Roberts",
+      "url": "https://github.com/night199uk"
     }
   ],
-  
+  "homepage": "https://github.com/Krillle/signalk-to-venus#readme",
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/Krillle/signalk-to-venus.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Krillle/signalk-to-venus/issues"
+  },
   "license": "MIT",
   "main": "index.js",
   "type": "module",
