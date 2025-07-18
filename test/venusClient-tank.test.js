@@ -77,7 +77,7 @@ describe('VenusClient - Tank', () => {
 
   describe('Device Naming', () => {
     it('should generate correct fuel tank names', () => {
-      expect(client._getTankName('tanks.fuel.main.currentLevel')).toBe('Fuel main');
+      expect(client._getTankName('tanks.fuel.main.currentLevel')).toBe('Fuel');
       expect(client._getTankName('tanks.fuel.starboard.currentLevel')).toBe('Fuel starboard');
       expect(client._getTankName('tanks.fuel.port.currentLevel')).toBe('Fuel port');
       expect(client._getTankName('tanks.fuel.0.currentLevel')).toBe('Fuel 1');
@@ -85,7 +85,7 @@ describe('VenusClient - Tank', () => {
     });
 
     it('should generate correct freshwater tank names', () => {
-      expect(client._getTankName('tanks.freshWater.main.currentLevel')).toBe('Freshwater main');
+      expect(client._getTankName('tanks.freshWater.main.currentLevel')).toBe('Freshwater');
       expect(client._getTankName('tanks.freshWater.starboard.currentLevel')).toBe('Freshwater starboard');
       expect(client._getTankName('tanks.freshWater.port.currentLevel')).toBe('Freshwater port');
       expect(client._getTankName('tanks.freshWater.0.currentLevel')).toBe('Freshwater 1');
