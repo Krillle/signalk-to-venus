@@ -499,10 +499,6 @@ export class VenusClient extends EventEmitter {
         // Trigger system service update
         await this._notifySystemService(deviceService, deviceName);
         await this._triggerSystemServiceRefresh(deviceService, deviceName);
-        
-        // Nuclear option for current - system service often caches current values
-        console.log(`🔋 Current changed to ${value}A - triggering nuclear refresh`);
-        await this._forceSystemServiceRescan(deviceService, deviceName);
       }
     } else if (path.includes('stateOfCharge') || (path.includes('capacity') && path.includes('state'))) {
       if (typeof value === 'number' && !isNaN(value)) {
@@ -516,10 +512,6 @@ export class VenusClient extends EventEmitter {
         // This is critical - trigger system service update when SOC changes
         await this._notifySystemService(deviceService, deviceName);
         await this._triggerSystemServiceRefresh(deviceService, deviceName);
-        
-        // Nuclear option for SOC - system service often caches SOC values
-        console.log(`🔋 SOC changed to ${socPercent}% - triggering nuclear refresh`);
-        await this._forceSystemServiceRescan(deviceService, deviceName);
       }
     } else if (path.includes('timeRemaining')) {
       if (typeof value === 'number' && !isNaN(value) && value !== null) {
@@ -761,38 +753,22 @@ export class VenusClient extends EventEmitter {
   }
 
   async _notifySystemService(deviceService, deviceName) {
-    // Aggressively notify the Venus OS system service to refresh battery data
-    // Venus OS system service tends to cache initial values, so we use multiple methods to force refresh
+    // Simplified Venus OS system service refresh - only basic state updates
     try {
-      console.log(`🔄 Forcing Venus OS system service refresh for ${deviceName}...`);
+      console.log(`🔄 Basic system service update for ${deviceName}...`);
       
-      // Method 1: Force disconnect/reconnect cycle to break cache
-      await deviceService.updateProperty('/Connected', 0, 'i', `${deviceName} disconnect`);
-      await new Promise(resolve => setTimeout(resolve, 100)); // Brief delay
-      await deviceService.updateProperty('/Connected', 1, 'i', `${deviceName} reconnect`);
+      // Method 1: Basic connect/state cycling to wake up system service
+      await deviceService.updateProperty('/Connected', 1, 'i', `${deviceName} connected`);
+      await deviceService.updateProperty('/State', 1, 'i', `${deviceName} active`);
       
-      // Method 2: Update State with cycling to trigger system attention
-      await deviceService.updateProperty('/State', 0, 'i', `${deviceName} state reset`);
-      await deviceService.updateProperty('/State', 1, 'i', `${deviceName} state active`);
-      
-      // Method 3: Toggle system service flags to force re-registration
-      await deviceService.updateProperty('/System/BatteryService', 0, 'i', `${deviceName} service reset`);
-      await deviceService.updateProperty('/System/BatteryService', 1, 'i', `${deviceName} service active`);
-      
-      // Method 4: Update device type to force system service recognition
+      // Method 2: Update system service recognition flags
+      await deviceService.updateProperty('/System/BatteryService', 1, 'i', `${deviceName} battery service active`);
       await deviceService.updateProperty('/DeviceType', 512, 'i', `${deviceName} device type`);
       
-      // Method 5: Force system to re-read HasBatteryMonitor flag
-      await deviceService.updateProperty('/System/HasBatteryMonitor', 0, 'i', `${deviceName} monitor reset`);
-      await deviceService.updateProperty('/System/HasBatteryMonitor', 1, 'i', `${deviceName} monitor active`);
-      
-      // Method 6: Update ErrorCode to ensure system sees device as healthy
-      await deviceService.updateProperty('/ErrorCode', 0, 'i', `${deviceName} no errors`);
-      
-      console.log(`✅ System service refresh completed for ${deviceName}`);
+      console.log(`✅ Basic system service update completed for ${deviceName}`);
       
       // For debugging - emit an event so we can track when system notifications occur
-      this.emit('systemNotified', 'Battery System Update', `${deviceName}: Aggressive system service refresh completed`);
+      this.emit('systemNotified', 'Battery System Update', `${deviceName}: Basic system service update completed`);
     } catch (err) {
       if (err.code === 'ECONNRESET' || err.code === 'ECONNREFUSED' || err.code === 'EPIPE') {
         console.log(`Connection lost while notifying system service for ${deviceName}`);
@@ -803,86 +779,39 @@ export class VenusClient extends EventEmitter {
   }
 
   async _triggerSystemServiceRefresh(deviceService, deviceName) {
-    // Use D-Bus signals to force Venus OS system service to refresh
+    // Rate-limited D-Bus signal refresh to prevent spam
+    const now = Date.now();
+    const lastRefresh = this._lastSystemRefresh || 0;
+    
+    // Rate limit: only refresh once every 2 seconds
+    if (now - lastRefresh < 2000) {
+      return;
+    }
+    
+    this._lastSystemRefresh = now;
+    
     try {
-      console.log(`🚨 Sending D-Bus signals to force system service refresh for ${deviceName}...`);
+      console.log(`🚨 Sending D-Bus signals for ${deviceName}...`);
       
-      // Method 1: Send PropertiesChanged signal to force system attention
-      if (deviceService.service && deviceService.service.emit) {
-        deviceService.service.emit('PropertiesChanged', 
-          'com.victronenergy.BusItem', 
-          { 
-            '/Soc': this.wrapValue('d', await deviceService.getValue('/Soc')),
-            '/Dc/0/Current': this.wrapValue('d', await deviceService.getValue('/Dc/0/Current')),
-            '/Dc/0/Voltage': this.wrapValue('d', await deviceService.getValue('/Dc/0/Voltage')),
-            '/State': this.wrapValue('i', 1),
-            '/Connected': this.wrapValue('i', 1)
-          }, 
-          []
-        );
+      // Get current values from deviceData (no more broken getValue calls)
+      const socValue = deviceService.deviceData['/Soc'] || 50.0;
+      const currentValue = deviceService.deviceData['/Dc/0/Current'] || 0.0;
+      const voltageValue = deviceService.deviceData['/Dc/0/Voltage'] || 24.0;
+      
+      // Send minimal PropertiesChanged signal
+      if (deviceService.bus && deviceService.bus.emitSignal) {
+        try {
+          deviceService.bus.emitSignal('/', 'com.victronenergy.BusItem', 'PropertiesChanged', 's', [
+            'com.victronenergy.BusItem'
+          ]);
+        } catch (signalErr) {
+          // Ignore signal errors - they're not critical
+        }
       }
       
-      // Method 2: Emit ItemsChanged signal that Venus OS system service listens for
-      if (this.bus && this.bus.emit) {
-        this.bus.emit('ItemsChanged', {
-          [deviceService.serviceName]: {
-            '/Soc': await deviceService.getValue('/Soc'),
-            '/Dc/0/Current': await deviceService.getValue('/Dc/0/Current'),
-            '/Dc/0/Voltage': await deviceService.getValue('/Dc/0/Voltage')
-          }
-        });
-      }
-      
-      console.log(`✅ D-Bus signals sent for ${deviceName}`);
+      console.log(`✅ D-Bus signals sent for ${deviceName} (SOC: ${socValue}%, Current: ${currentValue}A, Voltage: ${voltageValue}V)`);
     } catch (err) {
       console.error(`Error sending D-Bus signals for ${deviceName}:`, err);
-    }
-  }
-
-  async _forceSystemServiceRescan(deviceService, deviceName) {
-    // Nuclear option: Force Venus OS system service to completely rescan all battery services
-    try {
-      console.log(`💥 Nuclear system service rescan for ${deviceName}...`);
-      
-      // Method 1: Temporarily unregister service to force system service to drop cache
-      const originalServiceName = deviceService.serviceName;
-      await deviceService.updateProperty('/Connected', 0, 'i', `${deviceName} force disconnect`);
-      await deviceService.updateProperty('/DeviceType', 0, 'i', `${deviceName} clear device type`);
-      
-      // Wait for system service to notice the disconnection
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Method 2: Re-register with fresh values
-      await deviceService.updateProperty('/DeviceType', 512, 'i', `${deviceName} battery monitor`);
-      await deviceService.updateProperty('/Connected', 1, 'i', `${deviceName} force reconnect`);
-      await deviceService.updateProperty('/State', 1, 'i', `${deviceName} active state`);
-      
-      // Method 3: Force all critical battery properties to be re-read
-      const criticalProps = ['/Soc', '/Dc/0/Current', '/Dc/0/Voltage', '/Dc/0/Power'];
-      for (const prop of criticalProps) {
-        try {
-          const currentValue = await deviceService.getValue(prop);
-          // Force property update by briefly changing and restoring
-          await deviceService.updateProperty(prop, 0, deviceService.pathTypes[prop] || 'd', `${deviceName} ${prop} reset`);
-          await new Promise(resolve => setTimeout(resolve, 50));
-          await deviceService.updateProperty(prop, currentValue, deviceService.pathTypes[prop] || 'd', `${deviceName} ${prop} restore`);
-        } catch (err) {
-          console.log(`Could not force update ${prop}:`, err.message);
-        }
-      }
-      
-      // Method 4: Send service restart signal to system service
-      try {
-        if (this.bus) {
-          await this.bus.call('com.victronenergy.system', '/ServiceMapping', 'com.victronenergy.system', 'Rescan', []);
-        }
-      } catch (err) {
-        console.log(`Could not trigger system service rescan:`, err.message);
-      }
-      
-      console.log(`✅ Nuclear system service rescan completed for ${deviceName}`);
-    } catch (err) {
-      console.error(`Error during nuclear system service rescan for ${deviceName}:`, err);
     }
   }
 }
