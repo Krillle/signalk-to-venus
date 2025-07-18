@@ -80,7 +80,7 @@ describe('VenusClient - Tank', () => {
       expect(client._getTankName('tanks.fuel.main.currentLevel')).toBe('Fuel');
       expect(client._getTankName('tanks.fuel.starboard.currentLevel')).toBe('Fuel starboard');
       expect(client._getTankName('tanks.fuel.port.currentLevel')).toBe('Fuel port');
-      expect(client._getTankName('tanks.fuel.0.currentLevel')).toBe('Fuel 1');
+      expect(client._getTankName('tanks.fuel.0.currentLevel')).toBe('Fuel');
       expect(client._getTankName('tanks.fuel.1.currentLevel')).toBe('Fuel 2');
     });
 
@@ -88,20 +88,20 @@ describe('VenusClient - Tank', () => {
       expect(client._getTankName('tanks.freshWater.main.currentLevel')).toBe('Freshwater');
       expect(client._getTankName('tanks.freshWater.starboard.currentLevel')).toBe('Freshwater starboard');
       expect(client._getTankName('tanks.freshWater.port.currentLevel')).toBe('Freshwater port');
-      expect(client._getTankName('tanks.freshWater.0.currentLevel')).toBe('Freshwater 1');
+      expect(client._getTankName('tanks.freshWater.0.currentLevel')).toBe('Freshwater');
       expect(client._getTankName('tanks.freshWater.1.currentLevel')).toBe('Freshwater 2');
     });
 
     it('should generate correct wastewater tank names', () => {
       expect(client._getTankName('tanks.wasteWater.primary.currentLevel')).toBe('Wastewater');
       expect(client._getTankName('tanks.wasteWater.starboard.currentLevel')).toBe('Wastewater starboard');
-      expect(client._getTankName('tanks.wasteWater.0.currentLevel')).toBe('Wastewater 1');
+      expect(client._getTankName('tanks.wasteWater.0.currentLevel')).toBe('Wastewater');
     });
 
     it('should generate correct blackwater tank names', () => {
       expect(client._getTankName('tanks.blackWater.primary.currentLevel')).toBe('Blackwater');
       expect(client._getTankName('tanks.blackWater.starboard.currentLevel')).toBe('Blackwater starboard');
-      expect(client._getTankName('tanks.blackWater.0.currentLevel')).toBe('Blackwater 1');
+      expect(client._getTankName('tanks.blackWater.0.currentLevel')).toBe('Blackwater');
     });
 
     it('should handle single tank with generic ID', () => {
@@ -115,7 +115,7 @@ describe('VenusClient - Tank', () => {
 
     it('should handle unknown tank types gracefully', () => {
       expect(client._getTankName('tanks.unknown.main.currentLevel')).toBe('Unknown Tank main');
-      expect(client._getTankName('tanks.unknown.0.currentLevel')).toBe('Unknown Tank 1');
+      expect(client._getTankName('tanks.unknown.0.currentLevel')).toBe('Unknown Tank');
       expect(client._getTankName('invalid.path')).toBe('Unknown Tank');
     });
   });

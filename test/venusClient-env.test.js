@@ -124,7 +124,7 @@ describe('VenusClient - Environment', () => {
       
       // Test Kelvin temperature (above 200, should convert)
       await client.handleSignalKUpdate('environment.outside.temperature', 298.15);
-      expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Environment Temperature', 'Outside temperature: 25.0°C');
+      expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Environment Temperature', 'Outside Temperature: 25.0°C');
     });
 
     it('should handle humidity values as percentages (0-1 and 0-100)', async () => {

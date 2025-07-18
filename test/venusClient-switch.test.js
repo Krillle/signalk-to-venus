@@ -76,7 +76,7 @@ describe('VenusClient - Switch', () => {
       expect(client._getSwitchName('electrical.switches.cabinLights.state')).toBe('Cabin Lights');
       expect(client._getSwitchName('electrical.switches.navigationLights.state')).toBe('Navigation Lights');
       expect(client._getSwitchName('electrical.switches.deckFloodLights.state')).toBe('Deck Flood Lights');
-      expect(client._getSwitchName('electrical.switches.0.state')).toBe('Switch 1');
+      expect(client._getSwitchName('electrical.switches.0.state')).toBe('Switch');
       expect(client._getSwitchName('electrical.switches.1.state')).toBe('Switch 2');
     });
 

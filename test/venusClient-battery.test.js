@@ -74,7 +74,7 @@ describe('VenusClient - Battery', () => {
       expect(client._getBatteryName('electrical.batteries.main.voltage')).toBe('Battery');
       expect(client._getBatteryName('electrical.batteries.house.current')).toBe('Battery House');
       expect(client._getBatteryName('electrical.batteries.starter.stateOfCharge')).toBe('Battery Starter');
-      expect(client._getBatteryName('electrical.batteries.0.voltage')).toBe('Battery 1');
+      expect(client._getBatteryName('electrical.batteries.0.voltage')).toBe('Battery');
       expect(client._getBatteryName('electrical.batteries.1.current')).toBe('Battery 2');
     });
 
