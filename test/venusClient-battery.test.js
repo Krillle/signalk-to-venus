@@ -71,7 +71,7 @@ describe('VenusClient - Battery', () => {
 
   describe('Device Naming', () => {
     it('should generate correct battery names', () => {
-      expect(client._getBatteryName('electrical.batteries.main.voltage')).toBe('Battery Main');
+      expect(client._getBatteryName('electrical.batteries.main.voltage')).toBe('Battery');
       expect(client._getBatteryName('electrical.batteries.house.current')).toBe('Battery House');
       expect(client._getBatteryName('electrical.batteries.starter.stateOfCharge')).toBe('Battery Starter');
       expect(client._getBatteryName('electrical.batteries.0.voltage')).toBe('Battery 1');
@@ -98,7 +98,7 @@ describe('VenusClient - Battery', () => {
       
       expect(client.deviceInstances.size).toBe(1);
       expect(client.deviceServices.size).toBe(1);
-      expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Battery Voltage', 'Battery Main: 12.50V');
+      expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Battery Voltage', 'Battery: 12.50V');
     });
 
     it('should handle battery current updates correctly', async () => {
@@ -106,7 +106,7 @@ describe('VenusClient - Battery', () => {
       
       await client.handleSignalKUpdate('electrical.batteries.main.current', 5.2);
       
-      expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Battery Current', 'Battery Main: 5.2A');
+      expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Battery Current', 'Battery: 5.2A');
     });
 
     it('should handle battery power updates correctly', async () => {
@@ -114,7 +114,7 @@ describe('VenusClient - Battery', () => {
       
       await client.handleSignalKUpdate('electrical.batteries.main.power', 65);
       
-      expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Battery Power', 'Battery Main: 65.0W');
+      expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Battery Power', 'Battery: 65.0W');
     });
 
     it('should handle battery state of charge updates correctly', async () => {
@@ -122,7 +122,7 @@ describe('VenusClient - Battery', () => {
       
       await client.handleSignalKUpdate('electrical.batteries.main.stateOfCharge', 0.85);
       
-      expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Battery SoC', 'Battery Main: 85.0%');
+      expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Battery SoC', 'Battery: 85.0%');
     });
 
     it('should handle battery capacity state of charge updates correctly', async () => {
@@ -130,7 +130,7 @@ describe('VenusClient - Battery', () => {
       
       await client.handleSignalKUpdate('electrical.batteries.main.capacity.stateOfCharge', 0.75);
       
-      expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Battery SoC', 'Battery Main: 75.0%');
+      expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Battery SoC', 'Battery: 75.0%');
     });
 
     it('should handle battery temperature updates correctly', async () => {
@@ -138,7 +138,7 @@ describe('VenusClient - Battery', () => {
       
       // Test Celsius temperature
       await client.handleSignalKUpdate('electrical.batteries.main.temperature', 25);
-      expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Battery Temperature', 'Battery Main: 25.0°C');
+      expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Battery Temperature', 'Battery: 25.0°C');
       
       // Test Kelvin temperature (should be converted)
       await client.handleSignalKUpdate('electrical.batteries.house.temperature', 298.15);
@@ -150,7 +150,7 @@ describe('VenusClient - Battery', () => {
       
       // Test fractional value (0-1)
       await client.handleSignalKUpdate('electrical.batteries.main.stateOfCharge', 0.50);
-      expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Battery SoC', 'Battery Main: 50.0%');
+      expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Battery SoC', 'Battery: 50.0%');
       
       // Test percentage value (0-100)
       await client.handleSignalKUpdate('electrical.batteries.house.stateOfCharge', 75);
@@ -201,7 +201,7 @@ describe('VenusClient - Battery', () => {
       expect(client.deviceInstances.size).toBe(1);
       const instance = client.deviceInstances.get('electrical.batteries.main');
       expect(instance).toBeDefined();
-      expect(instance.name).toBe('Main Battery');
+      expect(instance.name).toBe('Battery');
       expect(instance.basePath).toBe('electrical.batteries.main');
       expect(typeof instance.index).toBe('number');
     });

@@ -73,9 +73,9 @@ describe('VenusClient - Switch', () => {
     it('should generate correct switch names from camelCase', () => {
       expect(client._getSwitchName('electrical.switches.nav.state')).toBe('Nav');
       expect(client._getSwitchName('electrical.switches.anchor.state')).toBe('Anchor');
-      expect(client._getSwitchName('electrical.switches.cabinLights.state')).toBe('Cabin lights');
-      expect(client._getSwitchName('electrical.switches.navigationLights.state')).toBe('Navigation lights');
-      expect(client._getSwitchName('electrical.switches.deckFloodLights.state')).toBe('Deck flood lights');
+      expect(client._getSwitchName('electrical.switches.cabinLights.state')).toBe('Cabin Lights');
+      expect(client._getSwitchName('electrical.switches.navigationLights.state')).toBe('Navigation Lights');
+      expect(client._getSwitchName('electrical.switches.deckFloodLights.state')).toBe('Deck Flood Lights');
       expect(client._getSwitchName('electrical.switches.0.state')).toBe('Switch 1');
       expect(client._getSwitchName('electrical.switches.1.state')).toBe('Switch 2');
     });
@@ -110,10 +110,10 @@ describe('VenusClient - Switch', () => {
       
       await client.handleSignalKUpdate('electrical.switches.cabinLights.dimmingLevel', 0.75);
       
-      expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Switch Dimming', 'Cabin lights: 50%');
+      expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Switch Dimming', 'Cabin Lights: 75%');
       
       await client.handleSignalKUpdate('electrical.switches.deckLights.dimmingLevel', 0.75);
-      expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Switch Dimming', 'Deck lights: 75%');
+      expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Switch Dimming', 'Deck Lights: 75%');
     });
 
     it('should handle switch position updates correctly', async () => {

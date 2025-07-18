@@ -93,13 +93,13 @@ describe('VenusClient - Tank', () => {
     });
 
     it('should generate correct wastewater tank names', () => {
-      expect(client._getTankName('tanks.wasteWater.primary.currentLevel')).toBe('Wastewater primary');
+      expect(client._getTankName('tanks.wasteWater.primary.currentLevel')).toBe('Wastewater');
       expect(client._getTankName('tanks.wasteWater.starboard.currentLevel')).toBe('Wastewater starboard');
       expect(client._getTankName('tanks.wasteWater.0.currentLevel')).toBe('Wastewater 1');
     });
 
     it('should generate correct blackwater tank names', () => {
-      expect(client._getTankName('tanks.blackWater.primary.currentLevel')).toBe('Blackwater primary');
+      expect(client._getTankName('tanks.blackWater.primary.currentLevel')).toBe('Blackwater');
       expect(client._getTankName('tanks.blackWater.starboard.currentLevel')).toBe('Blackwater starboard');
       expect(client._getTankName('tanks.blackWater.0.currentLevel')).toBe('Blackwater 1');
     });
@@ -128,7 +128,7 @@ describe('VenusClient - Tank', () => {
       
       expect(client.deviceInstances.size).toBe(1);
       expect(client.deviceServices.size).toBe(1);
-      expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Tank Level', 'Fuel main: 75.0%');
+      expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Tank Level', 'Fuel: 75.0%');
     });
 
     it('should handle tank capacity updates correctly', async () => {
@@ -136,7 +136,7 @@ describe('VenusClient - Tank', () => {
       
       await client.handleSignalKUpdate('tanks.fuel.main.capacity', 200);
       
-      expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Tank Capacity', 'Fuel main: 200.0L');
+      expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Tank Capacity', 'Fuel: 200.0L');
     });
 
     it('should handle tank volume updates correctly', async () => {
@@ -144,7 +144,7 @@ describe('VenusClient - Tank', () => {
       
       await client.handleSignalKUpdate('tanks.fuel.main.currentVolume', 150);
       
-      expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Tank Volume', 'Fuel main: 150.0L');
+      expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Tank Volume', 'Fuel: 150.0L');
     });
 
     it('should handle tank name updates correctly', async () => {
@@ -152,7 +152,7 @@ describe('VenusClient - Tank', () => {
       
       await client.handleSignalKUpdate('tanks.fuel.main.name', 'Main Fuel Tank');
       
-      expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Tank Name', 'Fuel main: Main Fuel Tank');
+      expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Tank Name', 'Fuel: Main Fuel Tank');
     });
 
     it('should handle tank voltage updates correctly', async () => {
@@ -160,7 +160,7 @@ describe('VenusClient - Tank', () => {
       
       await client.handleSignalKUpdate('tanks.fuel.main.voltage', 12.5);
       
-      expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Tank Voltage', 'Fuel main: 12.50V');
+      expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Tank Voltage', 'Fuel: 12.50V');
     });
 
     it('should handle level values as percentages (0-1 and 0-100)', async () => {
@@ -168,7 +168,7 @@ describe('VenusClient - Tank', () => {
       
       // Test fractional value (0-1)
       await client.handleSignalKUpdate('tanks.fuel.main.currentLevel', 0.50);
-      expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Tank Level', 'Fuel main: 50.0%');
+      expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Tank Level', 'Fuel: 50.0%');
       
       // Test percentage value (0-100) - values > 1 are treated as already percentage
       await client.handleSignalKUpdate('tanks.fuel.starboard.currentLevel', 75);
@@ -219,7 +219,7 @@ describe('VenusClient - Tank', () => {
       expect(client.deviceInstances.size).toBe(1);
       const instance = client.deviceInstances.get('tanks.fuel.main');
       expect(instance).toBeDefined();
-      expect(instance.name).toBe('Fuel main');
+      expect(instance.name).toBe('Fuel');
       expect(instance.basePath).toBe('tanks.fuel.main');
       expect(typeof instance.index).toBe('number');
     });
