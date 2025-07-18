@@ -483,6 +483,9 @@ export class VenusClient extends EventEmitter {
         
         // Calculate power if we have both voltage and current
         await this._calculateAndUpdatePower(deviceService, deviceName);
+        
+        // Trigger system service update by updating system properties
+        await this._notifySystemService(deviceService, deviceName);
       }
     } else if (path.includes('current')) {
       if (typeof value === 'number' && !isNaN(value)) {
@@ -491,6 +494,9 @@ export class VenusClient extends EventEmitter {
         
         // Calculate power if we have both voltage and current
         await this._calculateAndUpdatePower(deviceService, deviceName);
+        
+        // Trigger system service update
+        await this._notifySystemService(deviceService, deviceName);
       }
     } else if (path.includes('stateOfCharge') || (path.includes('capacity') && path.includes('state'))) {
       if (typeof value === 'number' && !isNaN(value)) {
@@ -500,6 +506,9 @@ export class VenusClient extends EventEmitter {
         
         // Update battery dummy data (especially consumed Ah based on SOC)
         await this._updateBatteryDummyData(deviceService, deviceName);
+        
+        // This is critical - trigger system service update when SOC changes
+        await this._notifySystemService(deviceService, deviceName);
       }
     } else if (path.includes('timeRemaining')) {
       if (typeof value === 'number' && !isNaN(value) && value !== null) {
@@ -736,6 +745,30 @@ export class VenusClient extends EventEmitter {
         } else {
           console.error(`Error updating temperature for ${deviceName}:`, err);
         }
+      }
+    }
+  }
+
+  async _notifySystemService(deviceService, deviceName) {
+    // Notify the Venus OS system service that battery data has been updated
+    // This helps ensure the system service reads fresh data from our battery service
+    try {
+      // Update the State to ensure the system knows the battery is active and online
+      await deviceService.updateProperty('/State', 1, 'i', `${deviceName} state`);
+      
+      // Update Connected status to ensure system service recognizes the battery
+      await deviceService.updateProperty('/Connected', 1, 'i', `${deviceName} connected`);
+      
+      // Update System/BatteryService to maintain system integration
+      await deviceService.updateProperty('/System/BatteryService', 1, 'i', `${deviceName} battery service active`);
+      
+      // For debugging - emit an event so we can track when system notifications occur
+      this.emit('systemNotified', 'Battery System Update', `${deviceName}: System service notified`);
+    } catch (err) {
+      if (err.code === 'ECONNRESET' || err.code === 'ECONNREFUSED' || err.code === 'EPIPE') {
+        console.log(`Connection lost while notifying system service for ${deviceName}`);
+      } else {
+        console.error(`Error notifying system service for ${deviceName}:`, err);
       }
     }
   }
