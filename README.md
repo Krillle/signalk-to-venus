@@ -64,6 +64,16 @@ The expected result is a line showing that the Cerbo GX is listening on TCP port
 tcp        0      0 0.0.0.0:78              0.0.0.0:*               LISTEN  
 ```
 
+**X. Manually Update signalk-venus-plugin, to avoid feeldback loops**
+
+The upcoming version of **venus-signalk** will avoid feedback loops, not resyncing virtual devices back to Signal K. If the latest available version is still **v1.43.1 (2025-02-04)**, is has not been published yet. Then you need to replace the file **dbus-listener.js** manually:
+
+```bash
+cd ~/.signalk/node_modules/signalk-venus-plugin
+curl -o dbus-listener.js https://raw.githubusercontent.com/sbender9/signalk-venus-plugin/master/dbus-listener.js
+ls -l dbus-listener.js
+```
+The updated file should have the date **Jul 18 12:56**:
 
 **3. Install the plugin**
 

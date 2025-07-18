@@ -69,7 +69,7 @@ export default function(app) {
               baseSchema.properties[deviceType].properties[safePathKey] = {
                 type: 'boolean',
                 title: `${pathInfo.displayName} (${devicePath})`,
-                default: true // Enable devices by default for better user experience
+                default: false // Disable devices by default to prevent unwanted connections
               };
             });
           }
