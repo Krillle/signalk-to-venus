@@ -442,36 +442,25 @@ export class VenusClient extends EventEmitter {
   }
 
   async _handleBatteryUpdate(path, value, deviceService, deviceName) {
-    console.log(`[DEBUG] Battery update - Path: ${path}, Value: ${value}, Type: ${typeof value}`);
-    
     if (path.includes('voltage')) {
       if (typeof value === 'number' && !isNaN(value)) {
-        console.log(`[DEBUG] Setting voltage to ${value}V`);
         await deviceService.updateProperty('/Dc/0/Voltage', value, 'd', `${deviceName} voltage`);
         this.emit('dataUpdated', 'Battery Voltage', `${deviceName}: ${value.toFixed(2)}V`);
         
         // Calculate power if we have both voltage and current
         await this._calculateAndUpdatePower(deviceService, deviceName);
-        
-        // Update battery dummy data
-        await this._updateBatteryDummyData(deviceService, deviceName);
       }
     } else if (path.includes('current')) {
       if (typeof value === 'number' && !isNaN(value)) {
-        console.log(`[DEBUG] Setting current to ${value}A`);
         await deviceService.updateProperty('/Dc/0/Current', value, 'd', `${deviceName} current`);
         this.emit('dataUpdated', 'Battery Current', `${deviceName}: ${value.toFixed(1)}A`);
         
         // Calculate power if we have both voltage and current
         await this._calculateAndUpdatePower(deviceService, deviceName);
-        
-        // Update battery dummy data (especially time to go based on current)
-        await this._updateBatteryDummyData(deviceService, deviceName);
       }
     } else if (path.includes('stateOfCharge') || (path.includes('capacity') && path.includes('state'))) {
       if (typeof value === 'number' && !isNaN(value)) {
         const socPercent = value > 1 ? value : value * 100;
-        console.log(`[DEBUG] Setting SOC to ${socPercent}% (from Signal K value: ${value})`);
         await deviceService.updateProperty('/Soc', socPercent, 'd', `${deviceName} state of charge`);
         this.emit('dataUpdated', 'Battery SoC', `${deviceName}: ${socPercent.toFixed(1)}%`);
         
@@ -486,7 +475,7 @@ export class VenusClient extends EventEmitter {
         const minutes = Math.floor((value % 3600) / 60);
         this.emit('dataUpdated', 'Battery Time to Go', `${deviceName}: ${hours}h ${minutes}m`);
       } else {
-        console.log(`[DEBUG] Ignoring null/invalid timeRemaining value: ${value}`);
+        // Ignoring null/invalid timeRemaining value
       }
     } else if (path.includes('capacity') && !path.includes('state')) {
       if (typeof value === 'number' && !isNaN(value)) {
@@ -515,7 +504,7 @@ export class VenusClient extends EventEmitter {
         this.emit('dataUpdated', 'Battery Temperature', `${deviceName}: ${tempCelsius.toFixed(1)}°C`);
       }
     } else {
-      console.log(`[DEBUG] Unhandled battery path: ${path} = ${value}`);
+      // Unhandled battery path - could log for debugging if needed
     }
   }
 
@@ -604,10 +593,12 @@ export class VenusClient extends EventEmitter {
       return;
     }
     
-    // Update consumed amp hours based on current SOC if available
+    // Get current values from the device service
     const currentSoc = deviceService.deviceData['/Soc'];
     const capacity = deviceService.deviceData['/Capacity'];
+    const current = deviceService.deviceData['/Dc/0/Current'];
     
+    // Only update consumed amp hours if we have both SOC and capacity
     if (typeof currentSoc === 'number' && typeof capacity === 'number' && 
         !isNaN(currentSoc) && !isNaN(capacity)) {
       // Calculate consumed Ah based on SOC: consumed = capacity * (100 - SOC) / 100
@@ -625,7 +616,6 @@ export class VenusClient extends EventEmitter {
     }
     
     // Update time to go based on current consumption
-    const current = deviceService.deviceData['/Dc/0/Current'];
     if (typeof current === 'number' && !isNaN(current) && current > 0) {
       // Calculate time to go based on remaining capacity and current consumption
       const remainingCapacity = capacity * (currentSoc / 100);
@@ -665,8 +655,9 @@ export class VenusClient extends EventEmitter {
     }
     
     // Update battery temperature with a realistic value if not provided
+    // Only update if temperature is not already set from real data
     const currentTemp = deviceService.deviceData['/Dc/0/Temperature'];
-    if (typeof currentTemp !== 'number' || isNaN(currentTemp) || currentTemp <= 0) {
+    if (typeof currentTemp !== 'number' || isNaN(currentTemp) || currentTemp === 20.0) {
       // Use a temperature that varies slightly based on current load
       let baseTemp = 20.0; // 20°C base temperature
       if (typeof current === 'number' && !isNaN(current)) {
