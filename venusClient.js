@@ -128,6 +128,28 @@ export class VenusClient extends EventEmitter {
           
           // Add DeviceType property
           await deviceService.updateProperty('/DeviceType', 512, 'i', 'Device type');
+          
+          // Add critical system integration properties that Venus OS system service needs
+          // These are essential for proper VRM integration
+          await deviceService.updateProperty('/Info/BatteryLowVoltage', 0, 'i', 'Battery low voltage info');
+          await deviceService.updateProperty('/Info/MaxChargeCurrent', 100, 'i', 'Max charge current');
+          await deviceService.updateProperty('/Info/MaxDischargeCurrent', 100, 'i', 'Max discharge current');
+          await deviceService.updateProperty('/Info/MaxChargeVoltage', 14.4, 'd', 'Max charge voltage');
+          await deviceService.updateProperty('/History/DischargedEnergy', 0, 'd', 'Discharged energy');
+          await deviceService.updateProperty('/History/ChargedEnergy', 0, 'd', 'Charged energy');
+          await deviceService.updateProperty('/History/TotalAhDrawn', 0, 'd', 'Total Ah drawn');
+          
+          // Add voltage and current min/max tracking for system service compatibility
+          await deviceService.updateProperty('/History/MinimumVoltage', 12.0, 'd', 'Minimum voltage');
+          await deviceService.updateProperty('/History/MaximumVoltage', 14.4, 'd', 'Maximum voltage');
+          await deviceService.updateProperty('/Dc/0/MidVoltage', 12.5, 'd', 'Mid voltage');
+          await deviceService.updateProperty('/Dc/0/MidVoltageDeviation', 0.0, 'd', 'Mid voltage deviation');
+          
+          // Add balancer information for system service
+          await deviceService.updateProperty('/Balancer', 0, 'i', 'Balancer active');
+          await deviceService.updateProperty('/Io/AllowToCharge', 1, 'i', 'Allow to charge');
+          await deviceService.updateProperty('/Io/AllowToDischarge', 1, 'i', 'Allow to discharge');
+          await deviceService.updateProperty('/Io/ExternalRelay', 0, 'i', 'External relay');
           break;
 
         case 'switch':
@@ -604,6 +626,7 @@ export class VenusClient extends EventEmitter {
     const currentSoc = deviceService.deviceData['/Soc'];
     const capacity = deviceService.deviceData['/Capacity'];
     const current = deviceService.deviceData['/Dc/0/Current'];
+    const voltage = deviceService.deviceData['/Dc/0/Voltage'];
     
     // Only update consumed amp hours if we have both SOC and capacity
     if (typeof currentSoc === 'number' && typeof capacity === 'number' && 
@@ -618,6 +641,31 @@ export class VenusClient extends EventEmitter {
           console.log(`Connection lost while updating consumed Ah for ${deviceName}`);
         } else {
           console.error(`Error updating consumed Ah for ${deviceName}:`, err);
+        }
+      }
+    }
+    
+    // Update voltage tracking for system service compatibility
+    if (typeof voltage === 'number' && !isNaN(voltage)) {
+      try {
+        const currentMinVoltage = deviceService.deviceData['/History/MinimumVoltage'] || voltage;
+        const currentMaxVoltage = deviceService.deviceData['/History/MaximumVoltage'] || voltage;
+        
+        // Update min/max voltage tracking
+        if (voltage < currentMinVoltage) {
+          await deviceService.updateProperty('/History/MinimumVoltage', voltage, 'd', `${deviceName} minimum voltage`);
+        }
+        if (voltage > currentMaxVoltage) {
+          await deviceService.updateProperty('/History/MaximumVoltage', voltage, 'd', `${deviceName} maximum voltage`);
+        }
+        
+        // Update mid voltage (can be same as main voltage for single battery systems)
+        await deviceService.updateProperty('/Dc/0/MidVoltage', voltage, 'd', `${deviceName} mid voltage`);
+      } catch (err) {
+        if (err.code === 'ECONNRESET' || err.code === 'ECONNREFUSED' || err.code === 'EPIPE') {
+          console.log(`Connection lost while updating voltage tracking for ${deviceName}`);
+        } else {
+          console.error(`Error updating voltage tracking for ${deviceName}:`, err);
         }
       }
     }
