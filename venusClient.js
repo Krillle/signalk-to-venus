@@ -97,7 +97,7 @@ export class VenusClient extends EventEmitter {
           const defaultTimeToGo = 8 * 3600; // 8 hours in seconds
           await deviceService.updateProperty('/TimeToGo', defaultTimeToGo, 'i', 'Time to go');
           
-          // Initialize basic battery values with defaults if no data yet
+          // Initialize basic battery values with sensible defaults until Signal K data arrives
           await deviceService.updateProperty('/Dc/0/Voltage', 12.0, 'd', 'Battery voltage');
           await deviceService.updateProperty('/Dc/0/Current', 0.0, 'd', 'Battery current');
           await deviceService.updateProperty('/Dc/0/Power', 0.0, 'd', 'Battery power');
