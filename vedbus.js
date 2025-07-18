@@ -411,7 +411,17 @@ export class VEDBusService extends EventEmitter {
     // Close the individual D-Bus connection
     if (this.bus) {
       try {
-        this.bus.end();
+        // Try different methods to close the connection
+        if (typeof this.bus.end === 'function') {
+          this.bus.end();
+        } else if (typeof this.bus.close === 'function') {
+          this.bus.close();
+        } else if (typeof this.bus.disconnect === 'function') {
+          this.bus.disconnect();
+        } else if (typeof this.bus.connection && typeof this.bus.connection.end === 'function') {
+          this.bus.connection.end();
+        }
+        // If none of the above work, just set to null
       } catch (err) {
         console.error(`Error disconnecting ${this.deviceConfig.serviceType} service ${this.serviceName}:`, err);
       }
