@@ -136,7 +136,7 @@ describe('VenusClient - Environment', () => {
       
       // Test percentage value (0-100)
       await client.handleSignalKUpdate('environment.outside.humidity', 75);
-      expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Environment Humidity', 'Outside humidity: 75.0%');
+      expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Environment Humidity', 'Outside Humidity: 75.0%');
     });
 
     it('should ignore invalid values', async () => {

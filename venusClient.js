@@ -175,12 +175,25 @@ export class VenusClient extends EventEmitter {
           tankName = `${baseTypeName} ${displayLocation}`;
         }
       } else {
-        // Convert numeric IDs to start from 1 instead of 0
-        let displayLocation = tankLocation;
-        if (/^\d+$/.test(tankLocation)) {
-          displayLocation = (parseInt(tankLocation) + 1).toString();
+        // Unknown tank type - check if we have multiple tanks
+        const totalTanks = Array.from(this.deviceInstances.keys())
+          .filter(devicePath => devicePath.includes('tanks.')).length;
+        
+        // Use generic ID detection
+        const isGenericId = ['0', 'main', 'primary', 'default'].includes(tankLocation.toLowerCase());
+        
+        // If single tank with generic ID, omit the ID
+        if (totalTanks <= 1 && isGenericId) {
+          tankName = 'Unknown Tank';
+        } else {
+          // Multiple tanks or specific ID - include the ID
+          // Convert numeric IDs to start from 1 instead of 0
+          let displayLocation = tankLocation;
+          if (/^\d+$/.test(tankLocation)) {
+            displayLocation = (parseInt(tankLocation) + 1).toString();
+          }
+          tankName = `Unknown Tank ${displayLocation}`;
         }
-        tankName = `Unknown Tank ${displayLocation}`;
       }
     }
     return tankName;
@@ -240,9 +253,16 @@ export class VenusClient extends EventEmitter {
         // Convert camelCase to Title Case with spaces
         return switchId.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
       } else {
-        // It's a numeric ID - convert to start from 1 instead of 0
-        const displayId = (parseInt(switchId) + 1).toString();
-        return `Switch ${displayId}`;
+        // It's a numeric ID - check if we should omit the number for single devices
+        const numericId = parseInt(switchId);
+        if (numericId === 0 && totalSwitches <= 1) {
+          // Single device with ID 0 - omit the number
+          return 'Switch';
+        } else {
+          // Multiple devices or ID > 0 - convert to start from 1 instead of 0
+          const displayId = (numericId + 1).toString();
+          return `Switch ${displayId}`;
+        }
       }
     }
     return 'Switch';
