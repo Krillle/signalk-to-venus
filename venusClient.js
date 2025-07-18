@@ -151,8 +151,9 @@ export class VenusClient extends EventEmitter {
       if (fluidTypeConfig) {
         let baseTypeName = fluidTypeConfig.name;
         
-        // Remove spaces for consistency (Fresh Water -> Freshwater)
-        baseTypeName = baseTypeName.replace(/\s+/g, '');
+        // Remove spaces and fix capitalization for consistency (Fresh Water -> Freshwater)
+        baseTypeName = baseTypeName.replace(/\s+/g, '').toLowerCase();
+        baseTypeName = baseTypeName.charAt(0).toUpperCase() + baseTypeName.slice(1);
         
         // Check if we have multiple tanks of this type
         const tanksOfThisType = Array.from(this.deviceInstances.keys())
@@ -174,7 +175,12 @@ export class VenusClient extends EventEmitter {
           tankName = `${baseTypeName} ${displayLocation}`;
         }
       } else {
-        tankName = `Unknown Tank ${tankLocation}`;
+        // Convert numeric IDs to start from 1 instead of 0
+        let displayLocation = tankLocation;
+        if (/^\d+$/.test(tankLocation)) {
+          displayLocation = (parseInt(tankLocation) + 1).toString();
+        }
+        tankName = `Unknown Tank ${displayLocation}`;
       }
     }
     return tankName;
@@ -253,11 +259,11 @@ export class VenusClient extends EventEmitter {
       sensor = sensor.charAt(0).toUpperCase() + sensor.slice(1).toLowerCase();
       
       if (sensorType === 'temperature') {
-        return `${sensor} temperature`;
+        return `${sensor} Temperature`;
       } else if (sensorType === 'humidity' || sensorType === 'relativeHumidity') {
-        return `${sensor} humidity`;
+        return `${sensor} Humidity`;
       } else {
-        return `${sensor} ${sensorType}`;
+        return `${sensor} ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)}`;
       }
     }
     return 'Environment sensor';
