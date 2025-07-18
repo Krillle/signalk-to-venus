@@ -499,6 +499,10 @@ export class VenusClient extends EventEmitter {
         // Trigger system service update
         await this._notifySystemService(deviceService, deviceName);
         await this._triggerSystemServiceRefresh(deviceService, deviceName);
+        
+        // Nuclear option for current - system service often caches current values
+        console.log(`🔋 Current changed to ${value}A - triggering nuclear refresh`);
+        await this._forceSystemServiceRescan(deviceService, deviceName);
       }
     } else if (path.includes('stateOfCharge') || (path.includes('capacity') && path.includes('state'))) {
       if (typeof value === 'number' && !isNaN(value)) {
@@ -512,6 +516,10 @@ export class VenusClient extends EventEmitter {
         // This is critical - trigger system service update when SOC changes
         await this._notifySystemService(deviceService, deviceName);
         await this._triggerSystemServiceRefresh(deviceService, deviceName);
+        
+        // Nuclear option for SOC - system service often caches SOC values
+        console.log(`🔋 SOC changed to ${socPercent}% - triggering nuclear refresh`);
+        await this._forceSystemServiceRescan(deviceService, deviceName);
       }
     } else if (path.includes('timeRemaining')) {
       if (typeof value === 'number' && !isNaN(value) && value !== null) {
@@ -828,6 +836,53 @@ export class VenusClient extends EventEmitter {
       console.log(`✅ D-Bus signals sent for ${deviceName}`);
     } catch (err) {
       console.error(`Error sending D-Bus signals for ${deviceName}:`, err);
+    }
+  }
+
+  async _forceSystemServiceRescan(deviceService, deviceName) {
+    // Nuclear option: Force Venus OS system service to completely rescan all battery services
+    try {
+      console.log(`💥 Nuclear system service rescan for ${deviceName}...`);
+      
+      // Method 1: Temporarily unregister service to force system service to drop cache
+      const originalServiceName = deviceService.serviceName;
+      await deviceService.updateProperty('/Connected', 0, 'i', `${deviceName} force disconnect`);
+      await deviceService.updateProperty('/DeviceType', 0, 'i', `${deviceName} clear device type`);
+      
+      // Wait for system service to notice the disconnection
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Method 2: Re-register with fresh values
+      await deviceService.updateProperty('/DeviceType', 512, 'i', `${deviceName} battery monitor`);
+      await deviceService.updateProperty('/Connected', 1, 'i', `${deviceName} force reconnect`);
+      await deviceService.updateProperty('/State', 1, 'i', `${deviceName} active state`);
+      
+      // Method 3: Force all critical battery properties to be re-read
+      const criticalProps = ['/Soc', '/Dc/0/Current', '/Dc/0/Voltage', '/Dc/0/Power'];
+      for (const prop of criticalProps) {
+        try {
+          const currentValue = await deviceService.getValue(prop);
+          // Force property update by briefly changing and restoring
+          await deviceService.updateProperty(prop, 0, deviceService.pathTypes[prop] || 'd', `${deviceName} ${prop} reset`);
+          await new Promise(resolve => setTimeout(resolve, 50));
+          await deviceService.updateProperty(prop, currentValue, deviceService.pathTypes[prop] || 'd', `${deviceName} ${prop} restore`);
+        } catch (err) {
+          console.log(`Could not force update ${prop}:`, err.message);
+        }
+      }
+      
+      // Method 4: Send service restart signal to system service
+      try {
+        if (this.bus) {
+          await this.bus.call('com.victronenergy.system', '/ServiceMapping', 'com.victronenergy.system', 'Rescan', []);
+        }
+      } catch (err) {
+        console.log(`Could not trigger system service rescan:`, err.message);
+      }
+      
+      console.log(`✅ Nuclear system service rescan completed for ${deviceName}`);
+    } catch (err) {
+      console.error(`Error during nuclear system service rescan for ${deviceName}:`, err);
     }
   }
 }
