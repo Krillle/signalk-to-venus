@@ -1,0 +1,54 @@
+{
+  "name": "signalk-to-venus",
+  "version": "1.0.12",
+  "description": "Injects battery, tank, temperature, humidity, and switch data from Signal K into the Victron Cerbo GX D-Bus via Venus OS.",
+  "keywords": [
+    "signalk-node-server-plugin",
+    "signalk-category-output",
+    "battery",
+    "bmv",
+    "cerbo",
+    "dbus",
+    "dimmer",
+    "humidity",
+    "switch",
+    "tank",
+    "temperature",
+    "venus",
+    "victron"
+  ],
+  "signalk-plugin-enabled-by-default": true,
+  "author": {
+    "name": "Christian Wegerhoff",
+    "email": "christian.wegerhoff@icloud.com"
+  },
+  "contributors": [
+    {
+      "name": "Chris Roberts",
+      "url": "https://github.com/night199uk"
+    }
+  ],
+  "homepage": "https://github.com/Krillle/signalk-to-venus#readme",
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/Krillle/signalk-to-venus.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Krillle/signalk-to-venus/issues"
+  },
+  "license": "MIT",
+  "main": "index.js",
+  "type": "module",
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "scripts": {
+    "test": "cd test && npm test",
+    "test:watch": "cd test && npm run test:watch",
+    "test:coverage": "cd test && npm run test:coverage",
+    "test:setup": "cd test && npm install"
+  },
+  "dependencies": {
+    "dbus-native": "^0.4.0"
+  }
+}
