@@ -111,6 +111,16 @@ export class VenusClient extends EventEmitter {
           
           // Additional battery monitor specific paths that Venus OS might need
           await deviceService.updateProperty('/System/BatteryService', 1, 'i', 'Battery service');
+          
+          // Initialize additional paths that might be needed for proper battery monitor display
+          await deviceService.updateProperty('/State', 0, 'i', 'Battery state');
+          await deviceService.updateProperty('/ErrorCode', 0, 'i', 'Error code');
+          await deviceService.updateProperty('/Alarms/LowVoltage', 0, 'i', 'Low voltage alarm');
+          await deviceService.updateProperty('/Alarms/HighVoltage', 0, 'i', 'High voltage alarm');
+          await deviceService.updateProperty('/Alarms/LowSoc', 0, 'i', 'Low SOC alarm');
+          await deviceService.updateProperty('/Alarms/HighCurrent', 0, 'i', 'High current alarm');
+          await deviceService.updateProperty('/Alarms/HighTemperature', 0, 'i', 'High temperature alarm');
+          await deviceService.updateProperty('/Alarms/LowTemperature', 0, 'i', 'Low temperature alarm');
           break;
 
         case 'switch':
@@ -342,11 +352,23 @@ export class VenusClient extends EventEmitter {
         return;
       }
       
+      // Check if device service is connected
+      if (!deviceService.isConnected) {
+        console.warn(`Device service ${deviceInstance.basePath} is not connected - skipping update`);
+        return;
+      }
+      
       // Handle the update based on device type
       await this._handleDeviceSpecificUpdate(path, value, deviceService, deviceInstance);
       
     } catch (err) {
-      throw new Error(err.message);
+      // Handle connection errors gracefully
+      if (err.code === 'ECONNRESET' || err.code === 'ECONNREFUSED' || err.code === 'EPIPE') {
+        console.log(`Connection lost while updating ${path} - Venus OS may be restarting`);
+        // Don't throw the error, just log it
+      } else {
+        throw new Error(err.message);
+      }
     }
   }
 
@@ -567,6 +589,12 @@ export class VenusClient extends EventEmitter {
   async _updateBatteryDummyData(deviceService, deviceName) {
     // Update dummy data for values that might not be coming from Signal K
     
+    // Check if device service is connected
+    if (!deviceService.isConnected) {
+      console.warn(`Device service for ${deviceName} is not connected - skipping dummy data update`);
+      return;
+    }
+    
     // Update consumed amp hours based on current SOC if available
     const currentSoc = deviceService.deviceData['/Soc'];
     const capacity = deviceService.deviceData['/Capacity'];
@@ -575,8 +603,16 @@ export class VenusClient extends EventEmitter {
         !isNaN(currentSoc) && !isNaN(capacity)) {
       // Calculate consumed Ah based on SOC: consumed = capacity * (100 - SOC) / 100
       const consumedAh = capacity * (100 - currentSoc) / 100;
-      await deviceService.updateProperty('/ConsumedAmphours', consumedAh, 'd', `${deviceName} consumed Ah`);
-      this.emit('dataUpdated', 'Battery Consumed', `${deviceName}: ${consumedAh.toFixed(1)}Ah`);
+      try {
+        await deviceService.updateProperty('/ConsumedAmphours', consumedAh, 'd', `${deviceName} consumed Ah`);
+        this.emit('dataUpdated', 'Battery Consumed', `${deviceName}: ${consumedAh.toFixed(1)}Ah`);
+      } catch (err) {
+        if (err.code === 'ECONNRESET' || err.code === 'ECONNREFUSED' || err.code === 'EPIPE') {
+          console.log(`Connection lost while updating consumed Ah for ${deviceName}`);
+        } else {
+          console.error(`Error updating consumed Ah for ${deviceName}:`, err);
+        }
+      }
     }
     
     // Update time to go based on current consumption
@@ -587,10 +623,18 @@ export class VenusClient extends EventEmitter {
       const timeToGoHours = remainingCapacity / current;
       const timeToGoSeconds = Math.round(timeToGoHours * 3600);
       
-      await deviceService.updateProperty('/TimeToGo', timeToGoSeconds, 'i', `${deviceName} time to go`);
-      const hours = Math.floor(timeToGoSeconds / 3600);
-      const minutes = Math.floor((timeToGoSeconds % 3600) / 60);
-      this.emit('dataUpdated', 'Battery Time to Go', `${deviceName}: ${hours}h ${minutes}m`);
+      try {
+        await deviceService.updateProperty('/TimeToGo', timeToGoSeconds, 'i', `${deviceName} time to go`);
+        const hours = Math.floor(timeToGoSeconds / 3600);
+        const minutes = Math.floor((timeToGoSeconds % 3600) / 60);
+        this.emit('dataUpdated', 'Battery Time to Go', `${deviceName}: ${hours}h ${minutes}m`);
+      } catch (err) {
+        if (err.code === 'ECONNRESET' || err.code === 'ECONNREFUSED' || err.code === 'EPIPE') {
+          console.log(`Connection lost while updating time to go for ${deviceName}`);
+        } else {
+          console.error(`Error updating time to go for ${deviceName}:`, err);
+        }
+      }
     } else {
       // If no current data or current is 0 or negative, use a default based on SOC
       let defaultTimeToGo = 8 * 3600; // 8 hours default
@@ -600,7 +644,15 @@ export class VenusClient extends EventEmitter {
         defaultTimeToGo = Math.round((currentSoc / 100) * 20 * 3600);
         defaultTimeToGo = Math.max(defaultTimeToGo, 1800); // Minimum 30 minutes
       }
-      await deviceService.updateProperty('/TimeToGo', defaultTimeToGo, 'i', `${deviceName} time to go`);
+      try {
+        await deviceService.updateProperty('/TimeToGo', defaultTimeToGo, 'i', `${deviceName} time to go`);
+      } catch (err) {
+        if (err.code === 'ECONNRESET' || err.code === 'ECONNREFUSED' || err.code === 'EPIPE') {
+          console.log(`Connection lost while updating default time to go for ${deviceName}`);
+        } else {
+          console.error(`Error updating default time to go for ${deviceName}:`, err);
+        }
+      }
     }
     
     // Update battery temperature with a realistic value if not provided
@@ -612,7 +664,15 @@ export class VenusClient extends EventEmitter {
         // Add 0.1°C per amp of current (batteries warm up under load)
         baseTemp += Math.abs(current) * 0.1;
       }
-      await deviceService.updateProperty('/Dc/0/Temperature', baseTemp, 'd', `${deviceName} temperature`);
+      try {
+        await deviceService.updateProperty('/Dc/0/Temperature', baseTemp, 'd', `${deviceName} temperature`);
+      } catch (err) {
+        if (err.code === 'ECONNRESET' || err.code === 'ECONNREFUSED' || err.code === 'EPIPE') {
+          console.log(`Connection lost while updating temperature for ${deviceName}`);
+        } else {
+          console.error(`Error updating temperature for ${deviceName}:`, err);
+        }
+      }
     }
   }
 }

@@ -60,8 +60,8 @@ export const DEVICE_CONFIGS = {
   battery: {
     serviceType: 'battery',
     processName: 'signalk-virtual-device',
-    productName: 'SignalK Virtual Battery',
-    serviceDescription: 'SignalK Virtual Battery Service',
+    productName: 'SignalK Virtual Battery Monitor',
+    serviceDescription: 'SignalK Virtual Battery Monitor Service',
     additionalProperties: {
       // Battery specific properties
       "/Dc/0/Voltage": { type: "d", value: 0.0, text: "Battery voltage" },
@@ -75,6 +75,14 @@ export const DEVICE_CONFIGS = {
       "/System/HasBatteryMonitor": { type: "i", value: 1, text: "Has battery monitor" },
       "/System/BatteryService": { type: "i", value: 1, text: "Battery service" },
       "/Relay/0/State": { type: "i", value: 0, text: "Relay state" },
+      "/State": { type: "i", value: 0, text: "Battery state" },
+      "/ErrorCode": { type: "i", value: 0, text: "Error code" },
+      "/Alarms/LowVoltage": { type: "i", value: 0, text: "Low voltage alarm" },
+      "/Alarms/HighVoltage": { type: "i", value: 0, text: "High voltage alarm" },
+      "/Alarms/LowSoc": { type: "i", value: 0, text: "Low SOC alarm" },
+      "/Alarms/HighCurrent": { type: "i", value: 0, text: "High current alarm" },
+      "/Alarms/HighTemperature": { type: "i", value: 0, text: "High temperature alarm" },
+      "/Alarms/LowTemperature": { type: "i", value: 0, text: "Low temperature alarm" },
     },
     pathMappings: {
       '/Dc/0/Voltage': 'Battery voltage',
@@ -87,7 +95,15 @@ export const DEVICE_CONFIGS = {
       '/Capacity': 'Battery capacity',
       '/System/HasBatteryMonitor': 'Has battery monitor',
       '/System/BatteryService': 'Battery service',
-      '/Relay/0/State': 'Relay state'
+      '/Relay/0/State': 'Relay state',
+      '/State': 'Battery state',
+      '/ErrorCode': 'Error code',
+      '/Alarms/LowVoltage': 'Low voltage alarm',
+      '/Alarms/HighVoltage': 'High voltage alarm',
+      '/Alarms/LowSoc': 'Low SOC alarm',
+      '/Alarms/HighCurrent': 'High current alarm',
+      '/Alarms/HighTemperature': 'High temperature alarm',
+      '/Alarms/LowTemperature': 'Low temperature alarm'
     },
     pathTypes: {
       '/Dc/0/Voltage': 'd',
@@ -100,7 +116,15 @@ export const DEVICE_CONFIGS = {
       '/Capacity': 'd',
       '/System/HasBatteryMonitor': 'i',
       '/System/BatteryService': 'i',
-      '/Relay/0/State': 'i'
+      '/Relay/0/State': 'i',
+      '/State': 'i',
+      '/ErrorCode': 'i',
+      '/Alarms/LowVoltage': 'i',
+      '/Alarms/HighVoltage': 'i',
+      '/Alarms/LowSoc': 'i',
+      '/Alarms/HighCurrent': 'i',
+      '/Alarms/HighTemperature': 'i',
+      '/Alarms/LowTemperature': 'i'
     }
   },
 

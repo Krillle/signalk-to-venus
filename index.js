@@ -451,15 +451,15 @@ export default function(app) {
           });
           
           if (!hasEnabledDevices) {
-            const totalDiscovered = Object.values(discoveredPaths).reduce((sum, map) => sum + map.size, 0);
-            if (totalDiscovered > 0) {
-              app.setPluginStatus(`Device Discovery: Found ${totalDiscovered} Signal K devices - configure in settings`);
-            } else {
+            const deviceCountText = generateDeviceCountText();
+            if (deviceCountText.includes('0 devices')) {
               app.setPluginStatus('Discovering Signal K devices - check back in a moment');
+            } else {
+              app.setPluginStatus(`Device Discovery: Found ${deviceCountText} - configure in settings`);
             }
           } else if (venusReachable === false) {
-            const totalDiscovered = Object.values(discoveredPaths).reduce((sum, map) => sum + map.size, 0);
-            app.setPluginStatus(`Discovery: ${totalDiscovered} devices found - Venus OS not connected at ${config.venusHost}`);
+            const deviceCountText = generateDeviceCountText();
+            app.setPluginStatus(`Discovery: ${deviceCountText} found - Venus OS not connected at ${config.venusHost}`);
           } else {
             app.setPluginStatus(`Waiting for Signal K data (${config.venusHost})`);
           }
@@ -525,6 +525,37 @@ export default function(app) {
     return null;
   }
 
+  // Helper function to generate device count text by type
+  function generateDeviceCountText() {
+    const deviceCounts = {
+      batteries: discoveredPaths.batteries.size,
+      tanks: discoveredPaths.tanks.size,
+      environment: discoveredPaths.environment.size,
+      switches: discoveredPaths.switches.size
+    };
+    
+    const deviceCountParts = [];
+    if (deviceCounts.batteries > 0) {
+      deviceCountParts.push(`${deviceCounts.batteries} ${deviceCounts.batteries === 1 ? 'battery' : 'batteries'}`);
+    }
+    if (deviceCounts.tanks > 0) {
+      deviceCountParts.push(`${deviceCounts.tanks} ${deviceCounts.tanks === 1 ? 'tank' : 'tanks'}`);
+    }
+    if (deviceCounts.environment > 0) {
+      deviceCountParts.push(`${deviceCounts.environment} environment ${deviceCounts.environment === 1 ? 'sensor' : 'sensors'}`);
+    }
+    if (deviceCounts.switches > 0) {
+      deviceCountParts.push(`${deviceCounts.switches} ${deviceCounts.switches === 1 ? 'switch' : 'switches'}`);
+    }
+    
+    if (deviceCountParts.length > 0) {
+      return deviceCountParts.join(', ');
+    } else {
+      const totalPaths = Object.values(discoveredPaths).reduce((sum, map) => sum + map.size, 0);
+      return `${totalPaths} devices`;
+    }
+  }
+
   // Helper function to check if any paths have been discovered
   function hasDiscoveredPaths() {
     return Object.values(discoveredPaths).some(pathMap => pathMap.size > 0);
@@ -570,11 +601,12 @@ export default function(app) {
           }
         }
         
-        // Update status with discovered paths count
-        const totalPaths = Object.values(discoveredPaths).reduce((sum, map) => sum + map.size, 0);
+        // Update status with discovered paths count by device type
+        const deviceCountText = generateDeviceCountText();
+        
         const statusMsg = plugin.venusConnected ? 
-          `Connected to Venus OS - ${totalPaths} devices discovered` :
-          `Device Discovery: Found ${totalPaths} Signal K devices (Venus OS: ${config.venusHost})`; 
+          `Connected to Venus OS, injecting ${deviceCountText}` :
+          `Device Discovery: Found ${deviceCountText} (Venus OS: ${config.venusHost})`; 
         app.setPluginStatus(statusMsg);
       } else {
         // Update last seen value and add this property to the set

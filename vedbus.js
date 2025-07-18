@@ -30,7 +30,7 @@ export class VEDBusService extends EventEmitter {
       "/Mgmt/ProcessVersion": { type: "s", value: "1.0.12", text: "Process version", immutable: true },
       "/Mgmt/Connection": { type: "i", value: 1, text: "Connected", immutable: true },
       "/DeviceInstance": { type: "i", value: this.vrmInstanceId, text: "Device instance", immutable: true },
-      "/ProductId": { type: "i", value: 0, text: "Product ID", immutable: true },
+      "/ProductId": { type: "i", value: deviceConfig.serviceType === 'battery' ? 0xB012 : 0, text: "Product ID", immutable: true },
       "/ProductName": { type: "s", value: deviceConfig.productName, text: "Product name", immutable: true },
       "/FirmwareVersion": { type: "i", value: 0, text: "Firmware Version", immutable: true },
       "/HardwareVersion": { type: "i", value: 0, text: "Hardware Version", immutable: true },
@@ -112,10 +112,32 @@ export class VEDBusService extends EventEmitter {
     });
 
     this.bus.on('error', (err) => {
-      console.error(`D-Bus error for ${this.dbusServiceName}:`, err);
+      // Handle different types of connection errors
+      if (err.code === 'ECONNRESET') {
+        console.log(`D-Bus connection reset for ${this.dbusServiceName} (Venus OS restarted)`);
+      } else if (err.code === 'ECONNREFUSED') {
+        console.log(`D-Bus connection refused for ${this.dbusServiceName} (Venus OS not ready)`);
+      } else if (err.code === 'ENOTFOUND') {
+        console.log(`D-Bus host not found for ${this.dbusServiceName} (DNS issue)`);
+      } else {
+        console.error(`D-Bus error for ${this.dbusServiceName}:`, err);
+      }
       this.isConnected = false;
       this._scheduleReconnect();
     });
+
+    // Handle connection stream errors (like ECONNRESET)
+    if (this.bus.connection && typeof this.bus.connection.on === 'function') {
+      this.bus.connection.on('error', (err) => {
+        if (err.code === 'ECONNRESET') {
+          console.log(`D-Bus stream reset for ${this.dbusServiceName} (Venus OS restarted)`);
+        } else {
+          console.error(`D-Bus stream error for ${this.dbusServiceName}:`, err);
+        }
+        this.isConnected = false;
+        this._scheduleReconnect();
+      });
+    }
 
     // Monitor connection health with periodic pings
     this._startConnectionHealthCheck();
@@ -617,6 +639,11 @@ export class VEDBusService extends EventEmitter {
 
   // Public method to update device properties
   updateProperty(path, value, type = 'd', text = `${this.deviceConfig.serviceType} property`) {
+    if (!this.isConnected) {
+      console.warn(`Cannot update property ${path} - D-Bus not connected for ${this.dbusServiceName}`);
+      return;
+    }
+
     this._exportProperty(path, { value, type, text });
     
     // Emit ItemsChanged signal when values change (like vedbus.py)
@@ -630,7 +657,14 @@ export class VEDBusService extends EventEmitter {
       try {
         this.bus.emitSignal('/', 'com.victronenergy.BusItem', 'ItemsChanged', 'a{sa{sv}}', [changes]);
       } catch (err) {
-        // Ignore signal emission errors in test mode
+        // Handle connection errors gracefully
+        if (err.code === 'ECONNRESET' || err.code === 'ECONNREFUSED' || err.code === 'EPIPE') {
+          console.log(`D-Bus connection lost while updating ${path} for ${this.dbusServiceName} - will reconnect`);
+          this.isConnected = false;
+          this._scheduleReconnect();
+        } else {
+          console.error(`Error emitting signal for ${path} on ${this.dbusServiceName}:`, err);
+        }
       }
     }
   }
