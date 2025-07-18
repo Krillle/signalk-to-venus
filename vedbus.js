@@ -119,6 +119,44 @@ export class VEDBusService extends EventEmitter {
 
     // Monitor connection health with periodic pings
     this._startConnectionHealthCheck();
+    
+    // Monitor service registration status
+    this._startServiceRegistrationCheck();
+  }
+
+  _startServiceRegistrationCheck() {
+    // Check service registration every 2 minutes
+    if (this.serviceRegistrationTimer) {
+      clearInterval(this.serviceRegistrationTimer);
+    }
+
+    this.serviceRegistrationTimer = setInterval(async () => {
+      if (!this.isConnected) {
+        return;
+      }
+
+      try {
+        // Check if our service is still registered by trying to call GetItems on ourselves
+        await new Promise((resolve, reject) => {
+          this.bus.invoke({
+            destination: this.dbusServiceName,
+            path: '/',
+            interface: 'com.victronenergy.BusItem',
+            member: 'GetItems'
+          }, (err) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve();
+            }
+          });
+        });
+      } catch (err) {
+        console.error(`Service registration check failed for ${this.dbusServiceName}:`, err);
+        console.log(`Attempting to re-register service ${this.dbusServiceName}`);
+        await this._attemptFullReRegistration();
+      }
+    }, 120000); // Every 2 minutes
   }
 
   _startConnectionHealthCheck() {
@@ -200,6 +238,43 @@ export class VEDBusService extends EventEmitter {
       
     } catch (err) {
       console.error(`Failed to reconnect ${this.dbusServiceName}:`, err);
+      this._scheduleReconnect();
+    }
+  }
+
+  async _attemptFullReRegistration() {
+    console.log(`Attempting full re-registration for ${this.dbusServiceName}`);
+    try {
+      // Close existing connection
+      if (this.bus) {
+        try {
+          this.bus.end();
+        } catch (err) {
+          // Ignore errors during cleanup
+        }
+      }
+
+      // Clear timers
+      this.stopHeartbeat();
+      if (this.connectionHealthTimer) {
+        clearInterval(this.connectionHealthTimer);
+        this.connectionHealthTimer = null;
+      }
+      if (this.serviceRegistrationTimer) {
+        clearInterval(this.serviceRegistrationTimer);
+        this.serviceRegistrationTimer = null;
+      }
+
+      // Re-initialize everything
+      await this._createBusConnection();
+      await this._registerInSettings();
+      await this._registerService();
+      
+      console.log(`Successfully re-registered ${this.dbusServiceName} after Venus OS restart`);
+      
+    } catch (err) {
+      console.error(`Failed to re-register ${this.dbusServiceName}:`, err);
+      // Schedule a reconnect attempt
       this._scheduleReconnect();
     }
   }
@@ -583,6 +658,11 @@ export class VEDBusService extends EventEmitter {
     if (this.connectionHealthTimer) {
       clearInterval(this.connectionHealthTimer);
       this.connectionHealthTimer = null;
+    }
+    
+    if (this.serviceRegistrationTimer) {
+      clearInterval(this.serviceRegistrationTimer);
+      this.serviceRegistrationTimer = null;
     }
     
     this.isConnected = false;

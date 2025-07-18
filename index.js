@@ -108,8 +108,6 @@ export default function(app) {
       plugin.clients = {};
       plugin.venusConnected = false; // Track Venus connection status
       const activeClientTypes = new Set();
-      let dataUpdateCount = 0;
-      let heartbeatToggle = false; // For alternating heartbeat display
       let venusReachable = false; // Track Venus OS reachability (assume unreachable until proven otherwise)
       
       const deviceTypeNames = {
@@ -352,20 +350,11 @@ export default function(app) {
                     try {
                       plugin.clients[deviceType] = VenusClientFactory(config, deviceType);
                       
-                      // Listen for data updates to show activity with heartbeat
-                      plugin.clients[deviceType].on('dataUpdated', (dataType, value) => {
-                        dataUpdateCount++;
-                        heartbeatToggle = !heartbeatToggle; // Alternate heartbeat
-                        const heartbeat = heartbeatToggle ? '♥︎' : '♡';
-                        const activeList = Array.from(activeClientTypes).sort().join(', ');
-                        app.setPluginStatus(`Connected to Venus OS at ${config.venusHost} for [${activeList}] ${heartbeat}`);
-                      });
-                      
                       await plugin.clients[deviceType].handleSignalKUpdate(pathValue.path, pathValue.value);
                       
                       activeClientTypes.add(deviceTypeNames[deviceType]);
                       const activeList = Array.from(activeClientTypes).sort().join(', ');
-                      app.setPluginStatus(`Connected to Venus OS at ${config.venusHost} for [${activeList}]`);
+                      app.setPluginStatus(`Connected to Venus OS at ${config.venusHost} for ${activeList}`);
                       
                     } catch (err) {
                       // Clean up connection error messages for better user experience
