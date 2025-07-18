@@ -17,6 +17,12 @@ export class VEDBusService extends EventEmitter {
     this.exportedInterfaces = {};
     this.bus = null;
     this.vrmInstanceId = deviceInstance.index;
+    this.heartbeatTimer = null;
+    this.reconnectTimer = null;
+    this.connectionHealthTimer = null;
+    this.isConnected = false;
+    this.reconnectAttempts = 0;
+    this.maxReconnectAttempts = 10;
     
     // Management properties that are common to all devices
     this.managementProperties = {
@@ -65,17 +71,136 @@ export class VEDBusService extends EventEmitter {
           authMethods: ['ANONYMOUS']
         });
 
+        // Set up connection monitoring
+        this._setupConnectionMonitoring();
+
         // Wait for bus to be ready (if it has event support)
         if (typeof this.bus.on === 'function') {
           await new Promise((resolve, reject) => {
-            this.bus.on('connect', resolve);
-            this.bus.on('error', reject);
+            this.bus.on('connect', () => {
+              console.log(`D-Bus connected for ${this.dbusServiceName}`);
+              this.isConnected = true;
+              this.reconnectAttempts = 0;
+              resolve();
+            });
+            this.bus.on('error', (err) => {
+              console.error(`D-Bus connection error for ${this.dbusServiceName}:`, err);
+              this.isConnected = false;
+              reject(err);
+            });
           });
+        } else {
+          this.isConnected = true;
         }
       }
     } catch (err) {
       console.error(`Failed to create D-Bus connection for ${this.deviceConfig.serviceType} service ${this.dbusServiceName}:`, err);
       throw err;
+    }
+  }
+
+  _setupConnectionMonitoring() {
+    if (!this.bus || typeof this.bus.on !== 'function') {
+      return;
+    }
+
+    // Monitor connection state
+    this.bus.on('disconnect', () => {
+      console.log(`D-Bus disconnected for ${this.dbusServiceName}`);
+      this.isConnected = false;
+      this._scheduleReconnect();
+    });
+
+    this.bus.on('error', (err) => {
+      console.error(`D-Bus error for ${this.dbusServiceName}:`, err);
+      this.isConnected = false;
+      this._scheduleReconnect();
+    });
+
+    // Monitor connection health with periodic pings
+    this._startConnectionHealthCheck();
+  }
+
+  _startConnectionHealthCheck() {
+    // Check connection health every 60 seconds
+    if (this.connectionHealthTimer) {
+      clearInterval(this.connectionHealthTimer);
+    }
+
+    this.connectionHealthTimer = setInterval(async () => {
+      if (!this.isConnected) {
+        return;
+      }
+
+      try {
+        // Try to ping the D-Bus daemon
+        await new Promise((resolve, reject) => {
+          this.bus.invoke({
+            destination: 'org.freedesktop.DBus',
+            path: '/org/freedesktop/DBus',
+            interface: 'org.freedesktop.DBus',
+            member: 'Ping'
+          }, (err) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve();
+            }
+          });
+        });
+      } catch (err) {
+        console.error(`Connection health check failed for ${this.dbusServiceName}:`, err);
+        this.isConnected = false;
+        this._scheduleReconnect();
+      }
+    }, 60000); // Every 60 seconds
+  }
+
+  _scheduleReconnect() {
+    if (this.reconnectTimer) {
+      return; // Already scheduled
+    }
+
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      console.error(`Max reconnect attempts reached for ${this.dbusServiceName}`);
+      return;
+    }
+
+    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000); // Exponential backoff, max 30s
+    this.reconnectAttempts++;
+
+    console.log(`Scheduling reconnect for ${this.dbusServiceName} in ${delay}ms (attempt ${this.reconnectAttempts})`);
+    
+    this.reconnectTimer = setTimeout(async () => {
+      this.reconnectTimer = null;
+      await this._attemptReconnect();
+    }, delay);
+  }
+
+  async _attemptReconnect() {
+    try {
+      console.log(`Attempting to reconnect ${this.dbusServiceName}...`);
+      
+      // Clean up old connection
+      if (this.bus) {
+        try {
+          this.bus.end();
+        } catch (err) {
+          // Ignore cleanup errors
+        }
+      }
+
+      // Create new connection
+      await this._createBusConnection();
+      
+      // Re-register service
+      await this._registerService();
+      
+      console.log(`Successfully reconnected ${this.dbusServiceName}`);
+      
+    } catch (err) {
+      console.error(`Failed to reconnect ${this.dbusServiceName}:`, err);
+      this._scheduleReconnect();
     }
   }
 
@@ -174,6 +299,12 @@ export class VEDBusService extends EventEmitter {
 
       console.log(`Successfully registered ${this.deviceConfig.serviceType} service ${this.dbusServiceName} on D-Bus`);
       
+      // Initialize connection status in device data for heartbeat
+      this.deviceData["/Mgmt/Connection"] = 1;
+      
+      // Start heartbeat to keep service alive
+      this.startHeartbeat();
+      
       // Send ServiceAnnouncement so systemcalc picks up the service for GX Touch
       await this._sendServiceAnnouncement();
     } catch (err) {
@@ -191,6 +322,13 @@ export class VEDBusService extends EventEmitter {
       
       if (isTestMode) {
         console.log(`Test mode: Skipping ServiceAnnouncement for ${this.dbusServiceName}`);
+        return;
+      }
+
+      // First check if the busitem service exists
+      const busitemExists = await this._checkBusitemService();
+      if (!busitemExists) {
+        console.log(`ServiceAnnouncement skipped for ${this.dbusServiceName}: com.victronenergy.busitem service not available`);
         return;
       }
 
@@ -225,6 +363,29 @@ export class VEDBusService extends EventEmitter {
     } catch (err) {
       console.error(`Failed to send ServiceAnnouncement for ${this.dbusServiceName}:`, err);
       // Don't throw here - service registration should still succeed even if announcement fails
+    }
+  }
+
+  async _checkBusitemService() {
+    try {
+      // Check if the busitem service exists by trying to get its introspection
+      await new Promise((resolve, reject) => {
+        this.bus.invoke({
+          destination: 'com.victronenergy.busitem',
+          path: '/',
+          interface: 'org.freedesktop.DBus.Introspectable',
+          member: 'Introspect'
+        }, (err) => {
+          if (err) {
+            reject(err);
+          } else {
+            resolve();
+          }
+        });
+      });
+      return true;
+    } catch (err) {
+      return false;
     }
   }
 
@@ -408,6 +569,24 @@ export class VEDBusService extends EventEmitter {
   }
 
   disconnect() {
+    // Stop all timers
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+    
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    
+    if (this.connectionHealthTimer) {
+      clearInterval(this.connectionHealthTimer);
+      this.connectionHealthTimer = null;
+    }
+    
+    this.isConnected = false;
+    
     // Close the individual D-Bus connection
     if (this.bus) {
       try {
@@ -431,5 +610,72 @@ export class VEDBusService extends EventEmitter {
     // Clear data
     this.deviceData = {};
     this.exportedInterfaces = {};
+  }
+  
+  startHeartbeat() {
+    // Stop any existing heartbeat
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+    }
+    
+    // Start new heartbeat timer
+    this.heartbeatTimer = setInterval(async () => {
+      if (!this.isConnected) {
+        return;
+      }
+      
+      try {
+        // Try to update the connection property
+        this.updateValue("/Mgmt/Connection", 1);
+        
+        // Also try a simple D-Bus operation to verify connection
+        await new Promise((resolve, reject) => {
+          this.bus.invoke({
+            destination: 'org.freedesktop.DBus',
+            path: '/org/freedesktop/DBus',
+            interface: 'org.freedesktop.DBus',
+            member: 'GetId'
+          }, (err) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve();
+            }
+          });
+        });
+      } catch (err) {
+        console.error(`Heartbeat failed for ${this.dbusServiceName}:`, err);
+        this.isConnected = false;
+        this._scheduleReconnect();
+      }
+    }, 30000); // Every 30 seconds
+  }
+  
+  stopHeartbeat() {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+  }
+  
+  updateValue(path, value) {
+    // Update device data
+    this.deviceData[path] = value;
+    
+    // Try to emit PropertiesChanged signal if we have the interface
+    if (this.exportedInterfaces[path] && this.exportedInterfaces[path].PropertiesChanged) {
+      try {
+        this.exportedInterfaces[path].PropertiesChanged([[path, this._wrapValue(
+          this.deviceConfig.pathTypes?.[path] || 'd', value
+        )]]);
+      } catch (error) {
+        // Silently ignore signal errors
+      }
+    }
+    
+    // Also update management properties if it's a management property
+    if (this.managementProperties[path] && !this.managementProperties[path].immutable) {
+      this.managementProperties[path].value = value;
+    }
   }
 }
