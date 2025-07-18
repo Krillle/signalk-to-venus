@@ -113,7 +113,8 @@ export class VenusClient extends EventEmitter {
           await deviceService.updateProperty('/System/BatteryService', 1, 'i', 'Battery service');
           
           // Initialize additional paths that might be needed for proper battery monitor display
-          await deviceService.updateProperty('/State', 0, 'i', 'Battery state');
+          // State: 0 = Offline, 1 = Online, 2 = Error, 3 = Unavailable - use 1 for Online
+          await deviceService.updateProperty('/State', 1, 'i', 'Battery state');
           await deviceService.updateProperty('/ErrorCode', 0, 'i', 'Error code');
           await deviceService.updateProperty('/Alarms/LowVoltage', 0, 'i', 'Low voltage alarm');
           await deviceService.updateProperty('/Alarms/HighVoltage', 0, 'i', 'High voltage alarm');
@@ -121,6 +122,12 @@ export class VenusClient extends EventEmitter {
           await deviceService.updateProperty('/Alarms/HighCurrent', 0, 'i', 'High current alarm');
           await deviceService.updateProperty('/Alarms/HighTemperature', 0, 'i', 'High temperature alarm');
           await deviceService.updateProperty('/Alarms/LowTemperature', 0, 'i', 'Low temperature alarm');
+          
+          // Add Connected property which Venus OS might require
+          await deviceService.updateProperty('/Connected', 1, 'i', 'Connected');
+          
+          // Add DeviceType property
+          await deviceService.updateProperty('/DeviceType', 512, 'i', 'Device type');
           break;
 
         case 'switch':
