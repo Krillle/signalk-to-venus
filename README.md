@@ -158,8 +158,8 @@ The plugin provides comprehensive real-time status updates in the Signal K dashb
 - **Discovery**: `Discovered 12 Signal K devices (Venus OS not connected)` during testing
 - **No Selection**: `Select devices to be sent to Venus OS in settings` when no devices are enabled
 - **Connecting**: `Connecting to Venus OS at venus.local for Batteries`
-- **Connected**: `Connected to Venus OS at venus.local for [Batteries, Environment, Tanks]`
-- **Active**: `Connected to Venus OS at venus.local for [Batteries, Tanks] ♥︎` with heartbeat when data flows
+- **Connected**: `Connected to Venus OS at venus.local, injecting Batteries, Environment, Tanks`
+- **Active**: `Connected to Venus OS at venus.local injecting Batteries, Tanks, Environment`
 - **Waiting**: `Waiting for Signal K data (venus.local)` if no compatible data is received
 - **Connection Issues**: `Venus OS not reachable: connection refused (check D-Bus TCP setting)`
 

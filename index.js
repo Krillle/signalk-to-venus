@@ -353,9 +353,9 @@ export default function(app) {
                       await plugin.clients[deviceType].handleSignalKUpdate(pathValue.path, pathValue.value);
                       
                       activeClientTypes.add(deviceTypeNames[deviceType]);
-                      const activeList = Array.from(activeClientTypes).sort().join(', ');
-                      app.setPluginStatus(`Connected to Venus OS at ${config.venusHost} for ${activeList}`);
-                      
+                      const deviceCountText = generateDeviceCountText();
+                      app.setPluginStatus(`Connected to Venus OS, injecting ${deviceCountText}`);
+
                     } catch (err) {
                       // Clean up connection error messages for better user experience
                       let cleanMessage = err.message || err.toString();
