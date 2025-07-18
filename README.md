@@ -27,31 +27,41 @@ Injects Signal K battery, tank, temperature, humidity, and switch data into Venu
 
 **1. Enable SSH on the Cerbo GX**
 
-You can do this via:
+→ For detailled instructions ee https://www.victronenergy.com/live/ccgx:root_access#root_access
 
-- The **touchscreen**: Navigate to: **Settings → Remote Console → Enable SSH**
+On the **touchscreen** or **Remote Console**: 
+- Navigate to: **Settings → General**
+- Set the Access Level to **User & Installer** (the password is ZZZ)
+- In the New UI, select, drag down and hold down the entire list of **Access & Security** menu entries for five seconds, until you see the Access level change to **Superuser** and you see **Root password** and **Enable SSH on LAN**
+- Enter a **Root password**, which will be the SSH password for `ssh root@venus.local`
+- Enable the option **Enable SSH on LAN**
 
-- The **web interface** at `http://venus.local` or the device IP: Go to **Settings → General → Enable SSH**
-
-- Alternatively: Insert a USB stick with a file named `ssh` in the root directory and reboot the Cerbo.
-
-Afterward, test with:
+Test with:
 
 ```bash
 ssh root@venus.local
 ```
 
-(Default user is `root`, no password needed by default.)
-
 
 **2. Enable D-Bus over TCP on the Cerbo GX**
 
-This step allows external devices (like your Raspberry Pi) to access the Victron D-Bus remotely via TCP on port 78. It is required so the plugin can simulate a BMV device over the network.
+This step allows external devices (like your Raspberry Pi) to access the Victron D-Bus remotely via TCP on port 78. It is required so the plugin can inject virtual devices over the network.
 
 ```bash
 ssh root@venus.local
 dbus -y com.victronenergy.settings /Settings/Services/InsecureDbusOverTcp SetValue 1
+```
+
+Reboot the Cerbo GX **Settings → General → Reboot** and test with:
+
+```bash
+ssh root@venus.local
 netstat -tuln | grep :78
+```
+
+The expected result is a line showing that the Cerbo GX is listening on TCP port 78:
+```
+tcp        0      0 0.0.0.0:78              0.0.0.0:*               LISTEN  
 ```
 
 
@@ -62,7 +72,7 @@ Look for `signalk-to-venus` in the Signal K App Store and install it directly.
 To install manually:
 ```bash
 cd ~/.signalk/node_modules/
-git clone https://github.com/YOUR_USERNAME/signalk-to-venus
+git clone https://github.com/Krillle/signalk-to-venus.git
 cd signalk-to-venus
 npm install
 ```
@@ -71,12 +81,10 @@ npm install
 
 The plugin is enabled by default and should work right away with default settings.
 
-**"Venus OS not reachable at venus.local"**
-
-If you see **signalk-to-venus** getting connection errors, this means:
+If you see in the Signal K dashboard **signalk-to-venus** getting connection errors like **"Venus OS not reachable at venus.local"**, this means:
 - Your Cerbo GX is not reachable at **venus.local**. Set the correct host or IP in the plugin settings.
-- The D-Bus over TCP is not enabled on the Cerbo GX. See step 1 and 2
-- You don't have a Venus OS device on your network
+- The D-Bus over TCP is not enabled on the Cerbo GX. See step 1 and 2.
+- You don't have a Venus OS device on your network.
 
 
 ## Configuration
