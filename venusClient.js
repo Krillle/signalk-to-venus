@@ -442,8 +442,11 @@ export class VenusClient extends EventEmitter {
   }
 
   async _handleBatteryUpdate(path, value, deviceService, deviceName) {
+    console.log(`[DEBUG] Battery update - Path: ${path}, Value: ${value}, Type: ${typeof value}`);
+    
     if (path.includes('voltage')) {
       if (typeof value === 'number' && !isNaN(value)) {
+        console.log(`[DEBUG] Setting voltage to ${value}V`);
         await deviceService.updateProperty('/Dc/0/Voltage', value, 'd', `${deviceName} voltage`);
         this.emit('dataUpdated', 'Battery Voltage', `${deviceName}: ${value.toFixed(2)}V`);
         
@@ -455,6 +458,7 @@ export class VenusClient extends EventEmitter {
       }
     } else if (path.includes('current')) {
       if (typeof value === 'number' && !isNaN(value)) {
+        console.log(`[DEBUG] Setting current to ${value}A`);
         await deviceService.updateProperty('/Dc/0/Current', value, 'd', `${deviceName} current`);
         this.emit('dataUpdated', 'Battery Current', `${deviceName}: ${value.toFixed(1)}A`);
         
@@ -467,6 +471,7 @@ export class VenusClient extends EventEmitter {
     } else if (path.includes('stateOfCharge') || (path.includes('capacity') && path.includes('state'))) {
       if (typeof value === 'number' && !isNaN(value)) {
         const socPercent = value > 1 ? value : value * 100;
+        console.log(`[DEBUG] Setting SOC to ${socPercent}% (from Signal K value: ${value})`);
         await deviceService.updateProperty('/Soc', socPercent, 'd', `${deviceName} state of charge`);
         this.emit('dataUpdated', 'Battery SoC', `${deviceName}: ${socPercent.toFixed(1)}%`);
         
@@ -474,12 +479,14 @@ export class VenusClient extends EventEmitter {
         await this._updateBatteryDummyData(deviceService, deviceName);
       }
     } else if (path.includes('timeRemaining')) {
-      if (typeof value === 'number' && !isNaN(value)) {
+      if (typeof value === 'number' && !isNaN(value) && value !== null) {
         // timeRemaining is in seconds, convert to Venus OS format (integer seconds)
         await deviceService.updateProperty('/TimeToGo', Math.round(value), 'i', `${deviceName} time to go`);
         const hours = Math.floor(value / 3600);
         const minutes = Math.floor((value % 3600) / 60);
         this.emit('dataUpdated', 'Battery Time to Go', `${deviceName}: ${hours}h ${minutes}m`);
+      } else {
+        console.log(`[DEBUG] Ignoring null/invalid timeRemaining value: ${value}`);
       }
     } else if (path.includes('capacity') && !path.includes('state')) {
       if (typeof value === 'number' && !isNaN(value)) {
@@ -507,6 +514,8 @@ export class VenusClient extends EventEmitter {
         await deviceService.updateProperty('/Dc/0/Temperature', tempCelsius, 'd', `${deviceName} temperature`);
         this.emit('dataUpdated', 'Battery Temperature', `${deviceName}: ${tempCelsius.toFixed(1)}°C`);
       }
+    } else {
+      console.log(`[DEBUG] Unhandled battery path: ${path} = ${value}`);
     }
   }
 
