@@ -87,14 +87,27 @@ export class VenusClient extends EventEmitter {
           // Initialize battery monitor properties - Venus OS requires all these paths to be present
           await deviceService.updateProperty('/System/HasBatteryMonitor', 1, 'i', 'Has battery monitor');
           await deviceService.updateProperty('/Capacity', this.settings.defaultBatteryCapacity, 'd', 'Battery capacity');
-          await deviceService.updateProperty('/ConsumedAmphours', 0.0, 'd', 'Consumed Ah');
-          await deviceService.updateProperty('/TimeToGo', 0, 'i', 'Time to go');
+          
+          // Initialize with realistic dummy data for consumed amp hours based on SOC
+          // If battery is at 50% SOC, consumed would be roughly 50% of capacity
+          const defaultConsumedAh = this.settings.defaultBatteryCapacity * 0.5; // 50% consumed = 400Ah
+          await deviceService.updateProperty('/ConsumedAmphours', defaultConsumedAh, 'd', 'Consumed Ah');
+          
+          // Initialize time to go with realistic dummy data (8 hours at current consumption)
+          const defaultTimeToGo = 8 * 3600; // 8 hours in seconds
+          await deviceService.updateProperty('/TimeToGo', defaultTimeToGo, 'i', 'Time to go');
           
           // Initialize basic battery values with defaults if no data yet
           await deviceService.updateProperty('/Dc/0/Voltage', 12.0, 'd', 'Battery voltage');
           await deviceService.updateProperty('/Dc/0/Current', 0.0, 'd', 'Battery current');
           await deviceService.updateProperty('/Dc/0/Power', 0.0, 'd', 'Battery power');
           await deviceService.updateProperty('/Soc', 50.0, 'd', 'State of charge');
+          
+          // Initialize temperature with realistic dummy data (20°C)
+          await deviceService.updateProperty('/Dc/0/Temperature', 20.0, 'd', 'Battery temperature');
+          
+          // Initialize relay state (normally closed for battery monitors)
+          await deviceService.updateProperty('/Relay/0/State', 0, 'i', 'Battery relay state');
           
           // Additional battery monitor specific paths that Venus OS might need
           await deviceService.updateProperty('/System/BatteryService', 1, 'i', 'Battery service');
@@ -414,6 +427,9 @@ export class VenusClient extends EventEmitter {
         
         // Calculate power if we have both voltage and current
         await this._calculateAndUpdatePower(deviceService, deviceName);
+        
+        // Update battery dummy data
+        await this._updateBatteryDummyData(deviceService, deviceName);
       }
     } else if (path.includes('current')) {
       if (typeof value === 'number' && !isNaN(value)) {
@@ -422,12 +438,18 @@ export class VenusClient extends EventEmitter {
         
         // Calculate power if we have both voltage and current
         await this._calculateAndUpdatePower(deviceService, deviceName);
+        
+        // Update battery dummy data (especially time to go based on current)
+        await this._updateBatteryDummyData(deviceService, deviceName);
       }
     } else if (path.includes('stateOfCharge') || (path.includes('capacity') && path.includes('state'))) {
       if (typeof value === 'number' && !isNaN(value)) {
         const socPercent = value > 1 ? value : value * 100;
         await deviceService.updateProperty('/Soc', socPercent, 'd', `${deviceName} state of charge`);
         this.emit('dataUpdated', 'Battery SoC', `${deviceName}: ${socPercent.toFixed(1)}%`);
+        
+        // Update battery dummy data (especially consumed Ah based on SOC)
+        await this._updateBatteryDummyData(deviceService, deviceName);
       }
     } else if (path.includes('timeRemaining')) {
       if (typeof value === 'number' && !isNaN(value)) {
@@ -442,6 +464,9 @@ export class VenusClient extends EventEmitter {
         // This is battery capacity in Ah - could be from capacity.nominal or similar
         await deviceService.updateProperty('/Capacity', value, 'd', `${deviceName} capacity`);
         this.emit('dataUpdated', 'Battery Capacity', `${deviceName}: ${value.toFixed(1)}Ah`);
+        
+        // Update battery dummy data with new capacity
+        await this._updateBatteryDummyData(deviceService, deviceName);
       }
     } else if (path.includes('consumed')) {
       if (typeof value === 'number' && !isNaN(value)) {
@@ -536,6 +561,58 @@ export class VenusClient extends EventEmitter {
       const power = voltage * current;
       await deviceService.updateProperty('/Dc/0/Power', power, 'd', `${deviceName} power`);
       this.emit('dataUpdated', 'Battery Power', `${deviceName}: ${power.toFixed(1)}W`);
+    }
+  }
+
+  async _updateBatteryDummyData(deviceService, deviceName) {
+    // Update dummy data for values that might not be coming from Signal K
+    
+    // Update consumed amp hours based on current SOC if available
+    const currentSoc = deviceService.deviceData['/Soc'];
+    const capacity = deviceService.deviceData['/Capacity'];
+    
+    if (typeof currentSoc === 'number' && typeof capacity === 'number' && 
+        !isNaN(currentSoc) && !isNaN(capacity)) {
+      // Calculate consumed Ah based on SOC: consumed = capacity * (100 - SOC) / 100
+      const consumedAh = capacity * (100 - currentSoc) / 100;
+      await deviceService.updateProperty('/ConsumedAmphours', consumedAh, 'd', `${deviceName} consumed Ah`);
+      this.emit('dataUpdated', 'Battery Consumed', `${deviceName}: ${consumedAh.toFixed(1)}Ah`);
+    }
+    
+    // Update time to go based on current consumption
+    const current = deviceService.deviceData['/Dc/0/Current'];
+    if (typeof current === 'number' && !isNaN(current) && current > 0) {
+      // Calculate time to go based on remaining capacity and current consumption
+      const remainingCapacity = capacity * (currentSoc / 100);
+      const timeToGoHours = remainingCapacity / current;
+      const timeToGoSeconds = Math.round(timeToGoHours * 3600);
+      
+      await deviceService.updateProperty('/TimeToGo', timeToGoSeconds, 'i', `${deviceName} time to go`);
+      const hours = Math.floor(timeToGoSeconds / 3600);
+      const minutes = Math.floor((timeToGoSeconds % 3600) / 60);
+      this.emit('dataUpdated', 'Battery Time to Go', `${deviceName}: ${hours}h ${minutes}m`);
+    } else {
+      // If no current data or current is 0 or negative, use a default based on SOC
+      let defaultTimeToGo = 8 * 3600; // 8 hours default
+      if (typeof currentSoc === 'number' && !isNaN(currentSoc)) {
+        // Scale time to go based on SOC: higher SOC = more time remaining
+        // At 100% SOC: 20 hours, at 50% SOC: 10 hours, at 20% SOC: 4 hours
+        defaultTimeToGo = Math.round((currentSoc / 100) * 20 * 3600);
+        defaultTimeToGo = Math.max(defaultTimeToGo, 1800); // Minimum 30 minutes
+      }
+      await deviceService.updateProperty('/TimeToGo', defaultTimeToGo, 'i', `${deviceName} time to go`);
+    }
+    
+    // Update battery temperature with a realistic value if not provided
+    const currentTemp = deviceService.deviceData['/Dc/0/Temperature'];
+    if (typeof currentTemp !== 'number' || isNaN(currentTemp) || currentTemp <= 0) {
+      // Use a temperature that varies slightly based on current load
+      let baseTemp = 20.0; // 20°C base temperature
+      if (typeof current === 'number' && !isNaN(current)) {
+        // Add 0.1°C per amp of current (batteries warm up under load)
+        baseTemp += Math.abs(current) * 0.1;
+      }
+      await deviceService.updateProperty('/Dc/0/Temperature', baseTemp, 'd', `${deviceName} temperature`);
     }
   }
 }
