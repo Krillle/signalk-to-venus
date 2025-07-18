@@ -69,8 +69,10 @@ export const DEVICE_CONFIGS = {
       "/Dc/0/Power": { type: "d", value: 0.0, text: "Battery power" },
       "/Dc/0/Temperature": { type: "d", value: 0.0, text: "Battery temperature" },
       "/Soc": { type: "d", value: 0.0, text: "State of charge" },
-      "/TimeToGo": { type: "d", value: 0.0, text: "Time to go" },
+      "/TimeToGo": { type: "i", value: 0, text: "Time to go" },
       "/ConsumedAmphours": { type: "d", value: 0.0, text: "Consumed Ah" },
+      "/Capacity": { type: "d", value: 0.0, text: "Battery capacity" },
+      "/System/HasBatteryMonitor": { type: "i", value: 1, text: "Has battery monitor" },
       "/Relay/0/State": { type: "i", value: 0, text: "Relay state" },
     },
     pathMappings: {
@@ -81,6 +83,8 @@ export const DEVICE_CONFIGS = {
       '/Soc': 'State of charge',
       '/TimeToGo': 'Time to go',
       '/ConsumedAmphours': 'Consumed Ah',
+      '/Capacity': 'Battery capacity',
+      '/System/HasBatteryMonitor': 'Has battery monitor',
       '/Relay/0/State': 'Relay state'
     },
     pathTypes: {
@@ -89,8 +93,10 @@ export const DEVICE_CONFIGS = {
       '/Dc/0/Power': 'd',
       '/Dc/0/Temperature': 'd',
       '/Soc': 'd',
-      '/TimeToGo': 'd',
+      '/TimeToGo': 'i',
       '/ConsumedAmphours': 'd',
+      '/Capacity': 'd',
+      '/System/HasBatteryMonitor': 'i',
       '/Relay/0/State': 'i'
     }
   },

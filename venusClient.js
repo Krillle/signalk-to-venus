@@ -84,6 +84,13 @@ export class VenusClient extends EventEmitter {
           break;
 
         case 'battery':
+          // Initialize battery monitor properties
+          await deviceService.updateProperty('/System/HasBatteryMonitor', 1, 'i', 'Has battery monitor');
+          await deviceService.updateProperty('/Capacity', this.settings.defaultBatteryCapacity, 'd', 'Battery capacity');
+          await deviceService.updateProperty('/ConsumedAmphours', 0.0, 'd', 'Consumed Ah');
+          await deviceService.updateProperty('/TimeToGo', 0, 'i', 'Time to go');
+          break;
+
         case 'switch':
         case 'environment':
         default:
@@ -406,6 +413,26 @@ export class VenusClient extends EventEmitter {
         const socPercent = value > 1 ? value : value * 100;
         await deviceService.updateProperty('/Soc', socPercent, 'd', `${deviceName} state of charge`);
         this.emit('dataUpdated', 'Battery SoC', `${deviceName}: ${socPercent.toFixed(1)}%`);
+      }
+    } else if (path.includes('timeRemaining')) {
+      if (typeof value === 'number' && !isNaN(value)) {
+        // timeRemaining is in seconds, convert to Venus OS format (integer seconds)
+        await deviceService.updateProperty('/TimeToGo', Math.round(value), 'i', `${deviceName} time to go`);
+        const hours = Math.floor(value / 3600);
+        const minutes = Math.floor((value % 3600) / 60);
+        this.emit('dataUpdated', 'Battery Time to Go', `${deviceName}: ${hours}h ${minutes}m`);
+      }
+    } else if (path.includes('capacity') && !path.includes('state')) {
+      if (typeof value === 'number' && !isNaN(value)) {
+        // This is battery capacity in Ah - could be from capacity.nominal or similar
+        await deviceService.updateProperty('/Capacity', value, 'd', `${deviceName} capacity`);
+        this.emit('dataUpdated', 'Battery Capacity', `${deviceName}: ${value.toFixed(1)}Ah`);
+      }
+    } else if (path.includes('consumed')) {
+      if (typeof value === 'number' && !isNaN(value)) {
+        // Consumed amphours
+        await deviceService.updateProperty('/ConsumedAmphours', value, 'd', `${deviceName} consumed`);
+        this.emit('dataUpdated', 'Battery Consumed', `${deviceName}: ${value.toFixed(1)}Ah`);
       }
     } else if (path.includes('power')) {
       if (typeof value === 'number' && !isNaN(value)) {

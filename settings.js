@@ -8,6 +8,7 @@ export default {
     environment: true,
     switches: true
   },
+  defaultBatteryCapacity: 800.0, // Default battery capacity in Ah for battery monitor
   batteryRegex: /^electrical\.batteries\.\d+\./, 
   tankRegex: /^tanks\.[^.\/]+\.[^.\/]+\./, 
   temperatureRegex: /^environment\..*\.temperature$|^propulsion\..*\.temperature$/, 
