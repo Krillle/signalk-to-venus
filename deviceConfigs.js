@@ -73,6 +73,7 @@ export const DEVICE_CONFIGS = {
       "/ConsumedAmphours": { type: "d", value: 0.0, text: "Consumed Ah" },
       "/Capacity": { type: "d", value: 0.0, text: "Battery capacity" },
       "/System/HasBatteryMonitor": { type: "i", value: 1, text: "Has battery monitor" },
+      "/System/BatteryService": { type: "i", value: 1, text: "Battery service" },
       "/Relay/0/State": { type: "i", value: 0, text: "Relay state" },
     },
     pathMappings: {
@@ -85,6 +86,7 @@ export const DEVICE_CONFIGS = {
       '/ConsumedAmphours': 'Consumed Ah',
       '/Capacity': 'Battery capacity',
       '/System/HasBatteryMonitor': 'Has battery monitor',
+      '/System/BatteryService': 'Battery service',
       '/Relay/0/State': 'Relay state'
     },
     pathTypes: {
@@ -97,6 +99,7 @@ export const DEVICE_CONFIGS = {
       '/ConsumedAmphours': 'd',
       '/Capacity': 'd',
       '/System/HasBatteryMonitor': 'i',
+      '/System/BatteryService': 'i',
       '/Relay/0/State': 'i'
     }
   },

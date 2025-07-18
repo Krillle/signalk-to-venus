@@ -84,11 +84,20 @@ export class VenusClient extends EventEmitter {
           break;
 
         case 'battery':
-          // Initialize battery monitor properties
+          // Initialize battery monitor properties - Venus OS requires all these paths to be present
           await deviceService.updateProperty('/System/HasBatteryMonitor', 1, 'i', 'Has battery monitor');
           await deviceService.updateProperty('/Capacity', this.settings.defaultBatteryCapacity, 'd', 'Battery capacity');
           await deviceService.updateProperty('/ConsumedAmphours', 0.0, 'd', 'Consumed Ah');
           await deviceService.updateProperty('/TimeToGo', 0, 'i', 'Time to go');
+          
+          // Initialize basic battery values with defaults if no data yet
+          await deviceService.updateProperty('/Dc/0/Voltage', 12.0, 'd', 'Battery voltage');
+          await deviceService.updateProperty('/Dc/0/Current', 0.0, 'd', 'Battery current');
+          await deviceService.updateProperty('/Dc/0/Power', 0.0, 'd', 'Battery power');
+          await deviceService.updateProperty('/Soc', 50.0, 'd', 'State of charge');
+          
+          // Additional battery monitor specific paths that Venus OS might need
+          await deviceService.updateProperty('/System/BatteryService', 1, 'i', 'Battery service');
           break;
 
         case 'switch':
@@ -402,11 +411,17 @@ export class VenusClient extends EventEmitter {
       if (typeof value === 'number' && !isNaN(value)) {
         await deviceService.updateProperty('/Dc/0/Voltage', value, 'd', `${deviceName} voltage`);
         this.emit('dataUpdated', 'Battery Voltage', `${deviceName}: ${value.toFixed(2)}V`);
+        
+        // Calculate power if we have both voltage and current
+        await this._calculateAndUpdatePower(deviceService, deviceName);
       }
     } else if (path.includes('current')) {
       if (typeof value === 'number' && !isNaN(value)) {
         await deviceService.updateProperty('/Dc/0/Current', value, 'd', `${deviceName} current`);
         this.emit('dataUpdated', 'Battery Current', `${deviceName}: ${value.toFixed(1)}A`);
+        
+        // Calculate power if we have both voltage and current
+        await this._calculateAndUpdatePower(deviceService, deviceName);
       }
     } else if (path.includes('stateOfCharge') || (path.includes('capacity') && path.includes('state'))) {
       if (typeof value === 'number' && !isNaN(value)) {
@@ -510,5 +525,17 @@ export class VenusClient extends EventEmitter {
     this.deviceInstances.clear();
     this.deviceServices.clear();
     this.exportedInterfaces.clear();
+  }
+
+  async _calculateAndUpdatePower(deviceService, deviceName) {
+    // Calculate power from voltage and current if both are available
+    const voltage = deviceService.deviceData['/Dc/0/Voltage'];
+    const current = deviceService.deviceData['/Dc/0/Current'];
+    
+    if (typeof voltage === 'number' && typeof current === 'number' && !isNaN(voltage) && !isNaN(current)) {
+      const power = voltage * current;
+      await deviceService.updateProperty('/Dc/0/Power', power, 'd', `${deviceName} power`);
+      this.emit('dataUpdated', 'Battery Power', `${deviceName}: ${power.toFixed(1)}W`);
+    }
   }
 }
