@@ -112,6 +112,11 @@ export class VenusClient extends EventEmitter {
           // Additional battery monitor specific paths that Venus OS might need
           await deviceService.updateProperty('/System/BatteryService', 1, 'i', 'Battery service');
           
+          // Critical property that tells Venus OS this is an active battery monitor
+          await deviceService.updateProperty('/System/NrOfBatteries', 1, 'i', 'Number of batteries');
+          await deviceService.updateProperty('/System/MinCellVoltage', 12.0, 'd', 'Minimum cell voltage');
+          await deviceService.updateProperty('/System/MaxCellVoltage', 14.4, 'd', 'Maximum cell voltage');
+          
           // Initialize additional paths that might be needed for proper battery monitor display
           // State: 0 = Offline, 1 = Online, 2 = Error, 3 = Unavailable - use 1 for Online
           await deviceService.updateProperty('/State', 1, 'i', 'Battery state');
@@ -661,6 +666,10 @@ export class VenusClient extends EventEmitter {
         
         // Update mid voltage (can be same as main voltage for single battery systems)
         await deviceService.updateProperty('/Dc/0/MidVoltage', voltage, 'd', `${deviceName} mid voltage`);
+        
+        // Calculate mid voltage deviation (for single battery, this is typically 0)
+        // For multi-cell batteries, this would be the deviation from average cell voltage
+        await deviceService.updateProperty('/Dc/0/MidVoltageDeviation', 0.0, 'd', `${deviceName} mid voltage deviation`);
       } catch (err) {
         if (err.code === 'ECONNRESET' || err.code === 'ECONNREFUSED' || err.code === 'EPIPE') {
           console.log(`Connection lost while updating voltage tracking for ${deviceName}`);
