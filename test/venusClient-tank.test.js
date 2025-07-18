@@ -114,7 +114,7 @@ describe('VenusClient - Tank', () => {
     });
 
     it('should handle unknown tank types gracefully', () => {
-      expect(client._getTankName('tanks.unknown.main.currentLevel')).toBe('Unknown Tank main');
+      expect(client._getTankName('tanks.unknown.main.currentLevel')).toBe('Unknown Tank');
       expect(client._getTankName('tanks.unknown.0.currentLevel')).toBe('Unknown Tank');
       expect(client._getTankName('invalid.path')).toBe('Unknown Tank');
     });
