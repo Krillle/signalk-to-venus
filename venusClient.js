@@ -486,6 +486,7 @@ export class VenusClient extends EventEmitter {
         
         // Trigger system service update by updating system properties
         await this._notifySystemService(deviceService, deviceName);
+        await this._triggerSystemServiceRefresh(deviceService, deviceName);
       }
     } else if (path.includes('current')) {
       if (typeof value === 'number' && !isNaN(value)) {
@@ -497,6 +498,7 @@ export class VenusClient extends EventEmitter {
         
         // Trigger system service update
         await this._notifySystemService(deviceService, deviceName);
+        await this._triggerSystemServiceRefresh(deviceService, deviceName);
       }
     } else if (path.includes('stateOfCharge') || (path.includes('capacity') && path.includes('state'))) {
       if (typeof value === 'number' && !isNaN(value)) {
@@ -509,6 +511,7 @@ export class VenusClient extends EventEmitter {
         
         // This is critical - trigger system service update when SOC changes
         await this._notifySystemService(deviceService, deviceName);
+        await this._triggerSystemServiceRefresh(deviceService, deviceName);
       }
     } else if (path.includes('timeRemaining')) {
       if (typeof value === 'number' && !isNaN(value) && value !== null) {
@@ -750,26 +753,81 @@ export class VenusClient extends EventEmitter {
   }
 
   async _notifySystemService(deviceService, deviceName) {
-    // Notify the Venus OS system service that battery data has been updated
-    // This helps ensure the system service reads fresh data from our battery service
+    // Aggressively notify the Venus OS system service to refresh battery data
+    // Venus OS system service tends to cache initial values, so we use multiple methods to force refresh
     try {
-      // Update the State to ensure the system knows the battery is active and online
-      await deviceService.updateProperty('/State', 1, 'i', `${deviceName} state`);
+      console.log(`🔄 Forcing Venus OS system service refresh for ${deviceName}...`);
       
-      // Update Connected status to ensure system service recognizes the battery
-      await deviceService.updateProperty('/Connected', 1, 'i', `${deviceName} connected`);
+      // Method 1: Force disconnect/reconnect cycle to break cache
+      await deviceService.updateProperty('/Connected', 0, 'i', `${deviceName} disconnect`);
+      await new Promise(resolve => setTimeout(resolve, 100)); // Brief delay
+      await deviceService.updateProperty('/Connected', 1, 'i', `${deviceName} reconnect`);
       
-      // Update System/BatteryService to maintain system integration
-      await deviceService.updateProperty('/System/BatteryService', 1, 'i', `${deviceName} battery service active`);
+      // Method 2: Update State with cycling to trigger system attention
+      await deviceService.updateProperty('/State', 0, 'i', `${deviceName} state reset`);
+      await deviceService.updateProperty('/State', 1, 'i', `${deviceName} state active`);
+      
+      // Method 3: Toggle system service flags to force re-registration
+      await deviceService.updateProperty('/System/BatteryService', 0, 'i', `${deviceName} service reset`);
+      await deviceService.updateProperty('/System/BatteryService', 1, 'i', `${deviceName} service active`);
+      
+      // Method 4: Update device type to force system service recognition
+      await deviceService.updateProperty('/DeviceType', 512, 'i', `${deviceName} device type`);
+      
+      // Method 5: Force system to re-read HasBatteryMonitor flag
+      await deviceService.updateProperty('/System/HasBatteryMonitor', 0, 'i', `${deviceName} monitor reset`);
+      await deviceService.updateProperty('/System/HasBatteryMonitor', 1, 'i', `${deviceName} monitor active`);
+      
+      // Method 6: Update ErrorCode to ensure system sees device as healthy
+      await deviceService.updateProperty('/ErrorCode', 0, 'i', `${deviceName} no errors`);
+      
+      console.log(`✅ System service refresh completed for ${deviceName}`);
       
       // For debugging - emit an event so we can track when system notifications occur
-      this.emit('systemNotified', 'Battery System Update', `${deviceName}: System service notified`);
+      this.emit('systemNotified', 'Battery System Update', `${deviceName}: Aggressive system service refresh completed`);
     } catch (err) {
       if (err.code === 'ECONNRESET' || err.code === 'ECONNREFUSED' || err.code === 'EPIPE') {
         console.log(`Connection lost while notifying system service for ${deviceName}`);
       } else {
         console.error(`Error notifying system service for ${deviceName}:`, err);
       }
+    }
+  }
+
+  async _triggerSystemServiceRefresh(deviceService, deviceName) {
+    // Use D-Bus signals to force Venus OS system service to refresh
+    try {
+      console.log(`🚨 Sending D-Bus signals to force system service refresh for ${deviceName}...`);
+      
+      // Method 1: Send PropertiesChanged signal to force system attention
+      if (deviceService.service && deviceService.service.emit) {
+        deviceService.service.emit('PropertiesChanged', 
+          'com.victronenergy.BusItem', 
+          { 
+            '/Soc': this.wrapValue('d', await deviceService.getValue('/Soc')),
+            '/Dc/0/Current': this.wrapValue('d', await deviceService.getValue('/Dc/0/Current')),
+            '/Dc/0/Voltage': this.wrapValue('d', await deviceService.getValue('/Dc/0/Voltage')),
+            '/State': this.wrapValue('i', 1),
+            '/Connected': this.wrapValue('i', 1)
+          }, 
+          []
+        );
+      }
+      
+      // Method 2: Emit ItemsChanged signal that Venus OS system service listens for
+      if (this.bus && this.bus.emit) {
+        this.bus.emit('ItemsChanged', {
+          [deviceService.serviceName]: {
+            '/Soc': await deviceService.getValue('/Soc'),
+            '/Dc/0/Current': await deviceService.getValue('/Dc/0/Current'),
+            '/Dc/0/Voltage': await deviceService.getValue('/Dc/0/Voltage')
+          }
+        });
+      }
+      
+      console.log(`✅ D-Bus signals sent for ${deviceName}`);
+    } catch (err) {
+      console.error(`Error sending D-Bus signals for ${deviceName}:`, err);
     }
   }
 }
