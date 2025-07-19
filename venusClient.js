@@ -476,9 +476,12 @@ export class VenusClient extends EventEmitter {
   }
 
   async _handleBatteryUpdate(path, value, deviceService, deviceName) {
+    console.log(`🔋 Battery update for ${deviceName}: ${path} = ${value}`);
+    
     if (path.includes('voltage')) {
       if (typeof value === 'number' && !isNaN(value)) {
         await deviceService.updateProperty('/Dc/0/Voltage', value, 'd', `${deviceName} voltage`);
+        console.log(`✅ Updated voltage to ${value}V, stored value: ${deviceService.deviceData['/Dc/0/Voltage']}`);
         this.emit('dataUpdated', 'Battery Voltage', `${deviceName}: ${value.toFixed(2)}V`);
         
         // Calculate power if we have both voltage and current
@@ -491,6 +494,7 @@ export class VenusClient extends EventEmitter {
     } else if (path.includes('current')) {
       if (typeof value === 'number' && !isNaN(value)) {
         await deviceService.updateProperty('/Dc/0/Current', value, 'd', `${deviceName} current`);
+        console.log(`✅ Updated current to ${value}A, stored value: ${deviceService.deviceData['/Dc/0/Current']}`);
         this.emit('dataUpdated', 'Battery Current', `${deviceName}: ${value.toFixed(1)}A`);
         
         // Calculate power if we have both voltage and current
@@ -504,6 +508,7 @@ export class VenusClient extends EventEmitter {
       if (typeof value === 'number' && !isNaN(value)) {
         const socPercent = value > 1 ? value : value * 100;
         await deviceService.updateProperty('/Soc', socPercent, 'd', `${deviceName} state of charge`);
+        console.log(`✅ Updated SOC to ${socPercent}%, stored value: ${deviceService.deviceData['/Soc']}`);
         this.emit('dataUpdated', 'Battery SoC', `${deviceName}: ${socPercent.toFixed(1)}%`);
         
         // Update battery dummy data (especially consumed Ah based on SOC)
@@ -797,6 +802,15 @@ export class VenusClient extends EventEmitter {
       const socValue = deviceService.deviceData['/Soc'] || 50.0;
       const currentValue = deviceService.deviceData['/Dc/0/Current'] || 0.0;
       const voltageValue = deviceService.deviceData['/Dc/0/Voltage'] || 24.0;
+      
+      // Debug: Log what values we actually have in deviceData
+      console.log(`📊 Device data for ${deviceName}:`, {
+        '/Soc': deviceService.deviceData['/Soc'],
+        '/Dc/0/Current': deviceService.deviceData['/Dc/0/Current'],
+        '/Dc/0/Voltage': deviceService.deviceData['/Dc/0/Voltage'],
+        '/Connected': deviceService.deviceData['/Connected'],
+        '/State': deviceService.deviceData['/State']
+      });
       
       // Send minimal PropertiesChanged signal
       if (deviceService.bus && deviceService.bus.emitSignal) {

@@ -615,7 +615,7 @@ export class VEDBusService extends EventEmitter {
           return 0; // OK - no change needed
         }
         
-        this._exportProperty(path, {actualValue, type, text});
+        this._exportProperty(path, {value: actualValue, type: config.type, text: config.text});
         return 0; // OK - value set successfully
       },
       GetText: () => {
