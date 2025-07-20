@@ -344,11 +344,20 @@ export default function(app) {
                     return; // Skip disabled paths
                   }
                   
+                  // Add debug logging for battery data specifically
+                  if (deviceType === 'batteries') {
+                    console.log(`🔍 Processing ${deviceType} path: ${pathValue.path} = ${pathValue.value} (type: ${typeof pathValue.value})`);
+                  }
+                  
                   if (!plugin.clients[deviceType]) {
                     app.setPluginStatus(`Connecting to Venus OS at ${config.venusHost} for ${deviceTypeNames[deviceType]}`);
                     
                     try {
                       plugin.clients[deviceType] = VenusClientFactory(config, deviceType);
+                      
+                      if (deviceType === 'batteries') {
+                        console.log(`🚀 Calling handleSignalKUpdate for new client: ${pathValue.path} = ${pathValue.value}`);
+                      }
                       
                       await plugin.clients[deviceType].handleSignalKUpdate(pathValue.path, pathValue.value);
                       
@@ -386,6 +395,10 @@ export default function(app) {
                     }
                     
                     try {
+                      if (deviceType === 'batteries') {
+                        console.log(`🚀 Calling handleSignalKUpdate for existing client: ${pathValue.path} = ${pathValue.value}`);
+                      }
+                      
                       await plugin.clients[deviceType].handleSignalKUpdate(pathValue.path, pathValue.value);
                     } catch (err) {
                       // Only log detailed errors if it's not a connection issue
