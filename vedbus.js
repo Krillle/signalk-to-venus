@@ -1,6 +1,8 @@
 import dbusNative from 'dbus-native';
 import EventEmitter from 'events';
 
+const Variant = dbusNative.Variant;
+
 /**
  * Central VEDBus service class inspired by velib_python/vedbus.py
  * This class provides a common D-Bus service implementation for all Venus OS devices
@@ -730,7 +732,7 @@ export class VEDBusService extends EventEmitter {
 
     this._exportProperty(path, { value, type, text });
     
-    // Emit D-Bus signals when values change
+    // Emit D-Bus signals when values change using the new pattern
     if (this.bus && typeof this.bus.emitSignal === 'function') {
       try {
         // METHOD 1: Emit ItemsChanged signal (for VenusOS compatibility)
@@ -742,36 +744,14 @@ export class VEDBusService extends EventEmitter {
         
         this.bus.emitSignal('/', 'com.victronenergy.BusItem', 'ItemsChanged', 'a{sa{sv}}', [changes]);
         
-        // METHOD 2: Emit standard D-Bus PropertiesChanged signal with proper typing
-        // This is the key signal that Venus OS system service monitors
+        // METHOD 2: Emit PropertiesChanged signal with proper typing using new pattern
         if (valueChanged || path === '/Soc' || path === '/Dc/0/Current' || path === '/Dc/0/Voltage') {
-          // Import Variant for proper D-Bus signal typing
-          const Variant = dbusNative.Variant;
+          this.emitPropertiesChanged(path, {
+            Value: value,
+            Text: text
+          });
           
-          // Create properly typed properties using dbus.Variant
-          const typedChangedProperties = {
-            'Value': new Variant(type, value),
-            'Text': new Variant('s', text)
-          };
-          
-          // Emit PropertiesChanged on the property path with proper D-Bus typing
-          this.bus.emitSignal(path, 'org.freedesktop.DBus.Properties', 'PropertiesChanged', 'sa{sv}as', [
-            'com.victronenergy.BusItem',  // interface_name
-            typedChangedProperties,       // changed_properties (properly typed)
-            []                           // invalidated_properties (empty array)
-          ]);
-          
-          // Also emit on root path for system service discovery
-          const rootTypedProperties = {};
-          rootTypedProperties[path.substring(1)] = new Variant(type, value); // Remove leading slash for root emission
-          
-          this.bus.emitSignal('/', 'org.freedesktop.DBus.Properties', 'PropertiesChanged', 'sa{sv}as', [
-            'com.victronenergy.BusItem',
-            rootTypedProperties,
-            []
-          ]);
-          
-          console.log(`📡 D-Bus PropertiesChanged signal emitted for: ${path} = ${value}`);
+          console.log(`✅ D-Bus PropertiesChanged emitted for ${path} = ${value}`);
         }
         
       } catch (err) {
@@ -781,9 +761,71 @@ export class VEDBusService extends EventEmitter {
           this.isConnected = false;
           this._scheduleReconnect();
         } else {
-          console.error(`Error emitting signals for ${path} on ${this.dbusServiceName}:`, err);
+          console.error(`❌ Error emitting signals for ${path} on ${this.dbusServiceName}:`, err.message || err);
         }
       }
+    } else {
+      console.warn(`⚠️ D-Bus emitSignal not available for ${this.dbusServiceName}`);
+    }
+  }
+
+  emitPropertiesChanged(path, props) {
+    const typedProps = {};
+
+    for (const key in props) {
+      const val = props[key];
+      if (key === 'Value' && typeof val === 'number') {
+        typedProps[key] = new Variant('d', val);
+      } else if (key === 'Text' && typeof val === 'string') {
+        typedProps[key] = new Variant('s', val);
+      } else if (typeof val === 'boolean') {
+        typedProps[key] = new Variant('b', val);
+      } else if (typeof val === 'number' && Number.isInteger(val)) {
+        typedProps[key] = new Variant('i', val);
+      } else {
+        console.warn(`Unsupported property ${key} = ${val} (type: ${typeof val})`);
+      }
+    }
+
+    this.bus.emitSignal(
+      path,
+      'org.freedesktop.DBus.Properties',
+      'PropertiesChanged',
+      'sa{sv}as',
+      [
+        'com.victronenergy.BusItem',
+        typedProps,
+        [],
+      ]
+    );
+
+    // Also emit on root path for system service discovery
+    const rootTypedProps = {};
+    const propName = path.substring(1); // Remove leading slash
+    if (props.Value !== undefined) {
+      if (typeof props.Value === 'number') {
+        rootTypedProps[propName] = new Variant('d', props.Value);
+      } else if (typeof props.Value === 'string') {
+        rootTypedProps[propName] = new Variant('s', props.Value);
+      } else if (typeof props.Value === 'boolean') {
+        rootTypedProps[propName] = new Variant('b', props.Value);
+      } else if (typeof props.Value === 'number' && Number.isInteger(props.Value)) {
+        rootTypedProps[propName] = new Variant('i', props.Value);
+      }
+    }
+
+    if (Object.keys(rootTypedProps).length > 0) {
+      this.bus.emitSignal(
+        '/',
+        'org.freedesktop.DBus.Properties',
+        'PropertiesChanged',
+        'sa{sv}as',
+        [
+          'com.victronenergy.BusItem',
+          rootTypedProps,
+          []
+        ]
+      );
     }
   }
 

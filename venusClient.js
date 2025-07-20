@@ -21,7 +21,7 @@ export class VenusClient extends EventEmitter {
     };
     
     const configDeviceType = deviceTypeMap[deviceType] || deviceType;
-    this.deveConfig = DEVICE_CONFIGS[configDeviceType];
+    this.deviceConfig = DEVICE_CONFIGS[configDeviceType];
     
     if (!this.deviceConfig) {
       throw new Error(`Unsupported device type: ${deviceType}. Supported types: ${Object.keys(deviceTypeMap).join(', ')}`);
@@ -507,7 +507,6 @@ export class VenusClient extends EventEmitter {
       if (typeof value === 'number' && !isNaN(value)) {
         const socPercent = value > 1 ? value : value * 100;
         await deviceService.updateProperty('/Soc', socPercent, 'd', `${deviceName} state of charge`);
-        console.log(`🔋 Battery SOC updated: ${deviceName} = ${socPercent}%`);
         this.emit('dataUpdated', 'Battery SoC', `${deviceName}: ${socPercent.toFixed(1)}%`);
         
         // Update battery dummy data (especially consumed Ah based on SOC)
@@ -791,14 +790,10 @@ export class VenusClient extends EventEmitter {
     this._lastSystemRefresh = now;
     
     try {
-      console.log(`� Triggering system service refresh for ${deviceName}...`);
-      
       // Get current values from deviceData
       const socValue = deviceService.deviceData['/Soc'] || 50.0;
       const currentValue = deviceService.deviceData['/Dc/0/Current'] || 0.0;
       const voltageValue = deviceService.deviceData['/Dc/0/Voltage'] || 24.0;
-      
-
 
       await deviceService.updateProperty('/Soc', socValue, 'd', `${deviceName} state of charge`);
       await deviceService.updateProperty('/Dc/0/Current', currentValue, 'd', `${deviceName} current`);
@@ -807,8 +802,6 @@ export class VenusClient extends EventEmitter {
       // Also update connection state to ensure system service sees we're active
       await deviceService.updateProperty('/Connected', 1, 'i', `${deviceName} connected`);
       await deviceService.updateProperty('/State', 1, 'i', `${deviceName} active`);
-      
-      console.log(`🔄 System refresh: ${deviceName} SOC=${socValue}%, Current=${currentValue}A, Voltage=${voltageValue}V`);
       
     } catch (err) {
       console.error(`Error in system service refresh for ${deviceName}:`, err);
