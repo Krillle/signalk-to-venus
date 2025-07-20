@@ -742,29 +742,32 @@ export class VEDBusService extends EventEmitter {
         
         this.bus.emitSignal('/', 'com.victronenergy.BusItem', 'ItemsChanged', 'a{sa{sv}}', [changes]);
         
-        // METHOD 2: Emit standard D-Bus PropertiesChanged signal 
+        // METHOD 2: Emit standard D-Bus PropertiesChanged signal with proper typing
         // This is the key signal that Venus OS system service monitors
         if (valueChanged || path === '/Soc' || path === '/Dc/0/Current' || path === '/Dc/0/Voltage') {
-          // Standard D-Bus PropertiesChanged signal format:
-          // PropertiesChanged(interface_name, changed_properties, invalidated_properties)
-          // Signature: sa{sv}as
+          // Import Variant for proper D-Bus signal typing
+          const Variant = dbusNative.Variant;
           
-          const changedProperties = {
-            'Value': this._wrapValue(type, value),
-            'Text': this._wrapValue('s', text)
+          // Create properly typed properties using dbus.Variant
+          const typedChangedProperties = {
+            'Value': new Variant(type, value),
+            'Text': new Variant('s', text)
           };
           
-          // Emit PropertiesChanged on the property path with standard D-Bus format
+          // Emit PropertiesChanged on the property path with proper D-Bus typing
           this.bus.emitSignal(path, 'org.freedesktop.DBus.Properties', 'PropertiesChanged', 'sa{sv}as', [
             'com.victronenergy.BusItem',  // interface_name
-            changedProperties,            // changed_properties  
+            typedChangedProperties,       // changed_properties (properly typed)
             []                           // invalidated_properties (empty array)
           ]);
           
           // Also emit on root path for system service discovery
+          const rootTypedProperties = {};
+          rootTypedProperties[path.substring(1)] = new Variant(type, value); // Remove leading slash for root emission
+          
           this.bus.emitSignal('/', 'org.freedesktop.DBus.Properties', 'PropertiesChanged', 'sa{sv}as', [
             'com.victronenergy.BusItem',
-            {[path.substring(1)]: this._wrapValue(type, value)}, // Remove leading slash for root emission
+            rootTypedProperties,
             []
           ]);
           
