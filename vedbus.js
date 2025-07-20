@@ -768,7 +768,7 @@ export class VEDBusService extends EventEmitter {
             []
           ]);
           
-          console.log(`📡 Emitted standard D-Bus PropertiesChanged signals for: ${path} = ${value} (${type})`);
+          console.log(`📡 D-Bus PropertiesChanged signal emitted for: ${path} = ${value}`);
         }
         
       } catch (err) {

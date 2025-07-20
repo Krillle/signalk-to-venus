@@ -21,7 +21,7 @@ export class VenusClient extends EventEmitter {
     };
     
     const configDeviceType = deviceTypeMap[deviceType] || deviceType;
-    this.deviceConfig = DEVICE_CONFIGS[configDeviceType];
+    this.deveConfig = DEVICE_CONFIGS[configDeviceType];
     
     if (!this.deviceConfig) {
       throw new Error(`Unsupported device type: ${deviceType}. Supported types: ${Object.keys(deviceTypeMap).join(', ')}`);
@@ -364,28 +364,20 @@ export class VenusClient extends EventEmitter {
 
   async handleSignalKUpdate(path, value) {
     try {
-      // Add debug logging to see if we're receiving any Signal K data
-      console.log(`🔍 SignalK update received: ${path} = ${value} (type: ${typeof value})`);
-      
       // Validate input parameters
       if (value === null || value === undefined) {
-        console.log(`❌ Skipping ${path} - invalid value: ${value}`);
-        // Skip invalid values silently
         return;
       }
       
       // Check if this path is relevant for our device type
       if (!this._isRelevantPath(path)) {
-        console.log(`❌ Skipping ${path} - not relevant for device type: ${this._internalDeviceType}`);
         return;
       }
-
-      console.log(`✅ Processing ${path} for device type: ${this._internalDeviceType}`);
 
       // Initialize if not already done
       const deviceInstance = await this._getOrCreateDeviceInstance(path);
       if (!deviceInstance) {
-        console.log(`❌ Failed to create device instance for ${path}`);
+        console.error(`Failed to create device instance for ${path}`);
         return;
       }
 
@@ -401,8 +393,6 @@ export class VenusClient extends EventEmitter {
         console.warn(`Device service ${deviceInstance.basePath} is not connected - skipping update`);
         return;
       }
-      
-      console.log(`🚀 Calling device-specific update handler for ${path}`);
       
       // Handle the update based on device type
       await this._handleDeviceSpecificUpdate(path, value, deviceService, deviceInstance);
@@ -489,12 +479,9 @@ export class VenusClient extends EventEmitter {
   }
 
   async _handleBatteryUpdate(path, value, deviceService, deviceName) {
-    console.log(`🔋 Battery update for ${deviceName}: ${path} = ${value}`);
-    
     if (path.includes('voltage')) {
       if (typeof value === 'number' && !isNaN(value)) {
         await deviceService.updateProperty('/Dc/0/Voltage', value, 'd', `${deviceName} voltage`);
-        console.log(`✅ Updated voltage to ${value}V, stored value: ${deviceService.deviceData['/Dc/0/Voltage']}`);
         this.emit('dataUpdated', 'Battery Voltage', `${deviceName}: ${value.toFixed(2)}V`);
         
         // Calculate power if we have both voltage and current
@@ -507,7 +494,6 @@ export class VenusClient extends EventEmitter {
     } else if (path.includes('current')) {
       if (typeof value === 'number' && !isNaN(value)) {
         await deviceService.updateProperty('/Dc/0/Current', value, 'd', `${deviceName} current`);
-        console.log(`✅ Updated current to ${value}A, stored value: ${deviceService.deviceData['/Dc/0/Current']}`);
         this.emit('dataUpdated', 'Battery Current', `${deviceName}: ${value.toFixed(1)}A`);
         
         // Calculate power if we have both voltage and current
@@ -521,7 +507,7 @@ export class VenusClient extends EventEmitter {
       if (typeof value === 'number' && !isNaN(value)) {
         const socPercent = value > 1 ? value : value * 100;
         await deviceService.updateProperty('/Soc', socPercent, 'd', `${deviceName} state of charge`);
-        console.log(`✅ Updated SOC to ${socPercent}%, stored value: ${deviceService.deviceData['/Soc']}`);
+        console.log(`🔋 Battery SOC updated: ${deviceName} = ${socPercent}%`);
         this.emit('dataUpdated', 'Battery SoC', `${deviceName}: ${socPercent.toFixed(1)}%`);
         
         // Update battery dummy data (especially consumed Ah based on SOC)
@@ -773,8 +759,6 @@ export class VenusClient extends EventEmitter {
   async _notifySystemService(deviceService, deviceName) {
     // Simplified Venus OS system service refresh - only basic state updates
     try {
-      console.log(`🔄 Basic system service update for ${deviceName}...`);
-      
       // Method 1: Basic connect/state cycling to wake up system service
       await deviceService.updateProperty('/Connected', 1, 'i', `${deviceName} connected`);
       await deviceService.updateProperty('/State', 1, 'i', `${deviceName} active`);
@@ -782,8 +766,6 @@ export class VenusClient extends EventEmitter {
       // Method 2: Update system service recognition flags
       await deviceService.updateProperty('/System/BatteryService', 1, 'i', `${deviceName} battery service active`);
       await deviceService.updateProperty('/DeviceType', 512, 'i', `${deviceName} device type`);
-      
-      console.log(`✅ Basic system service update completed for ${deviceName}`);
       
       // For debugging - emit an event so we can track when system notifications occur
       this.emit('systemNotified', 'Battery System Update', `${deviceName}: Basic system service update completed`);
@@ -816,19 +798,8 @@ export class VenusClient extends EventEmitter {
       const currentValue = deviceService.deviceData['/Dc/0/Current'] || 0.0;
       const voltageValue = deviceService.deviceData['/Dc/0/Voltage'] || 24.0;
       
-      // Debug: Log what values we actually have in deviceData
-      console.log(`📊 Device data for ${deviceName}:`, {
-        '/Soc': deviceService.deviceData['/Soc'],
-        '/Dc/0/Current': deviceService.deviceData['/Dc/0/Current'],
-        '/Dc/0/Voltage': deviceService.deviceData['/Dc/0/Voltage'],
-        '/Connected': deviceService.deviceData['/Connected'],
-        '/State': deviceService.deviceData['/State']
-      });
-      
-      // Force re-emit critical values to trigger PropertiesChanged signals
-      // This ensures system service gets fresh PropertiesChanged & ValueChanged signals
-      console.log(`🔄 Re-emitting critical battery values to force system service update...`);
-      
+
+
       await deviceService.updateProperty('/Soc', socValue, 'd', `${deviceName} state of charge`);
       await deviceService.updateProperty('/Dc/0/Current', currentValue, 'd', `${deviceName} current`);
       await deviceService.updateProperty('/Dc/0/Voltage', voltageValue, 'd', `${deviceName} voltage`);
@@ -837,8 +808,7 @@ export class VenusClient extends EventEmitter {
       await deviceService.updateProperty('/Connected', 1, 'i', `${deviceName} connected`);
       await deviceService.updateProperty('/State', 1, 'i', `${deviceName} active`);
       
-      console.log(`✅ System service refresh completed for ${deviceName} (SOC: ${socValue}%, Current: ${currentValue}A, Voltage: ${voltageValue}V)`);
-      console.log(`🔍 If VRM still shows wrong values, check if Venus OS system service is receiving PropertiesChanged signals`);
+      console.log(`🔄 System refresh: ${deviceName} SOC=${socValue}%, Current=${currentValue}A, Voltage=${voltageValue}V`);
       
     } catch (err) {
       console.error(`Error in system service refresh for ${deviceName}:`, err);
