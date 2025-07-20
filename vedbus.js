@@ -748,12 +748,18 @@ export class VEDBusService extends EventEmitter {
           interface: 'com.victronenergy.BusItem',
           member: 'ItemsChanged',
           signature: 'a{sa{sv}}',
-          body: [changes]
+          body: [changes],
+          destination: null,
+          sender: this.dbusServiceName
         });
         this.bus.connection.send(itemsChangedMsg);
         
         // METHOD 2: Emit PropertiesChanged and ValueChanged signals for better systemcalc integration
-        if (valueChanged || path === '/Soc' || path === '/Dc/0/Current' || path === '/Dc/0/Voltage') {
+        // Only emit enhanced signals for battery services or when values actually change
+        const isBatteryService = this.deviceConfig.serviceType === 'battery';
+        const isCriticalPath = path === '/Soc' || path === '/Dc/0/Current' || path === '/Dc/0/Voltage';
+        
+        if (valueChanged || (isBatteryService && isCriticalPath)) {
           this.emitPropertiesChanged(path, {
             Value: value,
             Text: text
@@ -761,7 +767,7 @@ export class VEDBusService extends EventEmitter {
           
           this.emitValueChanged(path, value);
           
-          console.log(`✅ D-Bus signals emitted for ${path} = ${value}`);
+          console.log(`✅ D-Bus signals emitted for ${path} = ${value} (${this.deviceConfig.serviceType})`);
         }
         
       } catch (err) {
@@ -815,7 +821,9 @@ export class VEDBusService extends EventEmitter {
           'com.victronenergy.BusItem',
           changes,
           []
-        ]
+        ],
+        destination: null,
+        sender: this.dbusServiceName
       });
       this.bus.connection.send(msg);
       
@@ -830,7 +838,9 @@ export class VEDBusService extends EventEmitter {
           'com.victronenergy.BusItem',
           { [path.substring(1)]: changes.Value },
           []
-        ]
+        ],
+        destination: null,
+        sender: this.dbusServiceName
       });
       this.bus.connection.send(rootMsg);
     } catch (err) {
@@ -865,7 +875,9 @@ export class VEDBusService extends EventEmitter {
         interface: 'com.victronenergy.BusItem',
         member: 'ValueChanged',
         signature: 'v',
-        body: [typedValue]
+        body: [typedValue],
+        destination: null,
+        sender: this.dbusServiceName
       });
       this.bus.connection.send(msg);
     } catch (err) {
