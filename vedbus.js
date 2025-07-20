@@ -496,8 +496,7 @@ export class VEDBusService extends EventEmitter {
         GetText: ["", "s", [], ["text"]],
       },
       signals: {
-        ItemsChanged: ["a{sa{sv}}", ["changes"]],
-        PropertiesChanged: ["a{sv}", ["changes"]]
+        ItemsChanged: ["a{sa{sv}}", ["changes"]]
       }
     };
 
@@ -559,6 +558,49 @@ export class VEDBusService extends EventEmitter {
     // https://github.com/sidorares/dbus-native/pull/140
     this.bus.exportInterface(rootInterface, "/", busItemInterface);
 
+    // Export standard D-Bus Properties interface for PropertiesChanged signals
+    const dbusPropertiesInterface = {
+      name: "org.freedesktop.DBus.Properties",
+      methods: {
+        Get: ["ss", "v", ["interface_name", "property_name"], ["value"]],
+        GetAll: ["s", "a{sv}", ["interface_name"], ["properties"]],
+        Set: ["ssv", "", ["interface_name", "property_name", "value"], []]
+      },
+      signals: {
+        PropertiesChanged: ["sa{sv}as", ["interface_name", "changed_properties", "invalidated_properties"]]
+      }
+    };
+
+    const dbusPropertiesImpl = {
+      Get: (interfaceName, propertyName) => {
+        // Simple implementation - return the property value if it exists
+        const path = `/${propertyName}`;
+        if (this.deviceData[path] !== undefined) {
+          const type = this.deviceConfig.pathTypes?.[path] || 'd';
+          return this._wrapValue(type, this.deviceData[path]);
+        }
+        return this._wrapValue('s', '');
+      },
+      GetAll: (interfaceName) => {
+        // Return all properties for the interface
+        const properties = {};
+        Object.entries(this.deviceData).forEach(([path, value]) => {
+          const type = this.deviceConfig.pathTypes?.[path] || 'd';
+          properties[path.substring(1)] = this._wrapValue(type, value); // Remove leading slash
+        });
+        return properties;
+      },
+      Set: (interfaceName, propertyName, value) => {
+        // Allow setting properties via D-Bus
+        const path = `/${propertyName}`;
+        const actualValue = Array.isArray(value) ? value[1] : value;
+        this.deviceData[path] = actualValue;
+      }
+    };
+
+    // Export the standard D-Bus Properties interface on root path
+    this.bus.exportInterface(dbusPropertiesImpl, "/", dbusPropertiesInterface);
+
     // Export individual property interfaces
     Object.entries(this.managementProperties).forEach(([path, config]) => {
       this._exportProperty(path, config);
@@ -591,7 +633,6 @@ export class VEDBusService extends EventEmitter {
         GetText: ["", "s", [], ["text"]],
       },
       signals: {
-        PropertiesChanged: ["a{sv}", ["changes"]],
         ItemsChanged: ["a{sa{sv}}", ["changes"]],
       }
     };
@@ -635,6 +676,45 @@ export class VEDBusService extends EventEmitter {
 
     this.exportedInterfaces[path] = propertyInterface;
     this.bus.exportInterface(propertyInterface, path, busItemInterface);
+
+    // Also export the standard D-Bus Properties interface for this property
+    const dbusPropertiesInterface = {
+      name: "org.freedesktop.DBus.Properties",
+      methods: {
+        Get: ["ss", "v", ["interface_name", "property_name"], ["value"]],
+        GetAll: ["s", "a{sv}", ["interface_name"], ["properties"]],
+        Set: ["ssv", "", ["interface_name", "property_name", "value"], []]
+      },
+      signals: {
+        PropertiesChanged: ["sa{sv}as", ["interface_name", "changed_properties", "invalidated_properties"]]
+      }
+    };
+
+    const dbusPropertiesImpl = {
+      Get: (interfaceName, propertyName) => {
+        if (interfaceName === 'com.victronenergy.BusItem' && propertyName === 'Value') {
+          return propertyInterface.GetValue();
+        }
+        return this._wrapValue('s', '');
+      },
+      GetAll: (interfaceName) => {
+        if (interfaceName === 'com.victronenergy.BusItem') {
+          return {
+            'Value': propertyInterface.GetValue(),
+            'Text': this._wrapValue('s', config.text)
+          };
+        }
+        return {};
+      },
+      Set: (interfaceName, propertyName, value) => {
+        if (interfaceName === 'com.victronenergy.BusItem' && propertyName === 'Value') {
+          return propertyInterface.SetValue(value);
+        }
+      }
+    };
+
+    // Export Properties interface for this property path
+    this.bus.exportInterface(dbusPropertiesImpl, path, dbusPropertiesInterface);
   }
 
   // Public method to update device properties
@@ -650,10 +730,10 @@ export class VEDBusService extends EventEmitter {
 
     this._exportProperty(path, { value, type, text });
     
-    // Emit BOTH ItemsChanged and PropertiesChanged signals when values change
+    // Emit D-Bus signals when values change
     if (this.bus && typeof this.bus.emitSignal === 'function') {
       try {
-        // METHOD 1: Emit ItemsChanged signal (existing approach)
+        // METHOD 1: Emit ItemsChanged signal (for VenusOS compatibility)
         const changes = [];
         changes.push([path, [
           ["Value", this._wrapValue(type, value)],
@@ -662,39 +742,33 @@ export class VEDBusService extends EventEmitter {
         
         this.bus.emitSignal('/', 'com.victronenergy.BusItem', 'ItemsChanged', 'a{sa{sv}}', [changes]);
         
-        // METHOD 2: Emit PropertiesChanged signal for the specific property path
-        // This is what Venus OS system service is specifically listening for!
+        // METHOD 2: Emit standard D-Bus PropertiesChanged signal 
+        // This is the key signal that Venus OS system service monitors
         if (valueChanged || path === '/Soc' || path === '/Dc/0/Current' || path === '/Dc/0/Voltage') {
-          // Always emit for critical battery properties, even if value didn't change
-          // This forces system service to refresh its cached values
+          // Standard D-Bus PropertiesChanged signal format:
+          // PropertiesChanged(interface_name, changed_properties, invalidated_properties)
+          // Signature: sa{sv}as
           
-          const propertyChanges = {
+          const changedProperties = {
             'Value': this._wrapValue(type, value),
             'Text': this._wrapValue('s', text)
           };
           
-          // Emit PropertiesChanged for the specific property path
-          this.bus.emitSignal(path, 'com.victronenergy.BusItem', 'PropertiesChanged', 'sa{sv}as', [
+          // Emit PropertiesChanged on the property path with standard D-Bus format
+          this.bus.emitSignal(path, 'org.freedesktop.DBus.Properties', 'PropertiesChanged', 'sa{sv}as', [
+            'com.victronenergy.BusItem',  // interface_name
+            changedProperties,            // changed_properties  
+            []                           // invalidated_properties (empty array)
+          ]);
+          
+          // Also emit on root path for system service discovery
+          this.bus.emitSignal('/', 'org.freedesktop.DBus.Properties', 'PropertiesChanged', 'sa{sv}as', [
             'com.victronenergy.BusItem',
-            propertyChanges,
+            {[path.substring(1)]: this._wrapValue(type, value)}, // Remove leading slash for root emission
             []
           ]);
           
-          // Also emit PropertiesChanged for the root service path (system service listens here)
-          this.bus.emitSignal('/', 'com.victronenergy.BusItem', 'PropertiesChanged', 'sa{sv}as', [
-            'com.victronenergy.BusItem', 
-            {[path]: propertyChanges},
-            []
-          ]);
-          
-          // For critical battery properties, also emit a ValueChanged signal
-          if (path === '/Soc' || path === '/Dc/0/Current' || path === '/Dc/0/Voltage') {
-            this.bus.emitSignal(path, 'com.victronenergy.BusItem', 'ValueChanged', 'v', [
-              this._wrapValue(type, value)
-            ]);
-            
-            console.log(`📡 Emitted PropertiesChanged & ValueChanged signals for critical property: ${path} = ${value} (${type})`);
-          }
+          console.log(`📡 Emitted standard D-Bus PropertiesChanged signals for: ${path} = ${value} (${type})`);
         }
         
       } catch (err) {
