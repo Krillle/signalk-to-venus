@@ -364,20 +364,30 @@ export class VenusClient extends EventEmitter {
 
   async handleSignalKUpdate(path, value) {
     try {
+      // Add debug logging to see if we're receiving any Signal K data
+      console.log(`🔍 SignalK update received: ${path} = ${value} (type: ${typeof value})`);
+      
       // Validate input parameters
       if (value === null || value === undefined) {
+        console.log(`❌ Skipping ${path} - invalid value: ${value}`);
         // Skip invalid values silently
         return;
       }
       
       // Check if this path is relevant for our device type
       if (!this._isRelevantPath(path)) {
+        console.log(`❌ Skipping ${path} - not relevant for device type: ${this._internalDeviceType}`);
         return;
       }
 
+      console.log(`✅ Processing ${path} for device type: ${this._internalDeviceType}`);
+
       // Initialize if not already done
       const deviceInstance = await this._getOrCreateDeviceInstance(path);
-      if (!deviceInstance) return;
+      if (!deviceInstance) {
+        console.log(`❌ Failed to create device instance for ${path}`);
+        return;
+      }
 
       // Get the device service
       const deviceService = this.deviceServices.get(deviceInstance.basePath);
@@ -392,6 +402,8 @@ export class VenusClient extends EventEmitter {
         return;
       }
       
+      console.log(`🚀 Calling device-specific update handler for ${path}`);
+      
       // Handle the update based on device type
       await this._handleDeviceSpecificUpdate(path, value, deviceService, deviceInstance);
       
@@ -401,6 +413,7 @@ export class VenusClient extends EventEmitter {
         console.log(`Connection lost while updating ${path} - Venus OS may be restarting`);
         // Don't throw the error, just log it
       } else {
+        console.error(`Error in handleSignalKUpdate for ${path}:`, err);
         throw new Error(err.message);
       }
     }
