@@ -644,18 +644,59 @@ export class VEDBusService extends EventEmitter {
       return;
     }
 
+    // Check if value actually changed to avoid unnecessary signals
+    const oldValue = this.deviceData[path];
+    const valueChanged = oldValue !== value;
+
     this._exportProperty(path, { value, type, text });
     
-    // Emit ItemsChanged signal when values change (like vedbus.py)
+    // Emit BOTH ItemsChanged and PropertiesChanged signals when values change
     if (this.bus && typeof this.bus.emitSignal === 'function') {
-      const changes = [];
-      changes.push([path, [
-        ["Value", this._wrapValue(type, value)],
-        ["Text", this._wrapValue('s', text)],
-      ]]);
-      
       try {
+        // METHOD 1: Emit ItemsChanged signal (existing approach)
+        const changes = [];
+        changes.push([path, [
+          ["Value", this._wrapValue(type, value)],
+          ["Text", this._wrapValue('s', text)],
+        ]]);
+        
         this.bus.emitSignal('/', 'com.victronenergy.BusItem', 'ItemsChanged', 'a{sa{sv}}', [changes]);
+        
+        // METHOD 2: Emit PropertiesChanged signal for the specific property path
+        // This is what Venus OS system service is specifically listening for!
+        if (valueChanged || path === '/Soc' || path === '/Dc/0/Current' || path === '/Dc/0/Voltage') {
+          // Always emit for critical battery properties, even if value didn't change
+          // This forces system service to refresh its cached values
+          
+          const propertyChanges = {
+            'Value': this._wrapValue(type, value),
+            'Text': this._wrapValue('s', text)
+          };
+          
+          // Emit PropertiesChanged for the specific property path
+          this.bus.emitSignal(path, 'com.victronenergy.BusItem', 'PropertiesChanged', 'sa{sv}as', [
+            'com.victronenergy.BusItem',
+            propertyChanges,
+            []
+          ]);
+          
+          // Also emit PropertiesChanged for the root service path (system service listens here)
+          this.bus.emitSignal('/', 'com.victronenergy.BusItem', 'PropertiesChanged', 'sa{sv}as', [
+            'com.victronenergy.BusItem', 
+            {[path]: propertyChanges},
+            []
+          ]);
+          
+          // For critical battery properties, also emit a ValueChanged signal
+          if (path === '/Soc' || path === '/Dc/0/Current' || path === '/Dc/0/Voltage') {
+            this.bus.emitSignal(path, 'com.victronenergy.BusItem', 'ValueChanged', 'v', [
+              this._wrapValue(type, value)
+            ]);
+            
+            console.log(`📡 Emitted PropertiesChanged & ValueChanged signals for critical property: ${path} = ${value} (${type})`);
+          }
+        }
+        
       } catch (err) {
         // Handle connection errors gracefully
         if (err.code === 'ECONNRESET' || err.code === 'ECONNREFUSED' || err.code === 'EPIPE') {
@@ -663,7 +704,7 @@ export class VEDBusService extends EventEmitter {
           this.isConnected = false;
           this._scheduleReconnect();
         } else {
-          console.error(`Error emitting signal for ${path} on ${this.dbusServiceName}:`, err);
+          console.error(`Error emitting signals for ${path} on ${this.dbusServiceName}:`, err);
         }
       }
     }

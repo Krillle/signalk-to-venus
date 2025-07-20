@@ -801,17 +801,17 @@ export class VenusClient extends EventEmitter {
     const now = Date.now();
     const lastRefresh = this._lastSystemRefresh || 0;
     
-    // Rate limit: only refresh once every 2 seconds
-    if (now - lastRefresh < 2000) {
+    // Rate limit: only refresh once every 500ms (more aggressive for BMV sync)
+    if (now - lastRefresh < 500) {
       return;
     }
     
     this._lastSystemRefresh = now;
     
     try {
-      console.log(`🚨 Sending D-Bus signals for ${deviceName}...`);
+      console.log(`� Triggering system service refresh for ${deviceName}...`);
       
-      // Get current values from deviceData (no more broken getValue calls)
+      // Get current values from deviceData
       const socValue = deviceService.deviceData['/Soc'] || 50.0;
       const currentValue = deviceService.deviceData['/Dc/0/Current'] || 0.0;
       const voltageValue = deviceService.deviceData['/Dc/0/Voltage'] || 24.0;
@@ -825,20 +825,23 @@ export class VenusClient extends EventEmitter {
         '/State': deviceService.deviceData['/State']
       });
       
-      // Send minimal PropertiesChanged signal
-      if (deviceService.bus && deviceService.bus.emitSignal) {
-        try {
-          deviceService.bus.emitSignal('/', 'com.victronenergy.BusItem', 'PropertiesChanged', 's', [
-            'com.victronenergy.BusItem'
-          ]);
-        } catch (signalErr) {
-          // Ignore signal errors - they're not critical
-        }
-      }
+      // Force re-emit critical values to trigger PropertiesChanged signals
+      // This ensures system service gets fresh PropertiesChanged & ValueChanged signals
+      console.log(`🔄 Re-emitting critical battery values to force system service update...`);
       
-      console.log(`✅ D-Bus signals sent for ${deviceName} (SOC: ${socValue}%, Current: ${currentValue}A, Voltage: ${voltageValue}V)`);
+      await deviceService.updateProperty('/Soc', socValue, 'd', `${deviceName} state of charge`);
+      await deviceService.updateProperty('/Dc/0/Current', currentValue, 'd', `${deviceName} current`);
+      await deviceService.updateProperty('/Dc/0/Voltage', voltageValue, 'd', `${deviceName} voltage`);
+      
+      // Also update connection state to ensure system service sees we're active
+      await deviceService.updateProperty('/Connected', 1, 'i', `${deviceName} connected`);
+      await deviceService.updateProperty('/State', 1, 'i', `${deviceName} active`);
+      
+      console.log(`✅ System service refresh completed for ${deviceName} (SOC: ${socValue}%, Current: ${currentValue}A, Voltage: ${voltageValue}V)`);
+      console.log(`🔍 If VRM still shows wrong values, check if Venus OS system service is receiving PropertiesChanged signals`);
+      
     } catch (err) {
-      console.error(`Error sending D-Bus signals for ${deviceName}:`, err);
+      console.error(`Error in system service refresh for ${deviceName}:`, err);
     }
   }
 }
