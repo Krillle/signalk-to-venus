@@ -733,26 +733,24 @@ export class VEDBusService extends EventEmitter {
     this._exportProperty(path, { value, type, text });
     
     // Emit D-Bus signals when values change using direct message sending
-    if (this.bus && this.bus.connection) {
+    if (this.bus && this.bus.connection && this.bus.connection.message) {
       try {
         // METHOD 1: Emit ItemsChanged signal (for VenusOS compatibility)
-        if (this.bus.connection.message) {
-          const changes = [];
-          changes.push([path, [
-            ["Value", this._wrapValue(type, value)],
-            ["Text", this._wrapValue('s', text)],
-          ]]);
-          
-          const itemsChangedMsg = this.bus.connection.message({
-            type: 'signal',
-            path: '/',
-            interface: 'com.victronenergy.BusItem',
-            member: 'ItemsChanged',
-            signature: 'a{sa{sv}}',
-            body: [changes]
-          });
-          this.bus.connection.send(itemsChangedMsg);
-        }
+        const changes = [];
+        changes.push([path, [
+          ["Value", this._wrapValue(type, value)],
+          ["Text", this._wrapValue('s', text)],
+        ]]);
+        
+        const itemsChangedMsg = this.bus.connection.message({
+          type: 'signal',
+          path: '/',
+          interface: 'com.victronenergy.BusItem',
+          member: 'ItemsChanged',
+          signature: 'a{sa{sv}}',
+          body: [changes]
+        });
+        this.bus.connection.send(itemsChangedMsg);
         
         // METHOD 2: Emit PropertiesChanged and ValueChanged signals for better systemcalc integration
         if (valueChanged || path === '/Soc' || path === '/Dc/0/Current' || path === '/Dc/0/Voltage') {
@@ -777,107 +775,101 @@ export class VEDBusService extends EventEmitter {
         }
       }
     } else {
-      console.warn(`⚠️ D-Bus connection not available for ${this.dbusServiceName}`);
+      // D-Bus connection not available - this is expected during initialization
+      if (this.deviceData[path] === undefined) {
+        console.log(`D-Bus not ready for ${this.dbusServiceName}, storing ${path} = ${value} for later emission`);
+      }
     }
   }
 
   emitPropertiesChanged(path, props) {
-    if (!this.bus || !this.isConnected) {
-      console.warn(`⚠️ D-Bus not connected for ${this.dbusServiceName}`);
+    if (!this.bus || !this.isConnected || !this.bus.connection || !this.bus.connection.message) {
+      // Connection not ready - this is normal during initialization
       return;
     }
 
-    // Use the exported interface to emit signals
-    if (this.exportedInterfaces[path]) {
-      try {
-        // Create D-Bus compatible signal data
-        const changes = {};
-        for (const key in props) {
-          const val = props[key];
-          if (key === 'Value' && typeof val === 'number') {
-            changes[key] = new Variant('d', val);
-          } else if (key === 'Text' && typeof val === 'string') {
-            changes[key] = new Variant('s', val);
-          } else if (typeof val === 'boolean') {
-            changes[key] = new Variant('b', val);
-          } else if (typeof val === 'number' && Number.isInteger(val)) {
-            changes[key] = new Variant('i', val);
-          }
+    try {
+      // Create D-Bus compatible signal data
+      const changes = {};
+      for (const key in props) {
+        const val = props[key];
+        if (key === 'Value' && typeof val === 'number') {
+          changes[key] = new Variant('d', val);
+        } else if (key === 'Text' && typeof val === 'string') {
+          changes[key] = new Variant('s', val);
+        } else if (typeof val === 'boolean') {
+          changes[key] = new Variant('b', val);
+        } else if (typeof val === 'number' && Number.isInteger(val)) {
+          changes[key] = new Variant('i', val);
         }
-
-        // Use D-Bus message to emit PropertiesChanged signal
-        if (this.bus.connection && this.bus.connection.message) {
-          const msg = this.bus.connection.message({
-            type: 'signal',
-            path: path,
-            interface: 'org.freedesktop.DBus.Properties',
-            member: 'PropertiesChanged',
-            signature: 'sa{sv}as',
-            body: [
-              'com.victronenergy.BusItem',
-              changes,
-              []
-            ]
-          });
-          this.bus.connection.send(msg);
-          
-          // Also emit on root path
-          const rootMsg = this.bus.connection.message({
-            type: 'signal',
-            path: '/',
-            interface: 'org.freedesktop.DBus.Properties',
-            member: 'PropertiesChanged',
-            signature: 'sa{sv}as',
-            body: [
-              'com.victronenergy.BusItem',
-              { [path.substring(1)]: changes.Value },
-              []
-            ]
-          });
-          this.bus.connection.send(rootMsg);
-        }
-      } catch (err) {
-        console.error(`❌ Error emitting PropertiesChanged for ${path}:`, err.message || err);
       }
+
+      // Use D-Bus message to emit PropertiesChanged signal
+      const msg = this.bus.connection.message({
+        type: 'signal',
+        path: path,
+        interface: 'org.freedesktop.DBus.Properties',
+        member: 'PropertiesChanged',
+        signature: 'sa{sv}as',
+        body: [
+          'com.victronenergy.BusItem',
+          changes,
+          []
+        ]
+      });
+      this.bus.connection.send(msg);
+      
+      // Also emit on root path for system service discovery
+      const rootMsg = this.bus.connection.message({
+        type: 'signal',
+        path: '/',
+        interface: 'org.freedesktop.DBus.Properties',
+        member: 'PropertiesChanged',
+        signature: 'sa{sv}as',
+        body: [
+          'com.victronenergy.BusItem',
+          { [path.substring(1)]: changes.Value },
+          []
+        ]
+      });
+      this.bus.connection.send(rootMsg);
+    } catch (err) {
+      console.error(`❌ Error emitting PropertiesChanged for ${path}:`, err.message || err);
     }
   }
 
   emitValueChanged(path, value) {
-    if (!this.bus || !this.isConnected) {
+    if (!this.bus || !this.isConnected || !this.bus.connection || !this.bus.connection.message) {
+      // Connection not ready - this is normal during initialization
       return;
     }
 
-    // Use the exported interface to emit ValueChanged signal
-    if (this.exportedInterfaces[path]) {
-      try {
-        let typedValue;
-        if (typeof value === 'number') {
-          typedValue = new Variant('d', value);
-        } else if (typeof value === 'string') {
-          typedValue = new Variant('s', value);
-        } else if (typeof value === 'boolean') {
-          typedValue = new Variant('b', value);
-        } else if (typeof value === 'number' && Number.isInteger(value)) {
-          typedValue = new Variant('i', value);
-        } else {
-          typedValue = new Variant('v', value);
-        }
-
-        // Use D-Bus message to emit ValueChanged signal
-        if (this.bus.connection && this.bus.connection.message) {
-          const msg = this.bus.connection.message({
-            type: 'signal',
-            path: path,
-            interface: 'com.victronenergy.BusItem',
-            member: 'ValueChanged',
-            signature: 'v',
-            body: [typedValue]
-          });
-          this.bus.connection.send(msg);
-        }
-      } catch (err) {
-        console.error(`❌ Error emitting ValueChanged for ${path}:`, err.message || err);
+    try {
+      let typedValue;
+      if (typeof value === 'number') {
+        typedValue = new Variant('d', value);
+      } else if (typeof value === 'string') {
+        typedValue = new Variant('s', value);
+      } else if (typeof value === 'boolean') {
+        typedValue = new Variant('b', value);
+      } else if (typeof value === 'number' && Number.isInteger(value)) {
+        typedValue = new Variant('i', value);
+      } else {
+        typedValue = new Variant('v', value);
       }
+
+      // Use D-Bus message to emit ValueChanged signal
+      const msg = this.bus.connection.message({
+        type: 'signal',
+        path: path,
+        interface: 'com.victronenergy.BusItem',
+        member: 'ValueChanged',
+        signature: 'v',
+        body: [typedValue]
+      });
+      this.bus.connection.send(msg);
+    } catch (err) {
+      console.error(`❌ Error emitting ValueChanged for ${path}:`, err.message || err);
     }
   }
 
