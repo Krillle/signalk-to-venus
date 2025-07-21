@@ -49,21 +49,19 @@ export class VEDBusService extends EventEmitter {
     
     // CRITICAL: Set serial number immediately and ensure it's exported
     const serialNumber = `SK${this.vrmInstanceId}`;
-    console.log(`🔧 Initializing BMV serial number for ${this.dbusServiceName}: ${serialNumber}`);
+    console.log(`🔧 Initializing serial number for ${this.dbusServiceName}: ${serialNumber}`);
     this.deviceData['/Serial'] = serialNumber;
     this.managementProperties["/Serial"].value = serialNumber;
     
-    // For battery services, immediately export the serial number property
-    // This is critical for Venus OS systemcalc to recognize it as a BMV
-    if (this.deviceConfig.serviceType === 'battery') {
-      this._exportProperty('/Serial', {
-        value: serialNumber,
-        type: 's',
-        text: 'Serial number',
-        immutable: true
-      });
-      console.log(`🔋 BMV serial number exported: ${serialNumber}`);
-    }
+    // Immediately export the serial number property for ALL device types
+    // This is critical for Venus OS to validate D-Bus signals from our service
+    this._exportProperty('/Serial', {
+      value: serialNumber,
+      type: 's',
+      text: 'Serial number',
+      immutable: true
+    });
+    console.log(`� Serial number exported for ${this.deviceConfig.serviceType}: ${serialNumber}`);
     
     await this._registerInSettings();
     await this._registerService();
@@ -419,12 +417,14 @@ export class VEDBusService extends EventEmitter {
       console.log(`Successfully registered ${this.deviceConfig.serviceType} service ${this.dbusServiceName} on D-Bus`);
       
       // Verify that critical properties are properly set
-      const serialNumber = this.deviceData['/Serial'];
-      const deviceInstance = this.deviceData['/DeviceInstance'];
+      const serialNumber = this.deviceData['/Serial'] || this.managementProperties['/Serial']?.value;
+      const deviceInstance = this.deviceData['/DeviceInstance'] || this.managementProperties['/DeviceInstance']?.value;
       console.log(`🔧 Service ${this.dbusServiceName} initialized with Serial: ${serialNumber}, DeviceInstance: ${deviceInstance}`);
       
       if (!serialNumber) {
-        console.error(`❌ Warning: No serial number set for ${this.dbusServiceName}!`);
+        console.error(`❌ CRITICAL: No serial number set for ${this.dbusServiceName}! This will cause Venus OS validation failures.`);
+      } else {
+        console.log(`✅ Serial number properly configured for ${this.dbusServiceName}: ${serialNumber}`);
       }
       
       // Initialize connection status in device data for heartbeat
@@ -637,6 +637,13 @@ export class VEDBusService extends EventEmitter {
         const pathWithSlash = propertyName.startsWith('/') ? propertyName : `/${propertyName}`;
         const pathWithoutSlash = propertyName.startsWith('/') ? propertyName.substring(1) : propertyName;
         
+        // CRITICAL: Always handle Serial requests first - Venus OS validation depends on this
+        if (propertyName === 'Serial' || propertyName === '/Serial') {
+          const serialValue = `SK${this.vrmInstanceId}`;
+          console.log(`🔧 D-Bus Properties.Get Serial request for ${this.dbusServiceName}: ${serialValue}`);
+          return this._wrapValue('s', serialValue);
+        }
+        
         // Check management properties first (they take precedence)
         if (this.managementProperties[pathWithSlash]) {
           const config = this.managementProperties[pathWithSlash];
@@ -655,10 +662,8 @@ export class VEDBusService extends EventEmitter {
           return this._wrapValue(type, this.deviceData[pathWithoutSlash]);
         }
         
-        // CRITICAL: Special handling for BMV properties Venus OS looks for
-        if (propertyName === 'Serial' || propertyName === '/Serial') {
-          return this._wrapValue('s', `SK${this.vrmInstanceId}`);
-        } else if (propertyName === 'DeviceInstance' || propertyName === '/DeviceInstance') {
+        // CRITICAL: Special handling for other key properties Venus OS looks for
+        if (propertyName === 'DeviceInstance' || propertyName === '/DeviceInstance') {
           return this._wrapValue('i', this.vrmInstanceId);
         } else if (this.deviceConfig.serviceType === 'battery') {
           // For unknown battery properties, return sensible defaults
@@ -673,12 +678,31 @@ export class VEDBusService extends EventEmitter {
       GetAll: (interfaceName) => {
         // Return all properties for the interface
         const properties = {};
-        Object.entries(this.deviceData).forEach(([path, value]) => {
-          const type = this.deviceConfig.pathTypes?.[path] || 
-                      this.managementProperties[path]?.type || 'd';
+        
+        // CRITICAL: Always include Serial first for Venus OS validation
+        properties['Serial'] = this._wrapValue('s', `SK${this.vrmInstanceId}`);
+        properties['DeviceInstance'] = this._wrapValue('i', this.vrmInstanceId);
+        
+        // Add management properties
+        Object.entries(this.managementProperties).forEach(([path, config]) => {
           const propName = path.startsWith('/') ? path.substring(1) : path;
-          properties[propName] = this._wrapValue(type, value);
+          if (propName && propName !== 'Serial' && propName !== 'DeviceInstance') { // Avoid duplicates
+            const value = config.immutable ? config.value : this.deviceData[path];
+            properties[propName] = this._wrapValue(config.type, value);
+          }
         });
+        
+        // Add device data properties
+        Object.entries(this.deviceData).forEach(([path, value]) => {
+          if (this.managementProperties[path]) return; // Skip management properties
+          const type = this.deviceConfig.pathTypes?.[path] || 'd';
+          const propName = path.startsWith('/') ? path.substring(1) : path;
+          if (propName && propName !== 'Serial' && propName !== 'DeviceInstance') { // Avoid duplicates
+            properties[propName] = this._wrapValue(type, value);
+          }
+        });
+        
+        console.log(`🔧 D-Bus Properties.GetAll for ${this.dbusServiceName}: ${Object.keys(properties).length} properties`);
         return properties;
       },
       Set: (interfaceName, propertyName, value) => {
@@ -783,15 +807,26 @@ export class VEDBusService extends EventEmitter {
       Get: (interfaceName, propertyName) => {
         if (interfaceName === 'com.victronenergy.BusItem' && propertyName === 'Value') {
           return propertyInterface.GetValue();
+        } else if (interfaceName === 'com.victronenergy.BusItem' && propertyName === 'Text') {
+          return this._wrapValue('s', config.text);
+        }
+        // CRITICAL: Handle direct Serial property requests on individual property paths
+        else if (propertyName === 'Serial' && path === '/Serial') {
+          return this._wrapValue('s', `SK${this.vrmInstanceId}`);
         }
         return this._wrapValue('s', '');
       },
       GetAll: (interfaceName) => {
         if (interfaceName === 'com.victronenergy.BusItem') {
-          return {
+          const result = {
             'Value': propertyInterface.GetValue(),
             'Text': this._wrapValue('s', config.text)
           };
+          // Special handling for Serial property path
+          if (path === '/Serial') {
+            result['Serial'] = this._wrapValue('s', `SK${this.vrmInstanceId}`);
+          }
+          return result;
         }
         return {};
       },
