@@ -893,6 +893,20 @@ export class VEDBusService extends EventEmitter {
     
     if (this.bus && this.bus.connection && this.bus.connection.message && valueChanged) {
       try {
+        // CRITICAL: Validate values before creating D-Bus message to prevent "Missing or invalid serial" errors
+        if (value === null || value === undefined) {
+          console.log(`🔧 Skipping signal emission for ${path} with null/undefined value: ${value}`);
+          return; // Don't emit signals for invalid values
+        }
+        
+        // For numeric values, ensure they're valid numbers
+        if (type === 'd' || type === 'i') {
+          if (typeof value !== 'number' || isNaN(value)) {
+            console.log(`🔧 Skipping signal emission for ${path} with invalid numeric value: ${value}`);
+            return;
+          }
+        }
+        
         // Always emit basic ItemsChanged signal for value changes
         const changes = [];
         changes.push([path, [
@@ -962,7 +976,7 @@ export class VEDBusService extends EventEmitter {
   }
 
   emitPropertiesChanged(path, props) {
-    if (!this.bus || !this.isConnected || !this.bus.connection || !this.bus.connection.message) {
+    if (!this.bus || !this.isConnected) {
       // Connection not ready - this is normal during initialization
       return;
     }
@@ -999,42 +1013,75 @@ export class VEDBusService extends EventEmitter {
         return;
       }
 
-      // Emit PropertiesChanged signal on the specific property path
-      const propertyMsg = this.bus.connection.message({
-        type: 'signal',
-        path: path,
-        interface: 'org.freedesktop.DBus.Properties',
-        member: 'PropertiesChanged',
-        signature: 'sa{sv}as',
-        body: [
-          'com.victronenergy.BusItem',
-          changes,
-          []
-        ],
-        destination: null,
-        sender: this.dbusServiceName
-      });
-      this.bus.connection.send(propertyMsg);
-      
-      // CRITICAL: Also emit on root path for Venus OS systemcalc discovery
-      // This is what makes the difference between a tank sensor and BMV
-      const propertyName = path.startsWith('/') ? path.substring(1) : path;
-      if (changes.Value) {
-        const rootMsg = this.bus.connection.message({
+      // Use the proper emitSignal method if available, otherwise fall back to message approach
+      if (typeof this.bus.emitSignal === 'function') {
+        // CORRECT approach using bus.emitSignal
+        this.bus.emitSignal(
+          path,                                    // objectPath
+          'org.freedesktop.DBus.Properties',      // interface
+          'PropertiesChanged',                     // signalName
+          'sa{sv}as',                             // signature
+          [
+            'com.victronenergy.BusItem',          // interface name
+            changes,                              // changed properties
+            []                                    // invalidated properties
+          ]
+        );
+        
+        // CRITICAL: Also emit on root path for Venus OS systemcalc discovery
+        const propertyName = path.startsWith('/') ? path.substring(1) : path;
+        if (changes.Value) {
+          this.bus.emitSignal(
+            '/',                                   // objectPath (root)
+            'org.freedesktop.DBus.Properties',    // interface
+            'PropertiesChanged',                   // signalName
+            'sa{sv}as',                           // signature
+            [
+              'com.victronenergy.BusItem',        // interface name
+              { [propertyName]: changes.Value },  // changed properties
+              []                                  // invalidated properties
+            ]
+          );
+        }
+      } else {
+        // Fallback to connection.message approach
+        console.log('⚠️ emitSignal not available, using fallback message approach');
+        
+        const propertyMsg = this.bus.connection.message({
           type: 'signal',
-          path: '/',
+          path: path,
           interface: 'org.freedesktop.DBus.Properties',
           member: 'PropertiesChanged',
           signature: 'sa{sv}as',
           body: [
             'com.victronenergy.BusItem',
-            { [propertyName]: changes.Value },
+            changes,
             []
           ],
           destination: null,
           sender: this.dbusServiceName
         });
-        this.bus.connection.send(rootMsg);
+        this.bus.connection.send(propertyMsg);
+        
+        // Also emit on root path
+        const propertyName = path.startsWith('/') ? path.substring(1) : path;
+        if (changes.Value) {
+          const rootMsg = this.bus.connection.message({
+            type: 'signal',
+            path: '/',
+            interface: 'org.freedesktop.DBus.Properties',
+            member: 'PropertiesChanged',
+            signature: 'sa{sv}as',
+            body: [
+              'com.victronenergy.BusItem',
+              { [propertyName]: changes.Value },
+              []
+            ],
+            destination: null,
+            sender: this.dbusServiceName
+          });
+          this.bus.connection.send(rootMsg);
+        }
       }
     } catch (err) {
       console.error(`❌ Error emitting PropertiesChanged for ${path}:`, err.message || err);
@@ -1042,7 +1089,7 @@ export class VEDBusService extends EventEmitter {
   }
 
   emitValueChanged(path, value) {
-    if (!this.bus || !this.isConnected || !this.bus.connection || !this.bus.connection.message) {
+    if (!this.bus || !this.isConnected) {
       // Connection not ready - this is normal during initialization
       return;
     }
@@ -1068,35 +1115,60 @@ export class VEDBusService extends EventEmitter {
         return; // Don't emit for unsupported types
       }
 
-      // Emit ValueChanged signal on the property path (for direct property monitoring)
-      const propertyMsg = this.bus.connection.message({
-        type: 'signal',
-        path: path,
-        interface: 'com.victronenergy.BusItem',
-        member: 'ValueChanged',
-        signature: 'v',
-        body: [typedValue],
-        destination: null,
-        sender: this.dbusServiceName
-      });
-      this.bus.connection.send(propertyMsg);
-      
-      // CRITICAL: Emit on root path for Venus OS systemcalc integration
-      // This ensures proper BMV recognition by system services
-      const rootValueMsg = this.bus.connection.message({
-        type: 'signal',
-        path: '/',
-        interface: 'com.victronenergy.BusItem',
-        member: 'ValueChanged',
-        signature: 'sv',
-        body: [
-          path.startsWith('/') ? path.substring(1) : path,
-          typedValue
-        ],
-        destination: null,
-        sender: this.dbusServiceName
-      });
-      this.bus.connection.send(rootValueMsg);
+      // Use the proper emitSignal method if available, otherwise fall back to message approach
+      if (typeof this.bus.emitSignal === 'function') {
+        // CORRECT approach using bus.emitSignal
+        this.bus.emitSignal(
+          path,                          // objectPath
+          'com.victronenergy.BusItem',   // interface
+          'ValueChanged',                // signalName
+          'v',                           // signature for variant
+          [typedValue]                   // body
+        );
+        
+        // CRITICAL: Emit on root path for Venus OS systemcalc integration
+        this.bus.emitSignal(
+          '/',                           // objectPath (root)
+          'com.victronenergy.BusItem',   // interface
+          'ValueChanged',                // signalName
+          'sv',                          // signature for string + variant
+          [
+            path.startsWith('/') ? path.substring(1) : path,  // property name
+            typedValue                   // value
+          ]
+        );
+      } else {
+        // Fallback to connection.message approach
+        console.log('⚠️ emitSignal not available, using fallback message approach');
+        
+        const propertyMsg = this.bus.connection.message({
+          type: 'signal',
+          path: path,
+          interface: 'com.victronenergy.BusItem',
+          member: 'ValueChanged',
+          signature: 'v',
+          body: [typedValue],
+          destination: null,
+          sender: this.dbusServiceName
+        });
+        this.bus.connection.send(propertyMsg);
+        
+        // Also emit on root path
+        const rootValueMsg = this.bus.connection.message({
+          type: 'signal',
+          path: '/',
+          interface: 'com.victronenergy.BusItem',
+          member: 'ValueChanged',
+          signature: 'sv',
+          body: [
+            path.startsWith('/') ? path.substring(1) : path,
+            typedValue
+          ],
+          destination: null,
+          sender: this.dbusServiceName
+        });
+        this.bus.connection.send(rootValueMsg);
+      }
     } catch (err) {
       console.error(`❌ Error emitting ValueChanged for ${path}:`, err.message || err);
     }
