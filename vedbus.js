@@ -1399,24 +1399,52 @@ export class VEDBusService extends EventEmitter {
     }
   }
   
+  // updateValue(path, value) {
+  //   // Update device data
+  //   this.deviceData[path] = value;
+    
+  //   // Try to emit PropertiesChanged signal if we have the interface
+  //   if (this.exportedInterfaces[path] && this.exportedInterfaces[path].PropertiesChanged) {
+  //     try {
+  //       this.exportedInterfaces[path].PropertiesChanged([[path, this._wrapValue(
+  //         this.deviceConfig.pathTypes?.[path] || 'd', value
+  //       )]]);
+  //     } catch (error) {
+  //       // Silently ignore signal errors
+  //     }
+  //   }
+    
+  //   // Also update management properties if it's a management property
+  //   if (this.managementProperties[path] && !this.managementProperties[path].immutable) {
+  //     this.managementProperties[path].value = value;
+  //   }
+  // }
+
   updateValue(path, value) {
-    // Update device data
-    this.deviceData[path] = value;
-    
-    // Try to emit PropertiesChanged signal if we have the interface
-    if (this.exportedInterfaces[path] && this.exportedInterfaces[path].PropertiesChanged) {
-      try {
-        this.exportedInterfaces[path].PropertiesChanged([[path, this._wrapValue(
-          this.deviceConfig.pathTypes?.[path] || 'd', value
-        )]]);
-      } catch (error) {
-        // Silently ignore signal errors
+  // Update device data
+  this.deviceData[path] = value;
+
+  // Ensure the interface is exported before emitting
+  if (!this.exportedInterfaces[path]) {
+    this.exportPath(path);  // <-- wichtig: Stelle sicher, dass der Pfad bekannt ist
+  }
+
+  // Emit PropertiesChanged signal if we have the interface
+  if (this.exportedInterfaces[path] && this.exportedInterfaces[path].PropertiesChanged) {
+    try {
+      const wrapped = this._wrapValue(this.deviceConfig.pathTypes?.[path] || 'd', value);
+      if (wrapped !== undefined) {
+        this.exportedInterfaces[path].PropertiesChanged([[path, wrapped]]);
       }
-    }
-    
-    // Also update management properties if it's a management property
-    if (this.managementProperties[path] && !this.managementProperties[path].immutable) {
-      this.managementProperties[path].value = value;
+    } catch (error) {
+      console.warn(`❌ Failed to emit signal for ${path}:`, error.message);
     }
   }
+
+  // Update management properties if it's a management property
+  if (this.managementProperties[path] && !this.managementProperties[path].immutable) {
+    this.managementProperties[path].value = value;
+  }
+}
+
 }
