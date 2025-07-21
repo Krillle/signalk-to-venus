@@ -1013,10 +1013,10 @@ export class VEDBusService extends EventEmitter {
         return;
       }
 
-      // Use the proper emitSignal method if available, otherwise fall back to message approach
-      if (typeof this.bus.emitSignal === 'function') {
-        // CORRECT approach using bus.emitSignal
-        this.bus.emitSignal(
+      // Use the proper sendSignal method if available, otherwise fall back to message approach
+      if (typeof this.bus.sendSignal === 'function') {
+        // CORRECT approach using bus.sendSignal
+        this.bus.sendSignal(
           path,                                    // objectPath
           'org.freedesktop.DBus.Properties',      // interface
           'PropertiesChanged',                     // signalName
@@ -1031,7 +1031,7 @@ export class VEDBusService extends EventEmitter {
         // CRITICAL: Also emit on root path for Venus OS systemcalc discovery
         const propertyName = path.startsWith('/') ? path.substring(1) : path;
         if (changes.Value) {
-          this.bus.emitSignal(
+          this.bus.sendSignal(
             '/',                                   // objectPath (root)
             'org.freedesktop.DBus.Properties',    // interface
             'PropertiesChanged',                   // signalName
@@ -1045,7 +1045,7 @@ export class VEDBusService extends EventEmitter {
         }
       } else {
         // Fallback to connection.message approach
-        console.log('⚠️ emitSignal not available, using fallback message approach');
+        console.log('⚠️ sendSignal not available, using fallback message approach');
         
         const propertyMsg = this.bus.connection.message({
           type: 'signal',
@@ -1115,10 +1115,10 @@ export class VEDBusService extends EventEmitter {
         return; // Don't emit for unsupported types
       }
 
-      // Use the proper emitSignal method if available, otherwise fall back to message approach
-      if (typeof this.bus.emitSignal === 'function') {
-        // CORRECT approach using bus.emitSignal
-        this.bus.emitSignal(
+      // Use the proper sendSignal method if available, otherwise fall back to message approach
+      if (typeof this.bus.sendSignal === 'function') {
+        // CORRECT approach using bus.sendSignal
+        this.bus.sendSignal(
           path,                          // objectPath
           'com.victronenergy.BusItem',   // interface
           'ValueChanged',                // signalName
@@ -1127,7 +1127,7 @@ export class VEDBusService extends EventEmitter {
         );
         
         // CRITICAL: Emit on root path for Venus OS systemcalc integration
-        this.bus.emitSignal(
+        this.bus.sendSignal(
           '/',                           // objectPath (root)
           'com.victronenergy.BusItem',   // interface
           'ValueChanged',                // signalName
@@ -1139,7 +1139,7 @@ export class VEDBusService extends EventEmitter {
         );
       } else {
         // Fallback to connection.message approach
-        console.log('⚠️ emitSignal not available, using fallback message approach');
+        console.log('⚠️ sendSignal not available, using fallback message approach');
         
         const propertyMsg = this.bus.connection.message({
           type: 'signal',
