@@ -14,7 +14,7 @@ export class VEDBusService extends EventEmitter {
     this.deviceInstance = deviceInstance;
     this.settings = settings;
     this.deviceConfig = deviceConfig;
-    this.dbusServiceName = `com.victronenergy.${deviceConfig.serviceType}.${serviceName}`;
+    this.dbusServiceName = `com.victronenergy.${deviceConfig.serviceType}.signalkconnector_${serviceName}`;
     this.deviceData = {};
     this.exportedInterfaces = {};
     this.bus = null;
@@ -26,18 +26,21 @@ export class VEDBusService extends EventEmitter {
     this.reconnectAttempts = 0;
     this.maxReconnectAttempts = 10;
     
+    // Generate unique serial number like dbus-serialbattery - combine serviceType and instance
+    const uniqueSerial = `SK_${deviceConfig.serviceType}_${serviceName}_${this.vrmInstanceId}`;
+    
     // Management properties that are common to all devices
     this.managementProperties = {
       "/Mgmt/ProcessName": { type: "s", value: deviceConfig.processName, text: "Process name", immutable: true },
       "/Mgmt/ProcessVersion": { type: "s", value: "1.0.12", text: "Process version", immutable: true },
       "/Mgmt/Connection": { type: "i", value: 1, text: "Connected", immutable: true },
       "/DeviceInstance": { type: "i", value: this.vrmInstanceId, text: "Device instance", immutable: true },
-      "/ProductId": { type: "i", value: deviceConfig.serviceType === 'battery' ? 0xB012 : 0, text: "Product ID", immutable: true },
+      "/ProductId": { type: "i", value: deviceConfig.serviceType === 'battery' ? 0xBA77 : 0, text: "Product ID", immutable: true },
       "/ProductName": { type: "s", value: deviceConfig.productName, text: "Product name", immutable: true },
-      "/FirmwareVersion": { type: "i", value: 0, text: "Firmware Version", immutable: true },
-      "/HardwareVersion": { type: "i", value: 0, text: "Hardware Version", immutable: true },
+      "/FirmwareVersion": { type: "s", value: "1.0.12", text: "Firmware Version", immutable: true },
+      "/HardwareVersion": { type: "s", value: "1.0", text: "Hardware Version", immutable: true },
       "/Connected": { type: "i", value: 1, text: "Connected", immutable: true },
-      "/Serial": { type: "s", value: `SK${this.vrmInstanceId}`, text: "Serial number", immutable: true },
+      "/Serial": { type: "s", value: uniqueSerial, text: "Serial number", immutable: true },
       "/CustomName": { type: "s", value: deviceInstance.name, text: "Custom name" },
       ...deviceConfig.additionalProperties
     };
@@ -47,21 +50,45 @@ export class VEDBusService extends EventEmitter {
     // Create own D-Bus connection and register service
     await this._createBusConnection();
     
-    // CRITICAL: Set serial number immediately and ensure it's exported
-    const serialNumber = `SK${this.vrmInstanceId}`;
-    console.log(`🔧 Initializing serial number for ${this.dbusServiceName}: ${serialNumber}`);
+    // Get the proper serial number from management properties
+    const serialNumber = this.managementProperties["/Serial"].value;
+    // Store serial in device data for consistency
     this.deviceData['/Serial'] = serialNumber;
-    this.managementProperties["/Serial"].value = serialNumber;
     
-    // Immediately export the serial number property for ALL device types
-    // This is critical for Venus OS to validate D-Bus signals from our service
-    this._exportProperty('/Serial', {
-      value: serialNumber,
-      type: 's',
-      text: 'Serial number',
-      immutable: true
-    });
-    console.log(`� Serial number exported for ${this.deviceConfig.serviceType}: ${serialNumber}`);
+    console.log(`🔧 Initializing serial number for ${this.dbusServiceName}: ${serialNumber}`);
+    
+    // For BMV devices, immediately export all required properties to prevent "Missing or invalid serial" errors
+    if (this.deviceConfig.serviceType === 'battery') {
+      console.log(`🔋 Setting up BMV-specific properties for ${this.dbusServiceName}`);
+      
+      // Export all management properties immediately
+      Object.entries(this.managementProperties).forEach(([path, config]) => {
+        this._exportProperty(path, config);
+      });
+      
+      // Export minimal BMV properties with default values to prevent validation errors
+      const minimalBMVProperties = {
+        '/Soc': { value: 50, type: 'd', text: 'State of charge (%)' },
+        '/Dc/0/Voltage': { value: 12.6, type: 'd', text: 'DC voltage' },
+        '/Dc/0/Current': { value: 0, type: 'd', text: 'DC current' },
+        '/Dc/0/Power': { value: 0, type: 'd', text: 'DC power' }
+      };
+      
+      Object.entries(minimalBMVProperties).forEach(([path, config]) => {
+        if (!this.deviceData[path]) {
+          this.deviceData[path] = config.value;
+          this._exportProperty(path, config);
+        }
+      });
+      
+      console.log(`✅ BMV properties initialized for ${this.dbusServiceName} with serial: ${serialNumber}`);
+    } else {
+      // For non-BMV devices, just export management properties
+      Object.entries(this.managementProperties).forEach(([path, config]) => {
+        this._exportProperty(path, config);
+      });
+      console.log(`✅ Management properties exported for ${this.deviceConfig.serviceType}: ${serialNumber}`);
+    }
     
     await this._registerInSettings();
     await this._registerService();
@@ -588,6 +615,7 @@ export class VEDBusService extends EventEmitter {
         return items;
       },
       GetValue: () => {
+        console.log(`🔍 D-Bus BusItem.GetValue request for ${this.dbusServiceName}`);
         const items = [];
         
         // Add management properties
@@ -633,6 +661,9 @@ export class VEDBusService extends EventEmitter {
 
     const dbusPropertiesImpl = {
       Get: (interfaceName, propertyName) => {
+        // Log ALL property requests to debug what Venus OS is looking for
+        console.log(`🔍 D-Bus Properties.Get request: interface=${interfaceName}, property=${propertyName} for ${this.dbusServiceName}`);
+        
         // Handle requests for properties with or without leading slash
         const pathWithSlash = propertyName.startsWith('/') ? propertyName : `/${propertyName}`;
         const pathWithoutSlash = propertyName.startsWith('/') ? propertyName.substring(1) : propertyName;
@@ -805,6 +836,7 @@ export class VEDBusService extends EventEmitter {
 
     const dbusPropertiesImpl = {
       Get: (interfaceName, propertyName) => {
+        console.log(`🔍 Individual property D-Bus Get: path=${path}, interface=${interfaceName}, property=${propertyName}`);
         if (interfaceName === 'com.victronenergy.BusItem' && propertyName === 'Value') {
           return propertyInterface.GetValue();
         } else if (interfaceName === 'com.victronenergy.BusItem' && propertyName === 'Text') {
@@ -812,6 +844,7 @@ export class VEDBusService extends EventEmitter {
         }
         // CRITICAL: Handle direct Serial property requests on individual property paths
         else if (propertyName === 'Serial' && path === '/Serial') {
+          console.log(`🔧 Serial property direct access on ${path}: SK${this.vrmInstanceId}`);
           return this._wrapValue('s', `SK${this.vrmInstanceId}`);
         }
         return this._wrapValue('s', '');
@@ -886,6 +919,9 @@ export class VEDBusService extends EventEmitter {
                                         path === '/Serial' || path === '/DeviceInstance';
           
           if (isCriticalBatteryPath) {
+            // TEMPORARILY DISABLED: Complex signal emission causing "Missing or invalid serial" errors
+            // TODO: Re-enable once serial number validation is working properly
+            /*
             // Emit PropertiesChanged signal for Venus OS systemcalc integration
             this.emitPropertiesChanged(path, {
               Value: value,
@@ -894,8 +930,9 @@ export class VEDBusService extends EventEmitter {
             
             // Emit ValueChanged signal for individual property updates
             this.emitValueChanged(path, value);
+            */
             
-            console.log(`🔋 BMV signal emitted for ${path} = ${value}`);
+            console.log(`🔋 BMV property updated (simplified): ${path} = ${value}`);
           } else {
             console.log(`📝 Battery property updated: ${path} = ${value}`);
           }
