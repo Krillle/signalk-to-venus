@@ -1196,6 +1196,24 @@ export class VEDBusService extends EventEmitter {
       return;
     }
 
+    // Additional validation for not numeric of undefined values to prevent invalid Variants
+    if (typeof value !== 'number' || isNaN(value)) {
+      console.warn(`⚠️ Skipping invalid value for ${path}:`, value);
+      return;
+    }
+
+    try {
+      this.bus.emitSignal(
+        path,
+        'com.victronenergy.BusItem',
+        'ValueChanged',
+        'v',
+        [new Variant('d', value)]
+      );
+    } catch (err) {
+      console.error(`❌ Failed to emit ValueChanged for ${path}:`, err.message);
+    }
+
     try {
       // Create properly typed variant for Venus OS consumption using safe utility
       let typedValue;
