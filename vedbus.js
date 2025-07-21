@@ -37,6 +37,7 @@ export class VEDBusService extends EventEmitter {
       "/FirmwareVersion": { type: "i", value: 0, text: "Firmware Version", immutable: true },
       "/HardwareVersion": { type: "i", value: 0, text: "Hardware Version", immutable: true },
       "/Connected": { type: "i", value: 1, text: "Connected", immutable: true },
+      "/Serial": { type: "s", value: `SK${this.vrmInstanceId}`, text: "Serial number", immutable: true },
       "/CustomName": { type: "s", value: deviceInstance.name, text: "Custom name" },
       ...deviceConfig.additionalProperties
     };
@@ -732,8 +733,11 @@ export class VEDBusService extends EventEmitter {
 
     this._exportProperty(path, { value, type, text });
     
-    // Emit D-Bus signals when values change using direct message sending
-    if (this.bus && this.bus.connection && this.bus.connection.message) {
+    // Only emit D-Bus signals for battery services and only when values change
+    // Tanks and environment sensors don't need intensive signaling for VRM integration
+    const isBatteryService = this.deviceConfig.serviceType === 'battery';
+    
+    if (this.bus && this.bus.connection && this.bus.connection.message && valueChanged && isBatteryService) {
       try {
         // METHOD 1: Emit ItemsChanged signal (for VenusOS compatibility)
         const changes = [];
@@ -754,12 +758,12 @@ export class VEDBusService extends EventEmitter {
         });
         this.bus.connection.send(itemsChangedMsg);
         
-        // METHOD 2: Emit PropertiesChanged and ValueChanged signals for better systemcalc integration
-        // Only emit enhanced signals for battery services or when values actually change
-        const isBatteryService = this.deviceConfig.serviceType === 'battery';
-        const isCriticalPath = path === '/Soc' || path === '/Dc/0/Current' || path === '/Dc/0/Voltage';
+        // METHOD 2: Emit PropertiesChanged and ValueChanged signals for battery monitor integration
+        // Only for critical battery paths that need system service integration
+        const isCriticalBatteryPath = path === '/Soc' || path === '/Dc/0/Current' || path === '/Dc/0/Voltage' || 
+                                      path === '/ConsumedAmphours' || path === '/TimeToGo' || path === '/Dc/0/Power';
         
-        if (valueChanged || (isBatteryService && isCriticalPath)) {
+        if (isCriticalBatteryPath) {
           this.emitPropertiesChanged(path, {
             Value: value,
             Text: text
@@ -767,7 +771,7 @@ export class VEDBusService extends EventEmitter {
           
           this.emitValueChanged(path, value);
           
-          console.log(`✅ D-Bus signals emitted for ${path} = ${value} (${this.deviceConfig.serviceType})`);
+          console.log(`✅ Battery monitor signals emitted for ${path} = ${value}`);
         }
         
       } catch (err) {
@@ -780,11 +784,12 @@ export class VEDBusService extends EventEmitter {
           console.error(`❌ Error emitting signals for ${path} on ${this.dbusServiceName}:`, err.message || err);
         }
       }
-    } else {
+    } else if (!isBatteryService && valueChanged) {
+      // For non-battery services (tanks, environment), just log the update without intensive signaling
+      console.log(`📝 ${this.deviceConfig.serviceType} property updated: ${path} = ${value}`);
+    } else if (this.deviceData[path] === undefined) {
       // D-Bus connection not available - this is expected during initialization
-      if (this.deviceData[path] === undefined) {
-        console.log(`D-Bus not ready for ${this.dbusServiceName}, storing ${path} = ${value} for later emission`);
-      }
+      console.log(`D-Bus not ready for ${this.dbusServiceName}, storing ${path} = ${value} for later emission`);
     }
   }
 

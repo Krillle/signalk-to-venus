@@ -112,7 +112,7 @@ export class VenusClient extends EventEmitter {
           // Additional battery monitor specific paths that Venus OS might need
           await deviceService.updateProperty('/System/BatteryService', 1, 'i', 'Battery service');
           
-          // Critical property that tells Venus OS this is an active battery monitor
+          // Critical properties for BMV recognition by Venus OS system service
           await deviceService.updateProperty('/System/NrOfBatteries', 1, 'i', 'Number of batteries');
           await deviceService.updateProperty('/System/MinCellVoltage', 12.0, 'd', 'Minimum cell voltage');
           await deviceService.updateProperty('/System/MaxCellVoltage', 14.4, 'd', 'Maximum cell voltage');
@@ -128,14 +128,14 @@ export class VenusClient extends EventEmitter {
           await deviceService.updateProperty('/Alarms/HighTemperature', 0, 'i', 'High temperature alarm');
           await deviceService.updateProperty('/Alarms/LowTemperature', 0, 'i', 'Low temperature alarm');
           
-          // Add Connected property which Venus OS might require
+          // Add Connected property which Venus OS requires for BMV recognition
           await deviceService.updateProperty('/Connected', 1, 'i', 'Connected');
           
-          // Add DeviceType property
+          // Add DeviceType property - 512 is the code for BMV
           await deviceService.updateProperty('/DeviceType', 512, 'i', 'Device type');
           
           // Add critical system integration properties that Venus OS system service needs
-          // These are essential for proper VRM integration
+          // These are essential for proper VRM integration and BMV recognition
           await deviceService.updateProperty('/Info/BatteryLowVoltage', 0, 'i', 'Battery low voltage info');
           await deviceService.updateProperty('/Info/MaxChargeCurrent', 100, 'i', 'Max charge current');
           await deviceService.updateProperty('/Info/MaxDischargeCurrent', 100, 'i', 'Max discharge current');
@@ -155,6 +155,9 @@ export class VenusClient extends EventEmitter {
           await deviceService.updateProperty('/Io/AllowToCharge', 1, 'i', 'Allow to charge');
           await deviceService.updateProperty('/Io/AllowToDischarge', 1, 'i', 'Allow to discharge');
           await deviceService.updateProperty('/Io/ExternalRelay', 0, 'i', 'External relay');
+          
+          // Force a system service notification after initialization
+          console.log(`🔋 Battery monitor ${deviceInstance.name} initialized with full BMV compatibility`);
           break;
 
         case 'switch':
@@ -487,9 +490,11 @@ export class VenusClient extends EventEmitter {
         // Calculate power if we have both voltage and current
         await this._calculateAndUpdatePower(deviceService, deviceName);
         
-        // Trigger system service update by updating system properties
-        await this._notifySystemService(deviceService, deviceName);
-        await this._triggerSystemServiceRefresh(deviceService, deviceName);
+        // Only trigger system service updates for battery monitors (BMV)
+        if (this._internalDeviceType === 'battery') {
+          await this._notifySystemService(deviceService, deviceName);
+          await this._triggerSystemServiceRefresh(deviceService, deviceName);
+        }
       }
     } else if (path.includes('current')) {
       if (typeof value === 'number' && !isNaN(value)) {
@@ -499,9 +504,11 @@ export class VenusClient extends EventEmitter {
         // Calculate power if we have both voltage and current
         await this._calculateAndUpdatePower(deviceService, deviceName);
         
-        // Trigger system service update
-        await this._notifySystemService(deviceService, deviceName);
-        await this._triggerSystemServiceRefresh(deviceService, deviceName);
+        // Only trigger system service updates for battery monitors (BMV)
+        if (this._internalDeviceType === 'battery') {
+          await this._notifySystemService(deviceService, deviceName);
+          await this._triggerSystemServiceRefresh(deviceService, deviceName);
+        }
       }
     } else if (path.includes('stateOfCharge') || (path.includes('capacity') && path.includes('state'))) {
       if (typeof value === 'number' && !isNaN(value)) {
@@ -512,9 +519,11 @@ export class VenusClient extends EventEmitter {
         // Update battery dummy data (especially consumed Ah based on SOC)
         await this._updateBatteryDummyData(deviceService, deviceName);
         
-        // This is critical - trigger system service update when SOC changes
-        await this._notifySystemService(deviceService, deviceName);
-        await this._triggerSystemServiceRefresh(deviceService, deviceName);
+        // This is critical - trigger system service update when SOC changes for BMV
+        if (this._internalDeviceType === 'battery') {
+          await this._notifySystemService(deviceService, deviceName);
+          await this._triggerSystemServiceRefresh(deviceService, deviceName);
+        }
       }
     } else if (path.includes('timeRemaining')) {
       if (typeof value === 'number' && !isNaN(value) && value !== null) {
@@ -634,6 +643,11 @@ export class VenusClient extends EventEmitter {
   }
 
   async _updateBatteryDummyData(deviceService, deviceName) {
+    // Only update dummy data for battery devices
+    if (this._internalDeviceType !== 'battery') {
+      return;
+    }
+    
     // Update dummy data for values that might not be coming from Signal K
     
     // Check if device service is connected
@@ -655,7 +669,6 @@ export class VenusClient extends EventEmitter {
       const consumedAh = capacity * (100 - currentSoc) / 100;
       try {
         await deviceService.updateProperty('/ConsumedAmphours', consumedAh, 'd', `${deviceName} consumed Ah`);
-        this.emit('dataUpdated', 'Battery Consumed', `${deviceName}: ${consumedAh.toFixed(1)}Ah`);
       } catch (err) {
         if (err.code === 'ECONNRESET' || err.code === 'ECONNREFUSED' || err.code === 'EPIPE') {
           console.log(`Connection lost while updating consumed Ah for ${deviceName}`);
@@ -683,7 +696,6 @@ export class VenusClient extends EventEmitter {
         await deviceService.updateProperty('/Dc/0/MidVoltage', voltage, 'd', `${deviceName} mid voltage`);
         
         // Calculate mid voltage deviation (for single battery, this is typically 0)
-        // For multi-cell batteries, this would be the deviation from average cell voltage
         await deviceService.updateProperty('/Dc/0/MidVoltageDeviation', 0.0, 'd', `${deviceName} mid voltage deviation`);
       } catch (err) {
         if (err.code === 'ECONNRESET' || err.code === 'ECONNREFUSED' || err.code === 'EPIPE') {
@@ -695,7 +707,8 @@ export class VenusClient extends EventEmitter {
     }
     
     // Update time to go based on current consumption
-    if (typeof current === 'number' && !isNaN(current) && current > 0) {
+    if (typeof current === 'number' && !isNaN(current) && current > 0 && 
+        typeof capacity === 'number' && typeof currentSoc === 'number') {
       // Calculate time to go based on remaining capacity and current consumption
       const remainingCapacity = capacity * (currentSoc / 100);
       const timeToGoHours = remainingCapacity / current;
@@ -703,9 +716,6 @@ export class VenusClient extends EventEmitter {
       
       try {
         await deviceService.updateProperty('/TimeToGo', timeToGoSeconds, 'i', `${deviceName} time to go`);
-        const hours = Math.floor(timeToGoSeconds / 3600);
-        const minutes = Math.floor((timeToGoSeconds % 3600) / 60);
-        this.emit('dataUpdated', 'Battery Time to Go', `${deviceName}: ${hours}h ${minutes}m`);
       } catch (err) {
         if (err.code === 'ECONNRESET' || err.code === 'ECONNREFUSED' || err.code === 'EPIPE') {
           console.log(`Connection lost while updating time to go for ${deviceName}`);
@@ -713,15 +723,11 @@ export class VenusClient extends EventEmitter {
           console.error(`Error updating time to go for ${deviceName}:`, err);
         }
       }
-    } else {
-      // If no current data or current is 0 or negative, use a default based on SOC
-      let defaultTimeToGo = 8 * 3600; // 8 hours default
-      if (typeof currentSoc === 'number' && !isNaN(currentSoc)) {
-        // Scale time to go based on SOC: higher SOC = more time remaining
-        // At 100% SOC: 20 hours, at 50% SOC: 10 hours, at 20% SOC: 4 hours
-        defaultTimeToGo = Math.round((currentSoc / 100) * 20 * 3600);
-        defaultTimeToGo = Math.max(defaultTimeToGo, 1800); // Minimum 30 minutes
-      }
+    } else if (typeof currentSoc === 'number' && !isNaN(currentSoc)) {
+      // If no current data or current is 0/negative, use a default based on SOC
+      // Scale time to go based on SOC: higher SOC = more time remaining
+      let defaultTimeToGo = Math.round((currentSoc / 100) * 20 * 3600); // Up to 20 hours
+      defaultTimeToGo = Math.max(defaultTimeToGo, 1800); // Minimum 30 minutes
       try {
         await deviceService.updateProperty('/TimeToGo', defaultTimeToGo, 'i', `${deviceName} time to go`);
       } catch (err) {
@@ -756,18 +762,18 @@ export class VenusClient extends EventEmitter {
   }
 
   async _notifySystemService(deviceService, deviceName) {
-    // Simplified Venus OS system service refresh - only basic state updates
+    // Only run for battery services - simplified Venus OS system service refresh
+    if (this._internalDeviceType !== 'battery') {
+      return;
+    }
+    
     try {
-      // Method 1: Basic connect/state cycling to wake up system service
+      // Basic state updates to wake up system service - minimal approach
       await deviceService.updateProperty('/Connected', 1, 'i', `${deviceName} connected`);
       await deviceService.updateProperty('/State', 1, 'i', `${deviceName} active`);
-      
-      // Method 2: Update system service recognition flags
       await deviceService.updateProperty('/System/BatteryService', 1, 'i', `${deviceName} battery service active`);
       await deviceService.updateProperty('/DeviceType', 512, 'i', `${deviceName} device type`);
       
-      // For debugging - emit an event so we can track when system notifications occur
-      this.emit('systemNotified', 'Battery System Update', `${deviceName}: Basic system service update completed`);
     } catch (err) {
       if (err.code === 'ECONNRESET' || err.code === 'ECONNREFUSED' || err.code === 'EPIPE') {
         console.log(`Connection lost while notifying system service for ${deviceName}`);
@@ -778,30 +784,31 @@ export class VenusClient extends EventEmitter {
   }
 
   async _triggerSystemServiceRefresh(deviceService, deviceName) {
-    // Rate-limited D-Bus signal refresh to prevent spam
+    // Only run for battery services - rate-limited D-Bus signal refresh
+    if (this._internalDeviceType !== 'battery') {
+      return;
+    }
+    
     const now = Date.now();
     const lastRefresh = this._lastSystemRefresh || 0;
     
-    // Rate limit: only refresh once every 500ms (more aggressive for BMV sync)
-    if (now - lastRefresh < 500) {
+    // Rate limit: only refresh once every 2 seconds to prevent spam
+    if (now - lastRefresh < 2000) {
       return;
     }
     
     this._lastSystemRefresh = now;
     
     try {
-      // Get current values from deviceData
+      // Get current values from deviceData and refresh key properties
       const socValue = deviceService.deviceData['/Soc'] || 50.0;
       const currentValue = deviceService.deviceData['/Dc/0/Current'] || 0.0;
       const voltageValue = deviceService.deviceData['/Dc/0/Voltage'] || 24.0;
 
+      // Only update the core BMV values that Venus OS needs for system integration
       await deviceService.updateProperty('/Soc', socValue, 'd', `${deviceName} state of charge`);
       await deviceService.updateProperty('/Dc/0/Current', currentValue, 'd', `${deviceName} current`);
       await deviceService.updateProperty('/Dc/0/Voltage', voltageValue, 'd', `${deviceName} voltage`);
-      
-      // Also update connection state to ensure system service sees we're active
-      await deviceService.updateProperty('/Connected', 1, 'i', `${deviceName} connected`);
-      await deviceService.updateProperty('/State', 1, 'i', `${deviceName} active`);
       
     } catch (err) {
       console.error(`Error in system service refresh for ${deviceName}:`, err);
