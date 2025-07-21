@@ -1021,8 +1021,7 @@ export class VEDBusService extends EventEmitter {
         }
       }
     } else if (!valueChanged) {
-      // Value hasn't changed, no signal needed
-      console.log(`� Property ${path} unchanged: ${value}`);
+      // Value hasn't changed, no signal needed - removed excessive logging
     } else {
       // D-Bus connection not available - this is expected during initialization
       console.log(`D-Bus not ready for ${this.dbusServiceName}, storing ${path} = ${value} for later emission`);
