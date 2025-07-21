@@ -46,6 +46,11 @@ export class VEDBusService extends EventEmitter {
   async init() {
     // Create own D-Bus connection and register service
     await this._createBusConnection();
+    
+    // Ensure serial number is set immediately after connection
+    console.log(`🔧 Initializing serial number for ${this.dbusServiceName}: SK${this.vrmInstanceId}`);
+    this.deviceData['/Serial'] = `SK${this.vrmInstanceId}`;
+    
     await this._registerInSettings();
     await this._registerService();
   }
@@ -399,6 +404,15 @@ export class VEDBusService extends EventEmitter {
 
       console.log(`Successfully registered ${this.deviceConfig.serviceType} service ${this.dbusServiceName} on D-Bus`);
       
+      // Verify that critical properties are properly set
+      const serialNumber = this.deviceData['/Serial'];
+      const deviceInstance = this.deviceData['/DeviceInstance'];
+      console.log(`🔧 Service ${this.dbusServiceName} initialized with Serial: ${serialNumber}, DeviceInstance: ${deviceInstance}`);
+      
+      if (!serialNumber) {
+        console.error(`❌ Warning: No serial number set for ${this.dbusServiceName}!`);
+      }
+      
       // Initialize connection status in device data for heartbeat
       this.deviceData["/Mgmt/Connection"] = 1;
       
@@ -576,28 +590,50 @@ export class VEDBusService extends EventEmitter {
 
     const dbusPropertiesImpl = {
       Get: (interfaceName, propertyName) => {
-        // Simple implementation - return the property value if it exists
-        const path = `/${propertyName}`;
-        if (this.deviceData[path] !== undefined) {
-          const type = this.deviceConfig.pathTypes?.[path] || 'd';
-          return this._wrapValue(type, this.deviceData[path]);
+        // Handle requests for properties with or without leading slash
+        const pathWithSlash = propertyName.startsWith('/') ? propertyName : `/${propertyName}`;
+        const pathWithoutSlash = propertyName.startsWith('/') ? propertyName.substring(1) : propertyName;
+        
+        // Check both forms in deviceData
+        if (this.deviceData[pathWithSlash] !== undefined) {
+          const type = this.deviceConfig.pathTypes?.[pathWithSlash] || 
+                      this.managementProperties[pathWithSlash]?.type || 'd';
+          return this._wrapValue(type, this.deviceData[pathWithSlash]);
         }
+        
+        if (this.deviceData[pathWithoutSlash] !== undefined) {
+          const type = this.deviceConfig.pathTypes?.[pathWithoutSlash] || 'd';
+          return this._wrapValue(type, this.deviceData[pathWithoutSlash]);
+        }
+        
+        // Special handling for common properties Venus OS looks for
+        if (propertyName === 'Serial' || propertyName === '/Serial') {
+          return this._wrapValue('s', `SK${this.vrmInstanceId}`);
+        }
+        
         return this._wrapValue('s', '');
       },
       GetAll: (interfaceName) => {
         // Return all properties for the interface
         const properties = {};
         Object.entries(this.deviceData).forEach(([path, value]) => {
-          const type = this.deviceConfig.pathTypes?.[path] || 'd';
-          properties[path.substring(1)] = this._wrapValue(type, value); // Remove leading slash
+          const type = this.deviceConfig.pathTypes?.[path] || 
+                      this.managementProperties[path]?.type || 'd';
+          const propName = path.startsWith('/') ? path.substring(1) : path;
+          properties[propName] = this._wrapValue(type, value);
         });
         return properties;
       },
       Set: (interfaceName, propertyName, value) => {
-        // Allow setting properties via D-Bus
-        const path = `/${propertyName}`;
+        // Allow setting properties via D-Bus (only non-immutable ones)
+        const pathWithSlash = propertyName.startsWith('/') ? propertyName : `/${propertyName}`;
+        
+        if (this.managementProperties[pathWithSlash]?.immutable) {
+          return; // Don't allow setting immutable properties
+        }
+        
         const actualValue = Array.isArray(value) ? value[1] : value;
-        this.deviceData[path] = actualValue;
+        this.deviceData[pathWithSlash] = actualValue;
       }
     };
 
@@ -611,10 +647,8 @@ export class VEDBusService extends EventEmitter {
   }
 
   _exportProperty(path, config) {
-    // Set/update the value
-    if (!this.managementProperties[path]?.immutable) {
-      this.deviceData[path] = config.value;
-    }
+    // Set/update the value in deviceData for both mutable and immutable properties
+    this.deviceData[path] = config.value;
 
     // If already exported, done.
     if (path in this.exportedInterfaces) {
@@ -642,11 +676,13 @@ export class VEDBusService extends EventEmitter {
 
     const propertyInterface = {
       GetValue: () => {
-        if (this.managementProperties[path]?.immutable) {
-          return this._wrapValue(config.type, config.value);
+        // Always get the current value from deviceData, whether immutable or not
+        const currentValue = this.deviceData[path];
+        if (currentValue !== undefined) {
+          return this._wrapValue(config.type, currentValue);
         }
-        const currentValue = this.deviceData[path] || (config.type === 's' ? '' : 0);
-        return this._wrapValue(config.type, currentValue);
+        // Fallback to config value if not in deviceData
+        return this._wrapValue(config.type, config.value);
       },
       SetValue: (val) => {
         if (this.managementProperties[path]?.immutable) {
@@ -663,15 +699,8 @@ export class VEDBusService extends EventEmitter {
         return 0; // OK - value set successfully
       },
       GetText: () => {
-        // Handle invalid values like vedbus.py
-        if (this.managementProperties[path]?.immutable) {
-          return config.text;
-        }
-        const currentValue = this.deviceData[path];
-        if (currentValue === null || currentValue === undefined) {
-          return '---'; // vedbus.py pattern for invalid values
-        }
-        return config.text;
+        // Always return the configured text for the property
+        return config.text || `${path} property`;
       },
       emit: (signalName, ...signalOutputParams) => {
       },
@@ -739,6 +768,12 @@ export class VEDBusService extends EventEmitter {
     
     if (this.bus && this.bus.connection && this.bus.connection.message && valueChanged && isBatteryService) {
       try {
+        // Ensure serial number is available before emitting signals
+        if (!this.deviceData['/Serial']) {
+          console.warn(`No serial number available for ${this.dbusServiceName} - setting default`);
+          this.deviceData['/Serial'] = `SK${this.vrmInstanceId}`;
+        }
+        
         // METHOD 1: Emit ItemsChanged signal (for VenusOS compatibility)
         const changes = [];
         changes.push([path, [
@@ -760,10 +795,11 @@ export class VEDBusService extends EventEmitter {
         
         // METHOD 2: Emit PropertiesChanged and ValueChanged signals for battery monitor integration
         // Only for critical battery paths that need system service integration
+        // Temporarily disabled to debug serial number issue
         const isCriticalBatteryPath = path === '/Soc' || path === '/Dc/0/Current' || path === '/Dc/0/Voltage' || 
                                       path === '/ConsumedAmphours' || path === '/TimeToGo' || path === '/Dc/0/Power';
         
-        if (isCriticalBatteryPath) {
+        if (isCriticalBatteryPath && false) { // Temporarily disabled
           this.emitPropertiesChanged(path, {
             Value: value,
             Text: text
@@ -772,6 +808,8 @@ export class VEDBusService extends EventEmitter {
           this.emitValueChanged(path, value);
           
           console.log(`✅ Battery monitor signals emitted for ${path} = ${value}`);
+        } else if (isCriticalBatteryPath) {
+          console.log(`📝 Battery property updated (signals disabled): ${path} = ${value}`);
         }
         
       } catch (err) {
@@ -800,6 +838,12 @@ export class VEDBusService extends EventEmitter {
     }
 
     try {
+      // Ensure serial number is available before emitting signals
+      if (!this.deviceData['/Serial']) {
+        console.warn(`No serial number for ${this.dbusServiceName} - skipping PropertiesChanged signal`);
+        return;
+      }
+
       // Create D-Bus compatible signal data
       const changes = {};
       for (const key in props) {
@@ -860,6 +904,12 @@ export class VEDBusService extends EventEmitter {
     }
 
     try {
+      // Ensure serial number is available before emitting signals
+      if (!this.deviceData['/Serial']) {
+        console.warn(`No serial number for ${this.dbusServiceName} - skipping ValueChanged signal`);
+        return;
+      }
+
       let typedValue;
       if (typeof value === 'number') {
         typedValue = new Variant('d', value);

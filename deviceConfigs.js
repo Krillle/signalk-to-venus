@@ -31,6 +31,7 @@ export const DEVICE_CONFIGS = {
       '/RawValueFull': 'Tank raw value'
     },
     pathTypes: {
+      '/Serial': 's',
       '/Level': 'd',
       '/Capacity': 'd',
       '/FluidType': 'i',
@@ -146,6 +147,7 @@ export const DEVICE_CONFIGS = {
       '/Io/ExternalRelay': 'External relay'
     },
     pathTypes: {
+      '/Serial': 's',
       '/Dc/0/Voltage': 'd',
       '/Dc/0/Current': 'd',
       '/Dc/0/Power': 'd',
@@ -209,6 +211,7 @@ export const DEVICE_CONFIGS = {
       '/DimmingLevel': 'Dimming level'
     },
     pathTypes: {
+      '/Serial': 's',
       '/Relay/0/State': 'i',
       '/Switches/0/State': 'i',
       '/Switches/0/Position': 'i',
@@ -234,6 +237,7 @@ export const DEVICE_CONFIGS = {
       '/Status': 'Status'
     },
     pathTypes: {
+      '/Serial': 's',
       '/Temperature': 'd',
       '/Humidity': 'd',
       '/Status': 'i'
