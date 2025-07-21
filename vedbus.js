@@ -47,9 +47,23 @@ export class VEDBusService extends EventEmitter {
     // Create own D-Bus connection and register service
     await this._createBusConnection();
     
-    // Ensure serial number is set immediately after connection
-    console.log(`🔧 Initializing serial number for ${this.dbusServiceName}: SK${this.vrmInstanceId}`);
-    this.deviceData['/Serial'] = `SK${this.vrmInstanceId}`;
+    // CRITICAL: Set serial number immediately and ensure it's exported
+    const serialNumber = `SK${this.vrmInstanceId}`;
+    console.log(`🔧 Initializing BMV serial number for ${this.dbusServiceName}: ${serialNumber}`);
+    this.deviceData['/Serial'] = serialNumber;
+    this.managementProperties["/Serial"].value = serialNumber;
+    
+    // For battery services, immediately export the serial number property
+    // This is critical for Venus OS systemcalc to recognize it as a BMV
+    if (this.deviceConfig.serviceType === 'battery') {
+      this._exportProperty('/Serial', {
+        value: serialNumber,
+        type: 's',
+        text: 'Serial number',
+        immutable: true
+      });
+      console.log(`🔋 BMV serial number exported: ${serialNumber}`);
+    }
     
     await this._registerInSettings();
     await this._registerService();
@@ -522,17 +536,18 @@ export class VEDBusService extends EventEmitter {
       GetItems: () => {
         const items = [];
         
-        // Add management properties
+        // Add management properties (immutable and current values)
         Object.entries(this.managementProperties).forEach(([path, config]) => {
+          const currentValue = config.immutable ? config.value : this.deviceData[path];
           items.push([path, [
-            ["Value", this._wrapValue(config.type, config.immutable ? config.value : this.deviceData[path])],
+            ["Value", this._wrapValue(config.type, currentValue)],
             ["Text", this._wrapValue("s", config.text)],
           ]]);
         });
         
-        // Add device data properties
+        // Add device data properties with proper typing
         Object.entries(this.deviceData).forEach(([path, value]) => {
-          if (this.managementProperties[path]) return;
+          if (this.managementProperties[path]) return; // Skip duplicates
 
           const text = this.deviceConfig.pathMappings?.[path] || `${this.deviceConfig.serviceType} property`;
           const type = this.deviceConfig.pathTypes?.[path] || 'd';
@@ -542,6 +557,34 @@ export class VEDBusService extends EventEmitter {
           ]]);
         });
 
+        // CRITICAL: For battery services, ensure all BMV-required properties are present
+        if (this.deviceConfig.serviceType === 'battery') {
+          const requiredBMVProperties = ['/Serial', '/Soc', '/Dc/0/Voltage', '/Dc/0/Current', '/DeviceInstance'];
+          requiredBMVProperties.forEach(path => {
+            if (!items.find(item => item[0] === path)) {
+              let value, type, text;
+              if (path === '/Serial') {
+                value = `SK${this.vrmInstanceId}`;
+                type = 's';
+                text = 'Serial number';
+              } else if (path === '/DeviceInstance') {
+                value = this.vrmInstanceId;
+                type = 'i';
+                text = 'Device instance';
+              } else {
+                value = 0;
+                type = 'd';
+                text = 'Battery property';
+              }
+              items.push([path, [
+                ["Value", this._wrapValue(type, value)],
+                ["Text", this._wrapValue('s', text)],
+              ]]);
+            }
+          });
+        }
+
+        console.log(`📋 GetItems for ${this.dbusServiceName}: ${items.length} properties available`);
         return items;
       },
       GetValue: () => {
@@ -594,10 +637,16 @@ export class VEDBusService extends EventEmitter {
         const pathWithSlash = propertyName.startsWith('/') ? propertyName : `/${propertyName}`;
         const pathWithoutSlash = propertyName.startsWith('/') ? propertyName.substring(1) : propertyName;
         
-        // Check both forms in deviceData
+        // Check management properties first (they take precedence)
+        if (this.managementProperties[pathWithSlash]) {
+          const config = this.managementProperties[pathWithSlash];
+          const value = config.immutable ? config.value : this.deviceData[pathWithSlash];
+          return this._wrapValue(config.type, value);
+        }
+        
+        // Check device data
         if (this.deviceData[pathWithSlash] !== undefined) {
-          const type = this.deviceConfig.pathTypes?.[pathWithSlash] || 
-                      this.managementProperties[pathWithSlash]?.type || 'd';
+          const type = this.deviceConfig.pathTypes?.[pathWithSlash] || 'd';
           return this._wrapValue(type, this.deviceData[pathWithSlash]);
         }
         
@@ -606,11 +655,19 @@ export class VEDBusService extends EventEmitter {
           return this._wrapValue(type, this.deviceData[pathWithoutSlash]);
         }
         
-        // Special handling for common properties Venus OS looks for
+        // CRITICAL: Special handling for BMV properties Venus OS looks for
         if (propertyName === 'Serial' || propertyName === '/Serial') {
           return this._wrapValue('s', `SK${this.vrmInstanceId}`);
+        } else if (propertyName === 'DeviceInstance' || propertyName === '/DeviceInstance') {
+          return this._wrapValue('i', this.vrmInstanceId);
+        } else if (this.deviceConfig.serviceType === 'battery') {
+          // For unknown battery properties, return sensible defaults
+          if (propertyName.includes('Voltage') || propertyName.includes('Current') || propertyName.includes('Soc')) {
+            return this._wrapValue('d', 0);
+          }
         }
         
+        console.log(`⚠️ Property ${propertyName} not found in ${this.dbusServiceName}`);
         return this._wrapValue('s', '');
       },
       GetAll: (interfaceName) => {
@@ -762,19 +819,12 @@ export class VEDBusService extends EventEmitter {
 
     this._exportProperty(path, { value, type, text });
     
-    // Only emit D-Bus signals for battery services and only when values change
-    // Tanks and environment sensors don't need intensive signaling for VRM integration
+    // Emit D-Bus signals based on device type and criticality of the path
     const isBatteryService = this.deviceConfig.serviceType === 'battery';
     
-    if (this.bus && this.bus.connection && this.bus.connection.message && valueChanged && isBatteryService) {
+    if (this.bus && this.bus.connection && this.bus.connection.message && valueChanged) {
       try {
-        // Ensure serial number is available before emitting signals
-        if (!this.deviceData['/Serial']) {
-          console.warn(`No serial number available for ${this.dbusServiceName} - setting default`);
-          this.deviceData['/Serial'] = `SK${this.vrmInstanceId}`;
-        }
-        
-        // METHOD 1: Emit ItemsChanged signal (for VenusOS compatibility)
+        // Always emit basic ItemsChanged signal for value changes
         const changes = [];
         changes.push([path, [
           ["Value", this._wrapValue(type, value)],
@@ -793,23 +843,30 @@ export class VEDBusService extends EventEmitter {
         });
         this.bus.connection.send(itemsChangedMsg);
         
-        // METHOD 2: Emit PropertiesChanged and ValueChanged signals for battery monitor integration
-        // Only for critical battery paths that need system service integration
-        // Temporarily disabled to debug serial number issue
-        const isCriticalBatteryPath = path === '/Soc' || path === '/Dc/0/Current' || path === '/Dc/0/Voltage' || 
-                                      path === '/ConsumedAmphours' || path === '/TimeToGo' || path === '/Dc/0/Power';
-        
-        if (isCriticalBatteryPath && false) { // Temporarily disabled
-          this.emitPropertiesChanged(path, {
-            Value: value,
-            Text: text
-          });
+        // For battery services, emit additional signals for BMV integration
+        if (isBatteryService) {
+          // Identify critical battery paths that Venus OS system service monitors
+          const isCriticalBatteryPath = path === '/Soc' || path === '/Dc/0/Current' || path === '/Dc/0/Voltage' || 
+                                        path === '/ConsumedAmphours' || path === '/TimeToGo' || path === '/Dc/0/Power' ||
+                                        path === '/Serial' || path === '/DeviceInstance';
           
-          this.emitValueChanged(path, value);
-          
-          console.log(`✅ Battery monitor signals emitted for ${path} = ${value}`);
-        } else if (isCriticalBatteryPath) {
-          console.log(`📝 Battery property updated (signals disabled): ${path} = ${value}`);
+          if (isCriticalBatteryPath) {
+            // Emit PropertiesChanged signal for Venus OS systemcalc integration
+            this.emitPropertiesChanged(path, {
+              Value: value,
+              Text: text
+            });
+            
+            // Emit ValueChanged signal for individual property updates
+            this.emitValueChanged(path, value);
+            
+            console.log(`🔋 BMV signal emitted for ${path} = ${value}`);
+          } else {
+            console.log(`📝 Battery property updated: ${path} = ${value}`);
+          }
+        } else {
+          // For non-battery services (tanks, environment), basic ItemsChanged is sufficient
+          console.log(`📝 ${this.deviceConfig.serviceType} property updated: ${path} = ${value}`);
         }
         
       } catch (err) {
@@ -822,10 +879,10 @@ export class VEDBusService extends EventEmitter {
           console.error(`❌ Error emitting signals for ${path} on ${this.dbusServiceName}:`, err.message || err);
         }
       }
-    } else if (!isBatteryService && valueChanged) {
-      // For non-battery services (tanks, environment), just log the update without intensive signaling
-      console.log(`📝 ${this.deviceConfig.serviceType} property updated: ${path} = ${value}`);
-    } else if (this.deviceData[path] === undefined) {
+    } else if (!valueChanged) {
+      // Value hasn't changed, no signal needed
+      console.log(`� Property ${path} unchanged: ${value}`);
+    } else {
       // D-Bus connection not available - this is expected during initialization
       console.log(`D-Bus not ready for ${this.dbusServiceName}, storing ${path} = ${value} for later emission`);
     }
@@ -838,13 +895,7 @@ export class VEDBusService extends EventEmitter {
     }
 
     try {
-      // Ensure serial number is available before emitting signals
-      if (!this.deviceData['/Serial']) {
-        console.warn(`No serial number for ${this.dbusServiceName} - skipping PropertiesChanged signal`);
-        return;
-      }
-
-      // Create D-Bus compatible signal data
+      // Create D-Bus compatible signal data with proper Venus OS format
       const changes = {};
       for (const key in props) {
         const val = props[key];
@@ -859,8 +910,8 @@ export class VEDBusService extends EventEmitter {
         }
       }
 
-      // Use D-Bus message to emit PropertiesChanged signal
-      const msg = this.bus.connection.message({
+      // Emit PropertiesChanged signal on the specific property path
+      const propertyMsg = this.bus.connection.message({
         type: 'signal',
         path: path,
         interface: 'org.freedesktop.DBus.Properties',
@@ -874,9 +925,11 @@ export class VEDBusService extends EventEmitter {
         destination: null,
         sender: this.dbusServiceName
       });
-      this.bus.connection.send(msg);
+      this.bus.connection.send(propertyMsg);
       
-      // Also emit on root path for system service discovery
+      // CRITICAL: Also emit on root path for Venus OS systemcalc discovery
+      // This is what makes the difference between a tank sensor and BMV
+      const propertyName = path.startsWith('/') ? path.substring(1) : path;
       const rootMsg = this.bus.connection.message({
         type: 'signal',
         path: '/',
@@ -885,7 +938,7 @@ export class VEDBusService extends EventEmitter {
         signature: 'sa{sv}as',
         body: [
           'com.victronenergy.BusItem',
-          { [path.substring(1)]: changes.Value },
+          { [propertyName]: changes.Value || new Variant('s', String(props.Value || '')) },
           []
         ],
         destination: null,
@@ -904,27 +957,22 @@ export class VEDBusService extends EventEmitter {
     }
 
     try {
-      // Ensure serial number is available before emitting signals
-      if (!this.deviceData['/Serial']) {
-        console.warn(`No serial number for ${this.dbusServiceName} - skipping ValueChanged signal`);
-        return;
-      }
-
+      // Create properly typed variant for Venus OS consumption
       let typedValue;
       if (typeof value === 'number') {
+        // Use double precision for all numbers to match Venus OS expectations
         typedValue = new Variant('d', value);
       } else if (typeof value === 'string') {
         typedValue = new Variant('s', value);
       } else if (typeof value === 'boolean') {
         typedValue = new Variant('b', value);
-      } else if (typeof value === 'number' && Number.isInteger(value)) {
-        typedValue = new Variant('i', value);
       } else {
+        // Fallback to variant container
         typedValue = new Variant('v', value);
       }
 
-      // Use D-Bus message to emit ValueChanged signal
-      const msg = this.bus.connection.message({
+      // Emit ValueChanged signal on the property path (for direct property monitoring)
+      const propertyMsg = this.bus.connection.message({
         type: 'signal',
         path: path,
         interface: 'com.victronenergy.BusItem',
@@ -934,7 +982,24 @@ export class VEDBusService extends EventEmitter {
         destination: null,
         sender: this.dbusServiceName
       });
-      this.bus.connection.send(msg);
+      this.bus.connection.send(propertyMsg);
+      
+      // CRITICAL: Emit on root path for Venus OS systemcalc integration
+      // This ensures proper BMV recognition by system services
+      const rootValueMsg = this.bus.connection.message({
+        type: 'signal',
+        path: '/',
+        interface: 'com.victronenergy.BusItem',
+        member: 'ValueChanged',
+        signature: 'sv',
+        body: [
+          path.startsWith('/') ? path.substring(1) : path,
+          typedValue
+        ],
+        destination: null,
+        sender: this.dbusServiceName
+      });
+      this.bus.connection.send(rootValueMsg);
     } catch (err) {
       console.error(`❌ Error emitting ValueChanged for ${path}:`, err.message || err);
     }
