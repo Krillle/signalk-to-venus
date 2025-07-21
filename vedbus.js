@@ -660,11 +660,19 @@ export class VEDBusService extends EventEmitter {
           });
         }
 
-        console.log(`📋 GetItems for ${this.dbusServiceName}: ${items.length} properties available`);
+        // Only log GetItems if it's the first time or if there's a significant change in properties count
+        if (!this._lastItemsCount || Math.abs(this._lastItemsCount - items.length) > 5) {
+          console.log(`📋 GetItems for ${this.dbusServiceName}: ${items.length} properties available`);
+          this._lastItemsCount = items.length;
+        }
         return items;
       },
       GetValue: () => {
-        console.log(`🔍 D-Bus BusItem.GetValue request for ${this.dbusServiceName}`);
+        // Reduce GetValue logging noise - only log occasionally
+        if (!this._lastGetValueLog || Date.now() - this._lastGetValueLog > 10000) {
+          console.log(`🔍 D-Bus BusItem.GetValue request for ${this.dbusServiceName}`);
+          this._lastGetValueLog = Date.now();
+        }
         const items = [];
         
         // Add management properties
@@ -710,8 +718,10 @@ export class VEDBusService extends EventEmitter {
 
     const dbusPropertiesImpl = {
       Get: (interfaceName, propertyName) => {
-        // Log ALL property requests to debug what Venus OS is looking for
-        console.log(`🔍 D-Bus Properties.Get request: interface=${interfaceName}, property=${propertyName} for ${this.dbusServiceName}`);
+        // Log only critical property requests to reduce noise
+        if (propertyName === 'Serial' || propertyName === 'DeviceInstance' || propertyName === 'Soc') {
+          console.log(`🔍 D-Bus Properties.Get request: interface=${interfaceName}, property=${propertyName} for ${this.dbusServiceName}`);
+        }
         
         // Handle requests for properties with or without leading slash
         const pathWithSlash = propertyName.startsWith('/') ? propertyName : `/${propertyName}`;
@@ -885,7 +895,10 @@ export class VEDBusService extends EventEmitter {
 
     const dbusPropertiesImpl = {
       Get: (interfaceName, propertyName) => {
-        console.log(`🔍 Individual property D-Bus Get: path=${path}, interface=${interfaceName}, property=${propertyName}`);
+        // Log only critical individual property requests to reduce noise
+        if (propertyName === 'Value' && (path.includes('Serial') || path.includes('Soc') || path.includes('Voltage'))) {
+          console.log(`🔍 Individual property D-Bus Get: path=${path}, interface=${interfaceName}, property=${propertyName}`);
+        }
         if (interfaceName === 'com.victronenergy.BusItem' && propertyName === 'Value') {
           return propertyInterface.GetValue();
         } else if (interfaceName === 'com.victronenergy.BusItem' && propertyName === 'Text') {
@@ -932,6 +945,16 @@ export class VEDBusService extends EventEmitter {
 
     // Check if value actually changed to avoid unnecessary signals
     const oldValue = this.deviceData[path];
+    
+    // Special preprocessing for critical BMV properties
+    if (this.deviceConfig.serviceType === 'battery' && path === '/TimeToGo') {
+      // Handle TimeToGo null/undefined/invalid values by converting to -1 (Victron standard for "unknown")
+      if (value === null || value === undefined || (typeof value === 'number' && (!isFinite(value) || isNaN(value)))) {
+        console.log(`🔧 Converting invalid TimeToGo value ${value} to -1 (unknown)`);
+        value = -1;
+      }
+    }
+    
     const valueChanged = oldValue !== value;
 
     this._exportProperty(path, { value, type, text });
@@ -950,8 +973,14 @@ export class VEDBusService extends EventEmitter {
         // For numeric values, ensure they're valid numbers
         if (type === 'd' || type === 'i') {
           if (typeof value !== 'number' || !isFinite(value) || isNaN(value)) {
-            console.warn(`⚠️ Skipping signal emission for ${path} with invalid numeric value: ${value} (type: ${typeof value})`);
-            return;
+            // Special handling for /TimeToGo - use -1 for "unknown" like Victron does
+            if (path === '/TimeToGo') {
+              console.log(`🔧 Converting invalid TimeToGo value ${value} to -1 (unknown)`);
+              value = -1; // Use Victron's standard "unknown" value
+            } else {
+              console.warn(`⚠️ Skipping signal emission for ${path} with invalid numeric value: ${value} (type: ${typeof value})`);
+              return;
+            }
           }
         }
         
@@ -988,8 +1017,10 @@ export class VEDBusService extends EventEmitter {
                                         path === '/Serial' || path === '/DeviceInstance';
           
           if (isCriticalBatteryPath) {
-            // Re-enabled with proper validation: Emit signals for Venus OS systemcalc integration
-            console.log(`🔋 BMV critical property updated: ${path} = ${value}`);
+            // Only log the most critical updates to reduce noise
+            if (path === '/Soc' || path === '/Dc/0/Voltage' || path === '/Serial') {
+              console.log(`🔋 Critical BMV ${path} updated: ${value}`);
+            }
             
             // Only emit signals for valid values (non-null, non-undefined)
             if (value !== null && value !== undefined && !isNaN(value)) {
@@ -1003,11 +1034,11 @@ export class VEDBusService extends EventEmitter {
               console.log(`� Skipping signal emission for ${path} with invalid value: ${value}`);
             }
           } else {
-            console.log(`📝 Battery property updated: ${path} = ${value}`);
+            // Non-critical battery property updated (no logging to reduce noise)
           }
         } else {
           // For non-battery services (tanks, environment), basic ItemsChanged is sufficient
-          console.log(`📝 ${this.deviceConfig.serviceType} property updated: ${path} = ${value}`);
+          // (no logging to reduce noise)
         }
         
       } catch (err) {
