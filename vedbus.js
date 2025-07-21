@@ -479,9 +479,6 @@ export class VEDBusService extends EventEmitter {
 
   async _registerService() {
     try {
-      // Export management interface
-      this._exportManagementInterface();
-
       // Request service name on our own bus connection
       await new Promise((resolve, reject) => {
         this.bus.requestName(this.dbusServiceName, 0, (err, result) => {
@@ -1031,7 +1028,7 @@ export class VEDBusService extends EventEmitter {
               
               this.emitValueChanged(path, value);
             } else {
-              console.log(`� Skipping signal emission for ${path} with invalid value: ${value}`);
+              console.log(`Skipping signal emission for ${path} with invalid value: ${value}`);
             }
           } else {
             // Non-critical battery property updated (no logging to reduce noise)
