@@ -110,6 +110,7 @@ export class VEDBusService extends EventEmitter {
           invoke: (options, callback) => callback(null, [])
         };
         console.log(`Test mode: Created mock D-Bus connection for ${this.dbusServiceName}`);
+        this.isConnected = true; // CRITICAL: Set connected state for test mode
       } else {
         // Create individual D-Bus connection for this service
         this.bus = dbusNative.createClient({
@@ -919,20 +920,20 @@ export class VEDBusService extends EventEmitter {
                                         path === '/Serial' || path === '/DeviceInstance';
           
           if (isCriticalBatteryPath) {
-            // TEMPORARILY DISABLED: Complex signal emission causing "Missing or invalid serial" errors
-            // TODO: Re-enable once serial number validation is working properly
-            /*
-            // Emit PropertiesChanged signal for Venus OS systemcalc integration
-            this.emitPropertiesChanged(path, {
-              Value: value,
-              Text: text
-            });
+            // Re-enabled with proper validation: Emit signals for Venus OS systemcalc integration
+            console.log(`🔋 BMV critical property updated: ${path} = ${value}`);
             
-            // Emit ValueChanged signal for individual property updates
-            this.emitValueChanged(path, value);
-            */
-            
-            console.log(`🔋 BMV property updated (simplified): ${path} = ${value}`);
+            // Only emit signals for valid values (non-null, non-undefined)
+            if (value !== null && value !== undefined && !isNaN(value)) {
+              this.emitPropertiesChanged(path, {
+                Value: value,
+                Text: text
+              });
+              
+              this.emitValueChanged(path, value);
+            } else {
+              console.log(`� Skipping signal emission for ${path} with invalid value: ${value}`);
+            }
           } else {
             console.log(`📝 Battery property updated: ${path} = ${value}`);
           }
@@ -971,15 +972,31 @@ export class VEDBusService extends EventEmitter {
       const changes = {};
       for (const key in props) {
         const val = props[key];
-        if (key === 'Value' && typeof val === 'number') {
+        
+        // CRITICAL: Validate values before creating Variants to prevent "Missing or invalid serial" errors
+        if (val === null || val === undefined) {
+          console.warn(`❗ Skipping ${key} with null/undefined value for ${path}`);
+          continue; // Skip null/undefined values instead of creating invalid Variants
+        }
+        
+        if (key === 'Value' && typeof val === 'number' && !isNaN(val)) {
           changes[key] = new Variant('d', val);
         } else if (key === 'Text' && typeof val === 'string') {
           changes[key] = new Variant('s', val);
         } else if (typeof val === 'boolean') {
           changes[key] = new Variant('b', val);
-        } else if (typeof val === 'number' && Number.isInteger(val)) {
+        } else if (typeof val === 'number' && Number.isInteger(val) && !isNaN(val)) {
           changes[key] = new Variant('i', val);
+        } else {
+          console.warn(`❗ Unsupported property type for ${key}=${val} on ${path}`);
+          continue; // Skip unsupported types
         }
+      }
+
+      // Only emit if we have valid changes
+      if (Object.keys(changes).length === 0) {
+        console.log(`🔧 No valid properties to emit for ${path}, skipping signal`);
+        return;
       }
 
       // Emit PropertiesChanged signal on the specific property path
@@ -1002,21 +1019,23 @@ export class VEDBusService extends EventEmitter {
       // CRITICAL: Also emit on root path for Venus OS systemcalc discovery
       // This is what makes the difference between a tank sensor and BMV
       const propertyName = path.startsWith('/') ? path.substring(1) : path;
-      const rootMsg = this.bus.connection.message({
-        type: 'signal',
-        path: '/',
-        interface: 'org.freedesktop.DBus.Properties',
-        member: 'PropertiesChanged',
-        signature: 'sa{sv}as',
-        body: [
-          'com.victronenergy.BusItem',
-          { [propertyName]: changes.Value || new Variant('s', String(props.Value || '')) },
-          []
-        ],
-        destination: null,
-        sender: this.dbusServiceName
-      });
-      this.bus.connection.send(rootMsg);
+      if (changes.Value) {
+        const rootMsg = this.bus.connection.message({
+          type: 'signal',
+          path: '/',
+          interface: 'org.freedesktop.DBus.Properties',
+          member: 'PropertiesChanged',
+          signature: 'sa{sv}as',
+          body: [
+            'com.victronenergy.BusItem',
+            { [propertyName]: changes.Value },
+            []
+          ],
+          destination: null,
+          sender: this.dbusServiceName
+        });
+        this.bus.connection.send(rootMsg);
+      }
     } catch (err) {
       console.error(`❌ Error emitting PropertiesChanged for ${path}:`, err.message || err);
     }
@@ -1028,10 +1047,16 @@ export class VEDBusService extends EventEmitter {
       return;
     }
 
+    // CRITICAL: Validate value before creating Variant to prevent "Missing or invalid serial" errors
+    if (value === null || value === undefined) {
+      console.log(`🔧 Skipping ValueChanged for ${path} with null/undefined value`);
+      return;
+    }
+
     try {
       // Create properly typed variant for Venus OS consumption
       let typedValue;
-      if (typeof value === 'number') {
+      if (typeof value === 'number' && !isNaN(value)) {
         // Use double precision for all numbers to match Venus OS expectations
         typedValue = new Variant('d', value);
       } else if (typeof value === 'string') {
@@ -1039,8 +1064,8 @@ export class VEDBusService extends EventEmitter {
       } else if (typeof value === 'boolean') {
         typedValue = new Variant('b', value);
       } else {
-        // Fallback to variant container
-        typedValue = new Variant('v', value);
+        console.warn(`❗ Unsupported value type for ${path}: ${typeof value}, value: ${value}`);
+        return; // Don't emit for unsupported types
       }
 
       // Emit ValueChanged signal on the property path (for direct property monitoring)
