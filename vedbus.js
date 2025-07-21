@@ -46,6 +46,54 @@ export class VEDBusService extends EventEmitter {
     };
   }
 
+  // Utility function to safely create D-Bus Variants
+  _safeVariant(type, value) {
+    // Validate inputs to prevent "Missing or invalid serial" errors
+    if (value === null || value === undefined) {
+      console.warn(`⚠️ Cannot create Variant for null/undefined value (type: ${type})`);
+      return null;
+    }
+
+    try {
+      switch (type) {
+        case 'd': // double
+          if (typeof value === 'number' && isFinite(value) && !isNaN(value)) {
+            return new Variant('d', value);
+          }
+          console.warn(`⚠️ Invalid double value for Variant: ${value} (type: ${typeof value})`);
+          return null;
+          
+        case 'i': // integer
+          if (typeof value === 'number' && Number.isInteger(value) && isFinite(value)) {
+            return new Variant('i', value);
+          }
+          console.warn(`⚠️ Invalid integer value for Variant: ${value} (type: ${typeof value})`);
+          return null;
+          
+        case 's': // string
+          if (typeof value === 'string' && value.length > 0) {
+            return new Variant('s', value);
+          }
+          console.warn(`⚠️ Invalid string value for Variant: ${value} (type: ${typeof value})`);
+          return null;
+          
+        case 'b': // boolean
+          if (typeof value === 'boolean') {
+            return new Variant('b', value);
+          }
+          console.warn(`⚠️ Invalid boolean value for Variant: ${value} (type: ${typeof value})`);
+          return null;
+          
+        default:
+          console.warn(`⚠️ Unsupported Variant type: ${type}`);
+          return null;
+      }
+    } catch (err) {
+      console.error(`❌ Error creating Variant(${type}, ${value}):`, err.message);
+      return null;
+    }
+  }
+
   async init() {
     // Create own D-Bus connection and register service
     await this._createBusConnection();
@@ -893,7 +941,7 @@ export class VEDBusService extends EventEmitter {
     
     if (this.bus && this.bus.connection && this.bus.connection.message && valueChanged) {
       try {
-        // CRITICAL: Validate values before creating D-Bus message to prevent "Missing or invalid serial" errors
+        // CRITICAL: Enhanced validation to prevent "Missing or invalid serial" errors
         if (value === null || value === undefined) {
           console.log(`🔧 Skipping signal emission for ${path} with null/undefined value: ${value}`);
           return; // Don't emit signals for invalid values
@@ -901,10 +949,16 @@ export class VEDBusService extends EventEmitter {
         
         // For numeric values, ensure they're valid numbers
         if (type === 'd' || type === 'i') {
-          if (typeof value !== 'number' || isNaN(value)) {
-            console.log(`🔧 Skipping signal emission for ${path} with invalid numeric value: ${value}`);
+          if (typeof value !== 'number' || !isFinite(value) || isNaN(value)) {
+            console.warn(`⚠️ Skipping signal emission for ${path} with invalid numeric value: ${value} (type: ${typeof value})`);
             return;
           }
+        }
+        
+        // For string values, ensure they're non-empty
+        if (type === 's' && (typeof value !== 'string' || value.length === 0)) {
+          console.warn(`⚠️ Skipping signal emission for ${path} with invalid string value: ${value}`);
+          return;
         }
         
         // Always emit basic ItemsChanged signal for value changes
@@ -993,16 +1047,20 @@ export class VEDBusService extends EventEmitter {
           continue; // Skip null/undefined values instead of creating invalid Variants
         }
         
-        if (key === 'Value' && typeof val === 'number' && !isNaN(val)) {
-          changes[key] = new Variant('d', val);
-        } else if (key === 'Text' && typeof val === 'string') {
-          changes[key] = new Variant('s', val);
+        if (key === 'Value' && typeof val === 'number' && isFinite(val) && !isNaN(val)) {
+          const variant = this._safeVariant('d', val);
+          if (variant) changes[key] = variant;
+        } else if (key === 'Text' && typeof val === 'string' && val.length > 0) {
+          const variant = this._safeVariant('s', val);
+          if (variant) changes[key] = variant;
         } else if (typeof val === 'boolean') {
-          changes[key] = new Variant('b', val);
-        } else if (typeof val === 'number' && Number.isInteger(val) && !isNaN(val)) {
-          changes[key] = new Variant('i', val);
+          const variant = this._safeVariant('b', val);
+          if (variant) changes[key] = variant;
+        } else if (typeof val === 'number' && Number.isInteger(val) && isFinite(val) && !isNaN(val)) {
+          const variant = this._safeVariant('i', val);
+          if (variant) changes[key] = variant;
         } else {
-          console.warn(`❗ Unsupported property type for ${key}=${val} on ${path}`);
+          console.warn(`❗ Unsupported property type for ${key}=${val} on ${path} (type: ${typeof val})`);
           continue; // Skip unsupported types
         }
       }
@@ -1015,7 +1073,8 @@ export class VEDBusService extends EventEmitter {
 
       // Use the proper sendSignal method if available, otherwise fall back to message approach
       if (typeof this.bus.sendSignal === 'function') {
-        // CORRECT approach using bus.sendSignal
+        // CORRECT approach using bus.sendSignal - add debug logging
+        console.debug(`[emit] PropertiesChanged ${path} with ${Object.keys(changes).length} properties`);
         this.bus.sendSignal(
           path,                                    // objectPath
           'org.freedesktop.DBus.Properties',      // interface
@@ -1046,6 +1105,7 @@ export class VEDBusService extends EventEmitter {
       } else {
         // Fallback to connection.message approach
         console.log('⚠️ sendSignal not available, using fallback message approach');
+        console.debug(`[emit] PropertiesChanged ${path} with ${Object.keys(changes).length} properties`);
         
         const propertyMsg = this.bus.connection.message({
           type: 'signal',
@@ -1100,24 +1160,37 @@ export class VEDBusService extends EventEmitter {
       return;
     }
 
+    // Additional validation for numeric values to prevent invalid Variants
+    if (typeof value === 'number' && (!isFinite(value) || isNaN(value))) {
+      console.warn(`⚠️ Skipping ValueChanged signal for ${path}, invalid number:`, value);
+      return;
+    }
+
     try {
-      // Create properly typed variant for Venus OS consumption
+      // Create properly typed variant for Venus OS consumption using safe utility
       let typedValue;
-      if (typeof value === 'number' && !isNaN(value)) {
+      if (typeof value === 'number') {
         // Use double precision for all numbers to match Venus OS expectations
-        typedValue = new Variant('d', value);
-      } else if (typeof value === 'string') {
-        typedValue = new Variant('s', value);
+        typedValue = this._safeVariant('d', value);
+      } else if (typeof value === 'string' && value.length > 0) {
+        typedValue = this._safeVariant('s', value);
       } else if (typeof value === 'boolean') {
-        typedValue = new Variant('b', value);
+        typedValue = this._safeVariant('b', value);
       } else {
         console.warn(`❗ Unsupported value type for ${path}: ${typeof value}, value: ${value}`);
         return; // Don't emit for unsupported types
       }
 
+      // Ensure we have a valid variant before proceeding
+      if (!typedValue) {
+        console.warn(`❗ Failed to create valid Variant for ${path}, value: ${value}`);
+        return;
+      }
+
       // Use the proper sendSignal method if available, otherwise fall back to message approach
       if (typeof this.bus.sendSignal === 'function') {
-        // CORRECT approach using bus.sendSignal
+        // CORRECT approach using bus.sendSignal - add debug logging
+        console.debug(`[emit] ValueChanged ${path} = ${value} (type: ${typeof value})`);
         this.bus.sendSignal(
           path,                          // objectPath
           'com.victronenergy.BusItem',   // interface
@@ -1140,6 +1213,7 @@ export class VEDBusService extends EventEmitter {
       } else {
         // Fallback to connection.message approach
         console.log('⚠️ sendSignal not available, using fallback message approach');
+        console.debug(`[emit] ValueChanged ${path} = ${value} (type: ${typeof value})`);
         
         const propertyMsg = this.bus.connection.message({
           type: 'signal',
