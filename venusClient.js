@@ -583,9 +583,7 @@ export class VenusClient extends EventEmitter {
         // Log the conversion for debugging
         const hours = Math.floor(timeToGoSeconds / 3600);
         const minutes = Math.floor((timeToGoSeconds % 3600) / 60);
-        
-        console.log(`🔋 TimeToGo: ${timeToGoSeconds}s (${hours}h ${minutes}m)`);
-        
+                
         // Use integer type as per Victron specification
         await deviceService.updateProperty('/TimeToGo', timeToGoSeconds, 'i', `${deviceName} time to go`);
         this.emit('dataUpdated', 'Battery Time to Go', `${deviceName}: ${hours}h ${minutes}m`);
