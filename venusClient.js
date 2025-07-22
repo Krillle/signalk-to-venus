@@ -594,8 +594,8 @@ export class VenusClient extends EventEmitter {
         
         console.log(`🔋 TimeToGo: ${timeToGoSeconds}s (${hours}h ${minutes}m)`);
         
-        // Use double type instead of integer - Venus OS may expect this for proper display
-        await deviceService.updateProperty('/TimeToGo', timeToGoSeconds, 'd', `${deviceName} time to go`);
+        // Use integer type as per Victron specification
+        await deviceService.updateProperty('/TimeToGo', timeToGoSeconds, 'i', `${deviceName} time to go`);
         this.emit('dataUpdated', 'Battery Time to Go', `${deviceName}: ${hours}h ${minutes}m`);
       } else {
         // Ignoring null/invalid timeRemaining value

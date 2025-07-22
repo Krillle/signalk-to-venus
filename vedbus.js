@@ -554,41 +554,47 @@ export class VEDBusService extends EventEmitter {
         return;
       }
 
-      // First check if the busitem service exists
-      const busitemExists = await this._checkBusitemService();
-      if (!busitemExists) {
-        console.log(`ServiceAnnouncement skipped for ${this.dbusServiceName}: com.victronenergy.busitem service not available`);
-        return;
-      }
-
-      // Send ServiceAnnouncement signal so systemcalc picks up the service
-      // This is crucial for GX Touch UI to see the device
-      const connectionName = 'SignalK';
+      // Try multiple approaches to announce our service to Venus OS
+      let announcementSent = false;
       
-      await new Promise((resolve, reject) => {
-        this.bus.invoke({
-          destination: 'com.victronenergy.busitem',
-          path: '/',
-          interface: 'com.victronenergy.BusItem',
-          member: 'ServiceAnnouncement',
-          signature: 'siiss',
-          body: [
-            this.dbusServiceName,                            // s serviceName
-            this.vrmInstanceId,                              // i deviceInstance
-            this.managementProperties["/ProductId"].value,   // i productId
-            this.managementProperties["/ProductName"].value, // s productName
-            connectionName                                   // s connection
-          ]
-        }, (err) => {
-          if (err) {
-            console.error(`ServiceAnnouncement failed for ${this.dbusServiceName}:`, err);
-            reject(err);
-          } else {
-            console.log(`ServiceAnnouncement sent for ${this.dbusServiceName} (instance: ${this.vrmInstanceId})`);
-            resolve();
-          }
-        });
-      });
+      // Method 1: Try com.victronenergy.busitem (standard approach)
+      try {
+        const busitemExists = await this._checkBusitemService();
+        if (busitemExists) {
+          await this._sendBusitemAnnouncement();
+          announcementSent = true;
+          console.log(`ServiceAnnouncement sent via busitem for ${this.dbusServiceName}`);
+        }
+      } catch (err) {
+        console.log(`Busitem announcement failed for ${this.dbusServiceName}: ${err.message}`);
+      }
+      
+      // Method 2: Try com.victronenergy.system (alternative approach)
+      if (!announcementSent) {
+        try {
+          await this._sendSystemAnnouncement();
+          announcementSent = true;
+          console.log(`ServiceAnnouncement sent via system for ${this.dbusServiceName}`);
+        } catch (err) {
+          console.log(`System announcement failed for ${this.dbusServiceName}: ${err.message}`);
+        }
+      }
+      
+      // Method 3: Manual registration with systemcalc
+      if (!announcementSent) {
+        try {
+          await this._registerWithSystemcalc();
+          announcementSent = true;
+          console.log(`Service registered directly with systemcalc for ${this.dbusServiceName}`);
+        } catch (err) {
+          console.log(`Direct systemcalc registration failed for ${this.dbusServiceName}: ${err.message}`);
+        }
+      }
+      
+      if (!announcementSent) {
+        console.warn(`⚠️ All ServiceAnnouncement methods failed for ${this.dbusServiceName} - service may not be visible in Venus OS UI`);
+      }
+      
     } catch (err) {
       console.error(`Failed to send ServiceAnnouncement for ${this.dbusServiceName}:`, err);
       // Don't throw here - service registration should still succeed even if announcement fails
@@ -616,6 +622,77 @@ export class VEDBusService extends EventEmitter {
     } catch (err) {
       return false;
     }
+  }
+
+  async _sendBusitemAnnouncement() {
+    const connectionName = 'SignalK';
+    
+    await new Promise((resolve, reject) => {
+      this.bus.invoke({
+        destination: 'com.victronenergy.busitem',
+        path: '/',
+        interface: 'com.victronenergy.BusItem',
+        member: 'ServiceAnnouncement',
+        signature: 'siiss',
+        body: [
+          this.dbusServiceName,                            // s serviceName
+          this.vrmInstanceId,                              // i deviceInstance
+          this.managementProperties["/ProductId"].value,   // i productId
+          this.managementProperties["/ProductName"].value, // s productName
+          connectionName                                   // s connection
+        ]
+      }, (err) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve();
+        }
+      });
+    });
+  }
+
+  async _sendSystemAnnouncement() {
+    // Try to announce via com.victronenergy.system
+    await new Promise((resolve, reject) => {
+      this.bus.invoke({
+        destination: 'com.victronenergy.system',
+        path: '/',
+        interface: 'com.victronenergy.BusItem',
+        member: 'ServiceAnnouncement',
+        signature: 'siiss',
+        body: [
+          this.dbusServiceName,
+          this.vrmInstanceId,
+          this.managementProperties["/ProductId"].value,
+          this.managementProperties["/ProductName"].value,
+          'SignalK'
+        ]
+      }, (err) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve();
+        }
+      });
+    });
+  }
+
+  async _registerWithSystemcalc() {
+    // Try to register directly with systemcalc by calling a method that triggers service discovery
+    await new Promise((resolve, reject) => {
+      this.bus.invoke({
+        destination: 'com.victronenergy.system',
+        path: '/ServiceMapping',
+        interface: 'com.victronenergy.BusItem',
+        member: 'GetValue'
+      }, (err) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve();
+        }
+      });
+    });
   }
 
   _exportManagementInterface() {
