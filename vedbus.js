@@ -715,6 +715,27 @@ export class VEDBusService extends EventEmitter {
       },
       GetText: () => {
         return this.deviceConfig.serviceDescription || `SignalK Virtual ${this.deviceConfig.serviceType} Service`;
+      },
+      emit: (signalName, ...signalOutputParams) => {
+        // Emit signals properly through D-Bus without causing "Missing or invalid serial" errors
+        try {
+          if (this.bus && this.isConnected && signalName === 'ItemsChanged') {
+            // Use the bus invoke method for reliable signal emission
+            this.bus.invoke({
+              destination: null, // Broadcast signal
+              path: '/',
+              interface: 'com.victronenergy.BusItem', 
+              member: signalName,
+              signature: 'a{sa{sv}}',
+              body: signalOutputParams
+            }, () => {
+              // Signal sent successfully - no callback needed
+            });
+          }
+        } catch (err) {
+          // Silently handle signal emission errors to prevent service disruption
+          console.warn(`Signal emission warning for root interface:`, err.message);
+        }
       }
     };
 
@@ -723,6 +744,9 @@ export class VEDBusService extends EventEmitter {
     // 'dbus -y' CLI.
     // https://github.com/sidorares/dbus-native/pull/140
     this.bus.exportInterface(rootInterface, "/", busItemInterface);
+    
+    // Store reference to root interface for signal emission
+    this.exportedInterfaces['/'] = rootInterface;
 
     // Export standard D-Bus Properties interface for PropertiesChanged signals
     const dbusPropertiesInterface = {
@@ -895,6 +919,25 @@ export class VEDBusService extends EventEmitter {
         return config.text || `${path} property`;
       },
       emit: (signalName, ...signalOutputParams) => {
+        // Emit signals properly through D-Bus without causing "Missing or invalid serial" errors
+        try {
+          if (this.bus && this.isConnected && signalName === 'ItemsChanged') {
+            // Use the bus invoke method for reliable signal emission
+            this.bus.invoke({
+              destination: null, // Broadcast signal
+              path: path,
+              interface: 'com.victronenergy.BusItem', 
+              member: signalName,
+              signature: 'a{sa{sv}}',
+              body: signalOutputParams
+            }, () => {
+              // Signal sent successfully - no callback needed
+            });
+          }
+        } catch (err) {
+          // Silently handle signal emission errors to prevent service disruption
+          console.warn(`Signal emission warning for ${path}:`, err.message);
+        }
       },
     };
 
@@ -1074,40 +1117,29 @@ export class VEDBusService extends EventEmitter {
     }
 
     try {
-      // CRITICAL: Validate the serial number is available before emitting any signals
+      // Validate the serial number is available before emitting any signals
       const deviceDataSerial = this.deviceData['/Serial'];
       const managementSerial = this.managementProperties['/Serial']?.value;
       const serialNumber = deviceDataSerial || managementSerial;
       
-      // Debug logging to understand the serial number issue
-      console.log(`🔧 Serial check for ${this.dbusServiceName}: deviceData=${deviceDataSerial}, management=${managementSerial}, final=${serialNumber}`);
-      
       if (!serialNumber) {
         console.warn(`❌ Cannot emit signals for ${path}: No serial number available for ${this.dbusServiceName}`);
-        console.warn(`❌ Debug: deviceData keys: ${Object.keys(this.deviceData)}`);
-        console.warn(`❌ Debug: managementProperties keys: ${Object.keys(this.managementProperties)}`);
         return;
       }
 
-      // Simplified approach - just emit basic ItemsChanged signal without complex Variants
-      if (this.bus && this.bus.connection && this.bus.connection.message) {
-        const itemChanges = [];
-        itemChanges.push([path, [
+      // Use the bus.invoke method to emit signals properly instead of direct message creation
+      // This avoids the "Missing or invalid serial" errors from direct message handling
+      if (this.exportedInterfaces['/'] && typeof this.exportedInterfaces['/'].emit === 'function') {
+        // Emit through the exported interface if available
+        const changes = [];
+        changes.push([path, [
           ["Value", this._wrapValue(typeof props.Value === 'number' ? 'd' : 's', props.Value)],
           ["Text", this._wrapValue('s', props.Text || path)],
         ]]);
-        
-        const itemsChangedMsg = this.bus.connection.message({
-          type: 'signal',
-          path: '/',
-          interface: 'com.victronenergy.BusItem',
-          member: 'ItemsChanged',
-          signature: 'a{sa{sv}}',
-          body: [itemChanges],
-          destination: null,
-          sender: this.dbusServiceName
-        });
-        this.bus.connection.send(itemsChangedMsg);
+        this.exportedInterfaces['/'].emit('ItemsChanged', changes);
+      } else {
+        // Fallback to simple property update without complex signal emission
+        console.log(`📡 Property updated: ${path} = ${props.Value} for ${this.dbusServiceName}`);
       }
 
     } catch (err) {
@@ -1121,13 +1153,13 @@ export class VEDBusService extends EventEmitter {
       return;
     }
 
-    // CRITICAL: Validate value and serial before creating Variant to prevent "Missing or invalid serial" errors
+    // Validate value before emitting
     if (value === null || value === undefined) {
       console.log(`🔧 Skipping ValueChanged for ${path} with null/undefined value`);
       return;
     }
 
-    // Additional validation for numeric values to prevent invalid Variants
+    // Additional validation for numeric values
     if (typeof value === 'number' && (!isFinite(value) || isNaN(value))) {
       console.warn(`⚠️ Skipping ValueChanged signal for ${path}, invalid number:`, value);
       return;
@@ -1138,36 +1170,22 @@ export class VEDBusService extends EventEmitter {
     const managementSerial = this.managementProperties['/Serial']?.value;
     const serialNumber = deviceDataSerial || managementSerial;
     
-    // Debug logging to understand the serial number issue
-    console.log(`🔧 ValueChanged serial check for ${this.dbusServiceName}: deviceData=${deviceDataSerial}, management=${managementSerial}, final=${serialNumber}`);
-    
     if (!serialNumber) {
       console.warn(`❌ Cannot emit ValueChanged for ${path}: No serial number available for ${this.dbusServiceName}`);
-      console.warn(`❌ Debug: deviceData keys: ${Object.keys(this.deviceData)}`);
-      console.warn(`❌ Debug: managementProperties keys: ${Object.keys(this.managementProperties)}`);
       return;
     }
 
-    // Simple approach - just emit basic ItemsChanged for now to avoid complex signal issues
+    // Use the same approach as PropertiesChanged - avoid direct message creation
     try {
-      if (this.bus && this.bus.connection && this.bus.connection.message) {
-        const changes = [];
-        changes.push([path, [
+      if (this.exportedInterfaces[path] && typeof this.exportedInterfaces[path].emit === 'function') {
+        // Emit through the exported interface for this specific path
+        this.exportedInterfaces[path].emit('ItemsChanged', [[path, [
           ["Value", this._wrapValue('d', value)],
           ["Text", this._wrapValue('s', `${this.deviceConfig.serviceType} property`)],
-        ]]);
-        
-        const itemsChangedMsg = this.bus.connection.message({
-          type: 'signal',
-          path: '/',
-          interface: 'com.victronenergy.BusItem',
-          member: 'ItemsChanged',
-          signature: 'a{sa{sv}}',
-          body: [changes],
-          destination: null,
-          sender: this.dbusServiceName
-        });
-        this.bus.connection.send(itemsChangedMsg);
+        ]]]);
+      } else {
+        // Just log the value change without complex signal emission
+        console.log(`📡 Value changed: ${path} = ${value} for ${this.dbusServiceName}`);
       }
     } catch (err) {
       console.error(`❌ Error emitting ValueChanged for ${path}:`, err.message || err);
