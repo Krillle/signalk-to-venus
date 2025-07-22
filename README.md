@@ -1,18 +1,15 @@
 # Signal K to Victron Venus OS Bridge
 
-> **⚠️ Development Status**: This plugin is currently in active development and testing. While the core functionality is implemented and all tests pass, users report connectivity issues with Venus OS. D-Bus authentication and device registration are still being debugged.
-
-Injects Signal K battery, tank, temperature, humidity, and switch data into Venus OS D-Bus, enabling full integration with the Cerbo GX, GX Touch, and VRM.
+This plugin for Signal K Server injects battery, tank, environment, and switch data as virtual devices and battery monitor into the Venus OS (D-Bus), enabling full integration with the Cerbo GX, GX Touch, and VRM.
 
 ## Features
 
 - **Dynamic Device Discovery**: Automatically discovers all Signal K devices on your boat and presents them in an intuitive configuration UI
 - **Selective Device Control**: Enable/disable individual devices - only send the data you want to Venus OS
-- **Smart Device Naming**: Intelligent display names (e.g., "Freshwater", "Nav", "Main engine temperature")
-- **Registers as Proper D-Bus Services**: Creates valid Victron D-Bus services for seamless VRM integration
-- **Bidirectional Sync**: Switches and dimmers sync both ways (Signal K ⇄ Cerbo GX)
-- **Loop Prevention**: Automatically excludes Cerbo GX internal relays to prevent feedback loops
-- **Real-time Status Monitoring**: Live connection status and data flow indicators with heartbeat
+- **Smart Device Naming**: Intelligent display names (e.g., "Freshwater", "Fuel", "Water Temperature")
+- **Registers as Proper D-Bus Services**: Creates valid devices and battery monitor on Victron D-Bus services for seamless VRM integration
+- **Bidirectional Sync**: (Not tested yet) Switches and dimmers sync both ways (Signal K ⇄ Cerbo GX)
+- **Loop Prevention**: Automatically excludes Cerbo GX internal relays and marks virtual devices to prevent feedback loops
 - **Robust Error Handling**: Automatic connection retry, timeout handling, and meaningful error messages
 
 ## Requirements
@@ -135,7 +132,7 @@ After starting the plugin, it will automatically discover all compatible Signal 
 ☐ Cabin lights (electrical.switches.cabinLights)
 ```
 
-**All devices are disabled by default** - you must explicitly enable in the plugin settings the ones you want to send to Venus OS. This gives you complete control over what data appears in your VRM dashboard.
+**All devices are disabled by default** - you must explicitly enable in the plugin settings the ones you want to send to Venus OS. This gives you complete control over what data appears in your VRM dashboard. (Display is limited by the maximum numbers of devices, the VRM/Cerbo UI is able to display.)
 
 ### Supported Signal K Paths
 
@@ -155,16 +152,13 @@ The plugin automatically detects and supports:
 The plugin provides comprehensive real-time status updates in the Signal K dashboard:
 
 - **Starting**: `Starting Signal K to Venus OS bridge`
-- **Discovery**: `Discovered 12 Signal K devices (Venus OS not connected)` during testing
-- **No Selection**: `Select devices to be sent to Venus OS in settings` when no devices are enabled
+- **Discovery**: `Device Discovery: Found 12 devices - configure in settings` when devices are discovered
+- **No Selection**: `Device Discovery: Found X devices (Venus OS: venus.local)` when no devices are enabled
 - **Connecting**: `Connecting to Venus OS at venus.local for Batteries`
-- **Connected**: `Connected to Venus OS at venus.local, injecting Batteries, Environment, Tanks`
-- **Active**: `Connected to Venus OS at venus.local injecting Batteries, Tanks, Environment`
+- **Connected**: `Connected to Venus OS, injecting Batteries, Environment, Tanks`
 - **Waiting**: `Waiting for Signal K data (venus.local)` if no compatible data is received
 - **Connection Issues**: `Venus OS not reachable: connection refused (check D-Bus TCP setting)`
-
-The heartbeat indicator (♥︎/♡) shows that data is actively flowing to Venus OS. The status clearly shows which device types are connected and any configuration issues.
-
+- **No Data**: `No Signal K data received - check server configuration`
 
 ## How It Works
 
@@ -173,7 +167,7 @@ The heartbeat indicator (♥︎/♡) shows that data is actively flowing to Venu
 3. **Selective Bridging**: Only enabled devices are sent to Venus OS - you have full control
 4. **D-Bus Integration**: Creates proper Victron D-Bus services that integrate seamlessly with VRM
 5. **Bidirectional Sync**: Switch and dimmer changes in VRM/Cerbo are reflected back to Signal K
-6. **Smart Naming**: Device names are automatically generated following Victron conventions
+6. **Smart Naming**: Device names are automatically generated and can be changed in VRM/Cerbo UI. 
 
 ## Device Naming Logic
 
@@ -187,36 +181,80 @@ The plugin generates intelligent display names:
 
 ## Output (Venus OS D-Bus Paths)
 
-**Batteries:**
+**Batteries (Battery Monitor):**
 ```
-/Dc/0/Voltage          # Volts
-/Dc/0/Current          # Amps (+ charging, - discharging)  
-/Soc                   # State of charge (0-100%)
-/ConsumedAmphours      # Consumed amp-hours
-/TimeToGo              # Time remaining (seconds)
-/Dc/0/Temperature      # Battery temperature (°C)
-/Relay/0/State         # Battery relay state
+/Dc/0/Voltage              # Battery voltage (Volts)
+/Dc/0/Current              # Battery current (Amps, + charging, - discharging)  
+/Dc/0/Power                # Battery power (Watts)
+/Soc                       # State of charge (0-100%)
+/ConsumedAmphours          # Consumed amp-hours
+/TimeToGo                  # Time remaining (seconds)
+/Dc/0/Temperature          # Battery temperature (°C)
+/Capacity                  # Battery capacity (Ah)
+/Relay/0/State             # Battery relay state
+/State                     # Battery state (0=Offline, 1=Online, 2=Error, 3=Unavailable)
+/ErrorCode                 # Error code
+/Connected                 # Connection status
+/DeviceType                # Device type (512 = BMV)
+
+# Battery Monitor System Properties
+/System/HasBatteryMonitor  # Has battery monitor flag
+/System/BatteryService     # Battery service active
+/System/NrOfBatteries      # Number of batteries
+/System/MinCellVoltage     # Minimum cell voltage
+/System/MaxCellVoltage     # Maximum cell voltage
+
+# Battery Monitor Alarms
+/Alarms/LowVoltage         # Low voltage alarm
+/Alarms/HighVoltage        # High voltage alarm
+/Alarms/LowSoc             # Low SOC alarm
+/Alarms/HighCurrent        # High current alarm
+/Alarms/HighTemperature    # High temperature alarm
+/Alarms/LowTemperature     # Low temperature alarm
+
+# Battery Monitor History & Info
+/History/DischargedEnergy  # Discharged energy
+/History/ChargedEnergy     # Charged energy
+/History/TotalAhDrawn      # Total Ah drawn
+/History/MinimumVoltage    # Historical minimum voltage
+/History/MaximumVoltage    # Historical maximum voltage
+/Info/BatteryLowVoltage    # Battery low voltage info
+/Info/MaxChargeCurrent     # Max charge current
+/Info/MaxDischargeCurrent  # Max discharge current
+/Info/MaxChargeVoltage     # Max charge voltage
+
+# Battery Monitor Control
+/Balancer                  # Balancer active
+/Io/AllowToCharge          # Allow to charge
+/Io/AllowToDischarge       # Allow to discharge
+/Io/ExternalRelay          # External relay
 ```
 
 **Tanks:**
 ```
-/Tank/0/Level          # Tank level (0-100%)
-/Tank/0/Name           # Tank name for VRM display
-/Tank/0/Capacity       # Tank capacity (if available)
+/Level                     # Tank level (0-100%)
+/Capacity                  # Tank capacity (liters/gallons)
+/Remaining                 # Remaining volume (liters/gallons)
+/FluidType                 # Fluid type (0=Fuel, 1=Fresh Water, 2=Waste Water, etc.)
+/Status                    # Tank status
+/CustomName                # Tank name for VRM display
+/Volume                    # Tank volume (liters/gallons)
+/RawUnit                   # Raw sensor unit (e.g., 'V' for voltage)
+/RawValue                  # Raw sensor value
 ```
 
 **Environment:**
 ```
-/Environment/Temperature/Outside    # °C
-/Environment/Temperature/MainCabin  # °C
-/Environment/Humidity/Outside       # 0-100%
-/Environment/Humidity/MainCabin     # 0-100%
+/Temperature               # Temperature (°C)
+/Humidity                  # Humidity (0-100%)
+/Status                    # Sensor status
 ```
 
 **Switches & Dimmers:**
 ```
-/Switches/<id>/State     # 0=Off, 1=On
-/Switches/<id>/DimLevel  # 0-100% dimming level
+/State                     # Switch state (0=Off, 1=On)
+/Position                  # Switch position
+/DimmingLevel              # Dimming level (0-100%)
 ```
 
 ## Bidirectional Operation
@@ -344,27 +382,11 @@ If you see `com.victronenergy.virtual.tanks` in the D-Bus service list but no de
 
 MIT © Christian Wegerhoff
 
-## Testing & Development
 
-The plugin includes a comprehensive test suite to ensure code quality and prevent regressions:
+## Change Log
 
-- **58 tests covering all functionality**: Device discovery, data handling, D-Bus operations, error scenarios
-- **Robust mocking**: Tests run without requiring actual Venus OS connectivity
-- **Continuous integration ready**: All tests pass in development environments
-- **Run tests locally**: `npm test` to execute the full test suite
-- **Note**: While tests pass, actual Venus OS connectivity is still being debugged in production environments
-
-## Recent Updates (v1.0.12)
-
-- **Comprehensive Test Coverage**: Complete test suite with 58 tests covering all functionality
-- **Robust Error Handling**: Improved error handling and test reliability
-- **Venus OS Connectivity**: Ongoing debugging of D-Bus authentication and device registration
-- **Enhanced Mocking**: Tests run reliably without requiring Venus OS connectivity
-- **Dynamic Device Discovery**: Automatic discovery and configuration of all Signal K devices
-- **Selective Device Control**: Enable/disable individual devices instead of device types
-- **Improved Naming**: Smart device names following Victron conventions
-- **Enhanced UI**: Clean, collapsible configuration interface grouped by device type
-- **Better Status Reporting**: Real-time connection status with heartbeat indicators
-- **Loop Prevention**: Automatic exclusion of Cerbo GX internal relays
-- **Testing Mode**: Full functionality when Venus OS is not connected
-- **All devices disabled by default**: Explicit user control over data bridging
+### v1.0.13 (2025/07/22 17:30)
+**First working version. Known issues:**
+- Loop prevention from signalk-venus not working yet
+- Switches not tested yet (and probably not working), as Venus OS does not yet support switches
+- Battery Monitor Time To Go (TTG) is not shown correctly
