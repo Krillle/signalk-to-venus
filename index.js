@@ -453,7 +453,7 @@ export default function(app) {
           if (!hasEnabledDevices) {
             const deviceCountText = generateDeviceCountText();
             if (deviceCountText.includes('0 devices')) {
-              app.setPluginStatus('Discovering Signal K devices - check back in a moment');
+              app.setPluginStatus('Discovering Signal K devices');
             } else {
               app.setPluginStatus(`Device Discovery: Found ${deviceCountText} - configure in settings`);
             }
