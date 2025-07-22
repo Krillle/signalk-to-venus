@@ -110,6 +110,10 @@ export default function(app) {
       const activeClientTypes = new Set();
       let venusReachable = false; // Track Venus OS reachability (assume unreachable until proven otherwise)
       
+      // Queue for paths that arrive before Venus OS is ready
+      const pendingPaths = [];
+      let isProcessingQueue = false;
+      
       const deviceTypeNames = {
         'batteries': 'Batteries',
         'tanks': 'Tanks', 
@@ -412,87 +416,8 @@ export default function(app) {
                     return;
                   }
                 
-                const deviceType = identifyDeviceType(pathValue.path);
-                if (deviceType) {
-                  // Track this discovered path (always do discovery regardless of Venus OS connection)
-                  addDiscoveredPath(deviceType, pathValue.path, pathValue.value, config);
-                  
-                  // Debug logging for device creation flow
-                  app.debug(`Processing ${deviceType} path: ${pathValue.path}, Venus reachable: ${venusReachable}, Enabled: ${isPathEnabled(deviceType, pathValue.path, config)}`);
-                  
-                  // Only proceed with Venus OS operations if Venus is reachable and path is enabled
-                  if (venusReachable !== true) {
-                    // Venus OS not reachable, skip Venus operations but continue discovery
-                    app.debug(`Skipping Venus operations for ${pathValue.path} - Venus not reachable`);
-                    return;
-                  }
-                  
-                  // Check if this specific path is enabled
-                  if (!isPathEnabled(deviceType, pathValue.path, config)) {
-                    app.debug(`Skipping ${pathValue.path} - not enabled in configuration`);
-                    return; // Skip disabled paths
-                  }
-                  
-                  // Create Venus client for this device type if it doesn't exist yet or has failed
-                  if (!plugin.clients[deviceType] || plugin.clients[deviceType] === null) {
-                    app.setPluginStatus(`Creating Venus OS service for ${deviceTypeNames[deviceType]}`);
-                    app.debug(`Creating new Venus client for device type: ${deviceType}`);
-                    
-                    try {
-                      plugin.clients[deviceType] = VenusClientFactory(config, deviceType);
-                      activeClientTypes.add(deviceTypeNames[deviceType]);
-                      
-                      const deviceCountText = generateEnabledDeviceCountText(config);
-                      app.setPluginStatus(`Connected to Venus OS, injecting ${deviceCountText}`);
-                      app.debug(`Successfully created Venus client for ${deviceType}`);
-                      
-                    } catch (err) {
-                      // Clean up connection error messages for better user experience
-                      let cleanMessage = err.message || err.toString();
-                      if (cleanMessage.includes('ENOTFOUND')) {
-                        cleanMessage = `Venus OS device not found at ${config.venusHost} (DNS resolution failed)`;
-                      } else if (cleanMessage.includes('ECONNREFUSED')) {
-                        cleanMessage = `Venus OS device refused connection at ${config.venusHost}:78 (check D-Bus TCP setting)`;
-                      } else if (cleanMessage.includes('timeout')) {
-                        cleanMessage = `Venus OS connection timeout (${config.venusHost}:78)`;
-                      }
-                      
-                      app.setPluginError(`Venus OS not reachable: ${cleanMessage}`);
-                      app.debug(`Failed to create Venus client for ${deviceType}: ${cleanMessage}`);
-                      
-                      // Mark this client as failed to prevent retries
-                      plugin.clients[deviceType] = null;
-                      
-                      // Only log the first connection error per device type to avoid spam
-                      if (!plugin.clients[`${deviceType}_error_logged`]) {
-                        app.error(`Cannot connect to Venus OS for ${deviceTypeNames[deviceType]}: ${cleanMessage}`);
-                        plugin.clients[`${deviceType}_error_logged`] = true;
-                      }
-                      return;
-                    }
-                  }
-                  
-                  // Update the Venus client with the new data (whether client is new or existing)
-                  if (plugin.clients[deviceType] && plugin.clients[deviceType] !== null) {
-                    app.debug(`Updating Venus client ${deviceType} with path: ${pathValue.path}`);
-                    try {
-                      await plugin.clients[deviceType].handleSignalKUpdate(pathValue.path, pathValue.value);
-                    } catch (err) {
-                      // Only log detailed errors if it's not a connection issue
-                      if (err.message && (err.message.includes('ENOTFOUND') || err.message.includes('ECONNREFUSED'))) {
-                        // Suppress frequent connection errors when Venus OS is not available
-                        // The main connection error is already logged during client creation
-                        
-                        // Mark client as failed
-                        plugin.clients[deviceType] = null;
-                        activeClientTypes.delete(deviceTypeNames[deviceType]);
-                        app.debug(`Marked Venus client ${deviceType} as failed due to connection error`);
-                      } else {
-                        app.error(`Error updating ${deviceType} client for ${pathValue.path}: ${err.message}`);
-                      }
-                    }
-                  }
-                }
+                // Process this path value using the unified processing function
+                await processPathValue(pathValue.path, pathValue.value, config);
               } catch (err) {
                 // Only log unexpected errors, suppress common connection errors
                 if (!err.message || (!err.message.includes('ENOTFOUND') && !err.message.includes('ECONNREFUSED'))) {
@@ -562,12 +487,138 @@ export default function(app) {
       // Test Venus OS connectivity initially and periodically
       async function runConnectivityTest() {
         try {
+          const wasReachable = venusReachable;
           const isReachable = await testVenusConnectivity();
+          
+          // If Venus just became reachable, process any queued paths
+          if (!wasReachable && isReachable && pendingPaths.length > 0) {
+            app.debug(`Venus OS became reachable, processing ${pendingPaths.length} queued paths`);
+            processPendingPaths();
+          }
         } catch (err) {
           app.error('Connectivity test error:', err);
         }
       }
       
+      // Process paths that were queued while Venus OS was not reachable
+      async function processPendingPaths() {
+        if (isProcessingQueue || pendingPaths.length === 0) {
+          return;
+        }
+        
+        isProcessingQueue = true;
+        app.debug(`Processing ${pendingPaths.length} queued paths...`);
+        
+        const pathsToProcess = [...pendingPaths];
+        pendingPaths.length = 0; // Clear the queue
+        
+        for (const queuedPath of pathsToProcess) {
+          try {
+            app.debug(`Processing queued path: ${queuedPath.path}`);
+            await processPathValue(queuedPath.path, queuedPath.value, config);
+          } catch (err) {
+            app.error(`Error processing queued path ${queuedPath.path}:`, err);
+          }
+        }
+        
+        isProcessingQueue = false;
+        app.debug(`Finished processing queued paths`);
+      }
+      
+      // Extract path processing logic into a separate function
+      async function processPathValue(path, value, config) {
+        const deviceType = identifyDeviceType(path);
+        if (!deviceType) {
+          return;
+        }
+        
+        // Always do discovery
+        addDiscoveredPath(deviceType, path, value, config);
+        
+        // Debug logging for device creation flow
+        app.debug(`Processing ${deviceType} path: ${path}, Venus reachable: ${venusReachable}, Enabled: ${isPathEnabled(deviceType, path, config)}`);
+        
+        // Only proceed with Venus OS operations if Venus is reachable and path is enabled
+        if (venusReachable !== true) {
+          // Venus OS not reachable, add to queue for later processing
+          const existingIndex = pendingPaths.findIndex(p => p.path === path);
+          if (existingIndex >= 0) {
+            // Update existing queued path with new value
+            pendingPaths[existingIndex].value = value;
+          } else {
+            // Add new path to queue
+            pendingPaths.push({ path, value, timestamp: Date.now() });
+          }
+          app.debug(`Queued path for later processing: ${path} (queue size: ${pendingPaths.length})`);
+          return;
+        }
+        
+        // Check if this specific path is enabled
+        if (!isPathEnabled(deviceType, path, config)) {
+          app.debug(`Skipping ${path} - not enabled in configuration`);
+          return; // Skip disabled paths
+        }
+        
+        // Create Venus client for this device type if it doesn't exist yet or has failed
+        if (!plugin.clients[deviceType] || plugin.clients[deviceType] === null) {
+          app.setPluginStatus(`Creating Venus OS service for ${deviceTypeNames[deviceType]}`);
+          app.debug(`Creating new Venus client for device type: ${deviceType}`);
+          
+          try {
+            plugin.clients[deviceType] = VenusClientFactory(config, deviceType);
+            activeClientTypes.add(deviceTypeNames[deviceType]);
+            
+            const deviceCountText = generateEnabledDeviceCountText(config);
+            app.setPluginStatus(`Connected to Venus OS, injecting ${deviceCountText}`);
+            app.debug(`Successfully created Venus client for ${deviceType}`);
+            
+          } catch (err) {
+            // Clean up connection error messages for better user experience
+            let cleanMessage = err.message || err.toString();
+            if (cleanMessage.includes('ENOTFOUND')) {
+              cleanMessage = `Venus OS device not found at ${config.venusHost} (DNS resolution failed)`;
+            } else if (cleanMessage.includes('ECONNREFUSED')) {
+              cleanMessage = `Venus OS device refused connection at ${config.venusHost}:78 (check D-Bus TCP setting)`;
+            } else if (cleanMessage.includes('timeout')) {
+              cleanMessage = `Venus OS connection timeout (${config.venusHost}:78)`;
+            }
+            
+            app.setPluginError(`Venus OS not reachable: ${cleanMessage}`);
+            app.debug(`Failed to create Venus client for ${deviceType}: ${cleanMessage}`);
+            
+            // Mark this client as failed to prevent retries
+            plugin.clients[deviceType] = null;
+            
+            // Only log the first connection error per device type to avoid spam
+            if (!plugin.clients[`${deviceType}_error_logged`]) {
+              app.error(`Cannot connect to Venus OS for ${deviceTypeNames[deviceType]}: ${cleanMessage}`);
+              plugin.clients[`${deviceType}_error_logged`] = true;
+            }
+            return;
+          }
+        }
+        
+        // Update the Venus client with the new data (whether client is new or existing)
+        if (plugin.clients[deviceType] && plugin.clients[deviceType] !== null) {
+          app.debug(`Updating Venus client ${deviceType} with path: ${path}`);
+          try {
+            await plugin.clients[deviceType].handleSignalKUpdate(path, value);
+          } catch (err) {
+            // Only log detailed errors if it's not a connection issue
+            if (err.message && (err.message.includes('ENOTFOUND') || err.message.includes('ECONNREFUSED'))) {
+              // Suppress frequent connection errors when Venus OS is not available
+              // The main connection error is already logged during client creation
+              
+              // Mark client as failed
+              plugin.clients[deviceType] = null;
+              activeClientTypes.delete(deviceTypeNames[deviceType]);
+              app.debug(`Marked Venus client ${deviceType} as failed due to connection error`);
+            } else {
+              app.error(`Error updating ${deviceType} client for ${path}: ${err.message}`);
+            }
+          }
+        }
+      }
 
       
       // Start the bridge with Signal K readiness check
