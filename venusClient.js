@@ -58,7 +58,8 @@ export class VenusClient extends EventEmitter {
     console.log(`🔧 Debug: Path '${path}' -> basePath '${basePath}' for device type '${this._internalDeviceType}'`);
     
     if (!this.deviceInstances.has(basePath)) {
-      this.deviceInstances.set(basePath, null);
+      // Mark that we're creating this device to prevent duplicate creation
+      this.deviceInstances.set(basePath, 'creating');
 
       try {
         // Create a deterministic index based on the path hash to ensure consistency
@@ -173,19 +174,26 @@ export class VenusClient extends EventEmitter {
         this.deviceInstances.set(basePath, deviceInstance);
         
         console.log(`✅ Successfully created device instance for ${basePath}`);
+        return deviceInstance;
       } catch (error) {
         console.error(`❌ Error creating device instance for ${basePath} (from path: ${path}):`, error);
         console.error(`❌ Error stack:`, error.stack);
-        // Remove the null entry to allow retry on next call
+        // Remove the entry to allow retry on next call
         this.deviceInstances.delete(basePath);
         return null;
       }
     } else {
+      const existing = this.deviceInstances.get(basePath);
+      if (existing === 'creating') {
+        // Device is currently being created, wait a bit and try again
+        console.log(`🔧 Debug: Device instance for '${basePath}' is being created, waiting...`);
+        await new Promise(resolve => setTimeout(resolve, 100));
+        return this._getOrCreateDeviceInstance(path); // Retry
+      }
+      
       console.log(`🔧 Debug: Using existing device instance for basePath '${basePath}' (from path '${path}')`);
+      return existing;
     }
-    
-    // can return null if the device instance is not yet created
-    return this.deviceInstances.get(basePath);
   }
 
   _extractBasePath(path) {
