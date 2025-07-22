@@ -167,14 +167,20 @@ describe('VenusClient - Battery', () => {
     });
 
     it('should ignore invalid values', async () => {
-      const initialSize = client.deviceInstances.size;
+      // Create a fresh client to ensure clean state
+      const freshClient = new VenusClient(mockSettings, 'batteries');
+      const initialSize = freshClient.deviceInstances.size;
       
-      await client.handleSignalKUpdate('electrical.batteries.main.voltage', null);
-      await client.handleSignalKUpdate('electrical.batteries.main.voltage', undefined);
-      await client.handleSignalKUpdate('electrical.batteries.main.voltage', 'invalid');
+      // These should not create devices since values are invalid
+      await freshClient.handleSignalKUpdate('electrical.batteries.main.voltage', null);
+      await freshClient.handleSignalKUpdate('electrical.batteries.main.voltage', undefined);
+      await freshClient.handleSignalKUpdate('electrical.batteries.main.voltage', 'invalid');
       
       // Device instances should not change with invalid values
-      expect(client.deviceInstances.size).toBe(initialSize);
+      expect(freshClient.deviceInstances.size).toBe(initialSize);
+      
+      // Clean up
+      await freshClient.disconnect();
     });
 
     it('should ignore non-battery paths', async () => {

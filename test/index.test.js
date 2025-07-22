@@ -159,13 +159,19 @@ describe('Signal K Plugin - Main Index', () => {
       // Mock Signal K readiness
       mockApp.getSelfPath.mockReturnValue({ someData: 'test' });
       
+      // Mock the onValue subscription properly
+      const mockSubscription = { onValue: vi.fn() };
+      mockApp.streambundle.getSelfBus.mockReturnValue(mockSubscription);
+      
       plugin.start(options);
       
       expect(mockApp.setPluginStatus).toHaveBeenCalledWith('Starting Signal K to Venus OS bridge');
       expect(mockApp.debug).toHaveBeenCalledWith('Starting Signal K to Venus OS bridge');
       
-      // Should set up subscription
-      await new Promise(resolve => setTimeout(resolve, 100)); // Allow async setup
+      // Give time for async startup sequence
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Check that subscription setup was attempted
       expect(mockApp.streambundle.getSelfBus).toHaveBeenCalled();
     });
 
