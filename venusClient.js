@@ -36,6 +36,10 @@ export class VenusClient extends EventEmitter {
     this.deviceInstances = new Map(); // Track device instances by Signal K path
     this.deviceServices = new Map(); // Track individual device services
     this.exportedInterfaces = new Set(); // Track which D-Bus interfaces have been exported
+    
+    // Throttle mechanism for reducing noisy "Processing data update" logs
+    this._lastDataUpdateLog = new Map(); // Map of deviceInstance.basePath -> last log timestamp
+    this._dataUpdateLogInterval = 10000; // Log every 10 seconds per device
   }
 
   // Helper function to wrap values in D-Bus variant format
@@ -436,7 +440,14 @@ export class VenusClient extends EventEmitter {
         return;
       }
       
-      console.log(`📊 Processing data update: ${path} = ${value} for ${deviceInstance.basePath}`);
+      // Throttled logging for data updates to reduce noise
+      const now = Date.now();
+      const lastLogTime = this._lastDataUpdateLog.get(deviceInstance.basePath) || 0;
+      
+      if (now - lastLogTime > this._dataUpdateLogInterval) {
+        console.log(`📊 Processing data updates for ${deviceInstance.basePath} (last ${Math.round((now - lastLogTime) / 1000)}s ago)`);
+        this._lastDataUpdateLog.set(deviceInstance.basePath, now);
+      }
       
       // Handle the update based on device type
       await this._handleDeviceSpecificUpdate(path, value, deviceService, deviceInstance);
@@ -574,10 +585,17 @@ export class VenusClient extends EventEmitter {
       }
     } else if (path.includes('timeRemaining')) {
       if (typeof value === 'number' && !isNaN(value) && value !== null) {
-        // timeRemaining is in seconds, convert to Venus OS format (integer seconds)
-        await deviceService.updateProperty('/TimeToGo', Math.round(value), 'i', `${deviceName} time to go`);
-        const hours = Math.floor(value / 3600);
-        const minutes = Math.floor((value % 3600) / 60);
+        // timeRemaining is in seconds, convert to Venus OS format
+        let timeToGoSeconds = Math.round(value);
+        
+        // Log the conversion for debugging
+        const hours = Math.floor(timeToGoSeconds / 3600);
+        const minutes = Math.floor((timeToGoSeconds % 3600) / 60);
+        
+        console.log(`🔋 TimeToGo: ${timeToGoSeconds}s (${hours}h ${minutes}m)`);
+        
+        // Use double type instead of integer - Venus OS may expect this for proper display
+        await deviceService.updateProperty('/TimeToGo', timeToGoSeconds, 'd', `${deviceName} time to go`);
         this.emit('dataUpdated', 'Battery Time to Go', `${deviceName}: ${hours}h ${minutes}m`);
       } else {
         // Ignoring null/invalid timeRemaining value
