@@ -124,11 +124,8 @@ export class VEDBusService extends EventEmitter {
     // Store serial in device data for consistency
     this.deviceData['/Serial'] = serialNumber;
     
-    console.log(`🔧 Initializing serial number for ${this.dbusServiceName}: ${serialNumber}`);
-    
     // For BMV devices, immediately export all required properties to prevent "Missing or invalid serial" errors
     if (this.deviceConfig.serviceType === 'battery') {
-      console.log(`🔋 Setting up BMV-specific properties for ${this.dbusServiceName}`);
       
       // Export all management properties immediately
       Object.entries(this.managementProperties).forEach(([path, config]) => {
@@ -150,13 +147,11 @@ export class VEDBusService extends EventEmitter {
         }
       });
       
-      console.log(`✅ BMV properties initialized for ${this.dbusServiceName} with serial: ${serialNumber}`);
     } else {
       // For non-BMV devices, just export management properties
       Object.entries(this.managementProperties).forEach(([path, config]) => {
         this._exportProperty(path, config);
       });
-      console.log(`✅ Management properties exported for ${this.deviceConfig.serviceType}: ${serialNumber}`);
     }
     
     await this._registerInSettings();
@@ -178,7 +173,6 @@ export class VEDBusService extends EventEmitter {
           end: () => {},
           invoke: (options, callback) => callback(null, [])
         };
-        console.log(`Test mode: Created mock D-Bus connection for ${this.dbusServiceName}`);
         this.isConnected = true; // CRITICAL: Set connected state for test mode
       } else {
         // Create individual D-Bus connection for this service
@@ -195,7 +189,6 @@ export class VEDBusService extends EventEmitter {
         if (typeof this.bus.on === 'function') {
           await new Promise((resolve, reject) => {
             this.bus.on('connect', () => {
-              console.log(`D-Bus connected for ${this.dbusServiceName}`);
               this.isConnected = true;
               this.reconnectAttempts = 0;
               resolve();
@@ -223,7 +216,6 @@ export class VEDBusService extends EventEmitter {
 
     // Monitor connection state
     this.bus.on('disconnect', () => {
-      console.log(`D-Bus disconnected for ${this.dbusServiceName}`);
       this.isConnected = false;
       this._scheduleReconnect();
     });
@@ -231,11 +223,11 @@ export class VEDBusService extends EventEmitter {
     this.bus.on('error', (err) => {
       // Handle different types of connection errors
       if (err.code === 'ECONNRESET') {
-        console.log(`D-Bus connection reset for ${this.dbusServiceName} (Venus OS restarted)`);
+        // D-Bus connection reset (Venus OS restarted)
       } else if (err.code === 'ECONNREFUSED') {
-        console.log(`D-Bus connection refused for ${this.dbusServiceName} (Venus OS not ready)`);
+        // D-Bus connection refused (Venus OS not ready)
       } else if (err.code === 'ENOTFOUND') {
-        console.log(`D-Bus host not found for ${this.dbusServiceName} (DNS issue)`);
+        // D-Bus host not found (DNS issue)
       } else {
         console.error(`D-Bus error for ${this.dbusServiceName}:`, err);
       }
@@ -247,7 +239,7 @@ export class VEDBusService extends EventEmitter {
     if (this.bus.connection && typeof this.bus.connection.on === 'function') {
       this.bus.connection.on('error', (err) => {
         if (err.code === 'ECONNRESET') {
-          console.log(`D-Bus stream reset for ${this.dbusServiceName} (Venus OS restarted)`);
+          // D-Bus stream reset (Venus OS restarted)
         } else {
           console.error(`D-Bus stream error for ${this.dbusServiceName}:`, err);
         }
@@ -292,7 +284,6 @@ export class VEDBusService extends EventEmitter {
         });
       } catch (err) {
         console.error(`Service registration check failed for ${this.dbusServiceName}:`, err);
-        console.log(`Attempting to re-register service ${this.dbusServiceName}`);
         await this._attemptFullReRegistration();
       }
     }, 120000); // Every 2 minutes
@@ -345,8 +336,6 @@ export class VEDBusService extends EventEmitter {
 
     const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000); // Exponential backoff, max 30s
     this.reconnectAttempts++;
-
-    console.log(`Scheduling reconnect for ${this.dbusServiceName} in ${delay}ms (attempt ${this.reconnectAttempts})`);
     
     this.reconnectTimer = setTimeout(async () => {
       this.reconnectTimer = null;
@@ -356,8 +345,6 @@ export class VEDBusService extends EventEmitter {
 
   async _attemptReconnect() {
     try {
-      console.log(`Attempting to reconnect ${this.dbusServiceName}...`);
-      
       // Clean up old connection
       if (this.bus) {
         try {
@@ -373,8 +360,6 @@ export class VEDBusService extends EventEmitter {
       // Re-register service
       await this._registerService();
       
-      console.log(`Successfully reconnected ${this.dbusServiceName}`);
-      
     } catch (err) {
       console.error(`Failed to reconnect ${this.dbusServiceName}:`, err);
       this._scheduleReconnect();
@@ -382,7 +367,6 @@ export class VEDBusService extends EventEmitter {
   }
 
   async _attemptFullReRegistration() {
-    console.log(`Attempting full re-registration for ${this.dbusServiceName}`);
     try {
       // Close existing connection
       if (this.bus) {
@@ -409,8 +393,6 @@ export class VEDBusService extends EventEmitter {
       await this._registerInSettings();
       await this._registerService();
       
-      console.log(`Successfully re-registered ${this.dbusServiceName} after Venus OS restart`);
-      
     } catch (err) {
       console.error(`Failed to re-register ${this.dbusServiceName}:`, err);
       // Schedule a reconnect attempt
@@ -419,7 +401,6 @@ export class VEDBusService extends EventEmitter {
   }
 
   async _registerInSettings() {
-    console.log(`${this.deviceConfig.serviceType}InstanceName: ${this.deviceInstance.name}`)
     try {
       // Proposed class and VRM instance
       const proposedInstance = `${this.deviceConfig.serviceType}:${this.deviceInstance.index}`;
@@ -478,7 +459,6 @@ export class VEDBusService extends EventEmitter {
               const instanceMatch = actualProposedInstance.match(new RegExp(`${this.deviceConfig.serviceType}:(\\d+)`));
               if (instanceMatch) {
                 actualInstance = parseInt(instanceMatch[1]);
-                console.log(`${this.deviceConfig.serviceType} assigned actual instance: ${actualInstance} (${actualProposedInstance})`);
                 
                 // Update the instance to match the assigned instance
                 this.vrmInstanceId = actualInstance;
@@ -489,7 +469,6 @@ export class VEDBusService extends EventEmitter {
         }
       }
 
-      console.log(`${this.deviceConfig.serviceType} registered in Venus OS Settings: ${this.serviceName} -> ${this.deviceConfig.serviceType}:${actualInstance}`);
     } catch (err) {
       console.error(`Settings registration failed for ${this.deviceConfig.serviceType} ${this.serviceName}:`, err);
     }
@@ -505,20 +484,15 @@ export class VEDBusService extends EventEmitter {
         });
       });
 
-      console.log(`Successfully registered ${this.deviceConfig.serviceType} service ${this.dbusServiceName} on D-Bus`);
-      
       // Export management interface AFTER service name is registered  
       this._exportManagementInterface();
       
       // Verify that critical properties are properly set
       const serialNumber = this.deviceData['/Serial'] || this.managementProperties['/Serial']?.value;
       const deviceInstance = this.deviceData['/DeviceInstance'] || this.managementProperties['/DeviceInstance']?.value;
-      console.log(`🔧 Service ${this.dbusServiceName} initialized with Serial: ${serialNumber}, DeviceInstance: ${deviceInstance}`);
       
       if (!serialNumber) {
         console.error(`❌ CRITICAL: No serial number set for ${this.dbusServiceName}! This will cause Venus OS validation failures.`);
-      } else {
-        console.log(`✅ Serial number properly configured for ${this.dbusServiceName}: ${serialNumber}`);
       }
       
       // Initialize connection status in device data for heartbeat
@@ -528,7 +502,6 @@ export class VEDBusService extends EventEmitter {
       // This ensures data updates will work even if the D-Bus 'connect' event doesn't fire
       // and prevents race conditions during ServiceAnnouncement
       this.isConnected = true;
-      console.log(`🔗 Connection state set to true for ${this.dbusServiceName} - ready for data updates`);
       
       // Start heartbeat to keep service alive
       this.startHeartbeat();
@@ -550,7 +523,6 @@ export class VEDBusService extends EventEmitter {
                          this.settings.venusHost === 'test.local';
       
       if (isTestMode) {
-        console.log(`Test mode: Skipping ServiceAnnouncement for ${this.dbusServiceName}`);
         return;
       }
 
@@ -563,10 +535,9 @@ export class VEDBusService extends EventEmitter {
         if (busitemExists) {
           await this._sendBusitemAnnouncement();
           announcementSent = true;
-          console.log(`ServiceAnnouncement sent via busitem for ${this.dbusServiceName}`);
         }
       } catch (err) {
-        console.log(`Busitem announcement failed for ${this.dbusServiceName}: ${err.message}`);
+        // Busitem announcement failed - try next method
       }
       
       // Method 2: Try com.victronenergy.system (alternative approach)
@@ -574,9 +545,8 @@ export class VEDBusService extends EventEmitter {
         try {
           await this._sendSystemAnnouncement();
           announcementSent = true;
-          console.log(`ServiceAnnouncement sent via system for ${this.dbusServiceName}`);
         } catch (err) {
-          console.log(`System announcement failed for ${this.dbusServiceName}: ${err.message}`);
+          // System announcement failed - try next method
         }
       }
       
@@ -585,9 +555,8 @@ export class VEDBusService extends EventEmitter {
         try {
           await this._registerWithSystemcalc();
           announcementSent = true;
-          console.log(`Service registered directly with systemcalc for ${this.dbusServiceName}`);
         } catch (err) {
-          console.log(`Direct systemcalc registration failed for ${this.dbusServiceName}: ${err.message}`);
+          // Direct systemcalc registration failed
         }
       }
       
@@ -764,7 +733,6 @@ export class VEDBusService extends EventEmitter {
 
         // Only log GetItems if it's the first time or if there's a significant change in properties count
         if (!this._lastItemsCount || Math.abs(this._lastItemsCount - items.length) > 5) {
-          console.log(`📋 GetItems for ${this.dbusServiceName}: ${items.length} properties available`);
           this._lastItemsCount = items.length;
         }
         return items;
@@ -772,7 +740,6 @@ export class VEDBusService extends EventEmitter {
       GetValue: () => {
         // Reduce GetValue logging noise - only log occasionally
         if (!this._lastGetValueLog || Date.now() - this._lastGetValueLog > 10000) {
-          console.log(`🔍 D-Bus BusItem.GetValue request for ${this.dbusServiceName}`);
           this._lastGetValueLog = Date.now();
         }
         const items = [];
@@ -846,7 +813,7 @@ export class VEDBusService extends EventEmitter {
       Get: (interfaceName, propertyName) => {
         // Log only critical property requests to reduce noise
         if (propertyName === 'Serial' || propertyName === 'DeviceInstance' || propertyName === 'Soc') {
-          console.log(`🔍 D-Bus Properties.Get request: interface=${interfaceName}, property=${propertyName} for ${this.dbusServiceName}`);
+          // Reduced logging for critical properties
         }
         
         // Handle requests for properties with or without leading slash
@@ -856,7 +823,6 @@ export class VEDBusService extends EventEmitter {
         // CRITICAL: Always handle Serial requests first - Venus OS validation depends on this
         if (propertyName === 'Serial' || propertyName === '/Serial') {
           const serialValue = `SK${this.vrmInstanceId}`;
-          console.log(`🔧 D-Bus Properties.Get Serial request for ${this.dbusServiceName}: ${serialValue}`);
           return this._wrapValue('s', serialValue);
         }
         
@@ -888,7 +854,6 @@ export class VEDBusService extends EventEmitter {
           }
         }
         
-        console.log(`⚠️ Property ${propertyName} not found in ${this.dbusServiceName}`);
         return this._wrapValue('s', '');
       },
       GetAll: (interfaceName) => {
@@ -918,7 +883,6 @@ export class VEDBusService extends EventEmitter {
           }
         });
         
-        console.log(`🔧 D-Bus Properties.GetAll for ${this.dbusServiceName}: ${Object.keys(properties).length} properties`);
         return properties;
       },
       Set: (interfaceName, propertyName, value) => {
@@ -1042,7 +1006,7 @@ export class VEDBusService extends EventEmitter {
       Get: (interfaceName, propertyName) => {
         // Log only critical individual property requests to reduce noise
         if (propertyName === 'Value' && (path.includes('Serial') || path.includes('Soc') || path.includes('Voltage'))) {
-          console.log(`🔍 Individual property D-Bus Get: path=${path}, interface=${interfaceName}, property=${propertyName}`);
+          // Reduced logging for critical individual properties
         }
         if (interfaceName === 'com.victronenergy.BusItem' && propertyName === 'Value') {
           return propertyInterface.GetValue();
@@ -1051,7 +1015,6 @@ export class VEDBusService extends EventEmitter {
         }
         // CRITICAL: Handle direct Serial property requests on individual property paths
         else if (propertyName === 'Serial' && path === '/Serial') {
-          console.log(`🔧 Serial property direct access on ${path}: SK${this.vrmInstanceId}`);
           return this._wrapValue('s', `SK${this.vrmInstanceId}`);
         }
         return this._wrapValue('s', '');
@@ -1095,7 +1058,6 @@ export class VEDBusService extends EventEmitter {
     if (this.deviceConfig.serviceType === 'battery' && path === '/TimeToGo') {
       // Handle TimeToGo null/undefined/invalid values by converting to -1 (Victron standard for "unknown")
       if (value === null || value === undefined || (typeof value === 'number' && (!isFinite(value) || isNaN(value)))) {
-        console.log(`🔧 Converting invalid TimeToGo value ${value} to -1 (unknown)`);
         value = -1;
       }
     }
@@ -1118,7 +1080,6 @@ export class VEDBusService extends EventEmitter {
       try {
         // CRITICAL: Enhanced validation to prevent "Missing or invalid serial" errors
         if (value === null || value === undefined) {
-          console.log(`🔧 Skipping signal emission for ${path} with null/undefined value: ${value}`);
           return; // Don't emit signals for invalid values
         }
         
@@ -1127,7 +1088,6 @@ export class VEDBusService extends EventEmitter {
           if (typeof value !== 'number' || !isFinite(value) || isNaN(value)) {
             // Special handling for /TimeToGo - use -1 for "unknown" like Victron does
             if (path === '/TimeToGo') {
-              console.log(`🔧 Converting invalid TimeToGo value ${value} to -1 (unknown)`);
               value = -1; // Use Victron's standard "unknown" value
             } else {
               console.warn(`⚠️ Skipping signal emission for ${path} with invalid numeric value: ${value} (type: ${typeof value})`);
@@ -1154,7 +1114,7 @@ export class VEDBusService extends EventEmitter {
           if (isCriticalBatteryPath) {
             // Only log the most critical updates to reduce noise
             if (path === '/Soc' || path === '/Dc/0/Voltage' || path === '/Serial') {
-              console.log(`🔋 Critical BMV ${path} updated: ${value}`);
+              // Reduced logging for critical BMV paths
             }
             
             // Emit enhanced signals for BMV integration
@@ -1176,7 +1136,6 @@ export class VEDBusService extends EventEmitter {
       } catch (err) {
         // Handle connection errors gracefully
         if (err.code === 'ECONNRESET' || err.code === 'ECONNREFUSED' || err.code === 'EPIPE') {
-          console.log(`D-Bus connection lost while updating ${path} for ${this.dbusServiceName} - will reconnect`);
           this.isConnected = false;
           this._scheduleReconnect();
         } else {
@@ -1187,7 +1146,6 @@ export class VEDBusService extends EventEmitter {
       // Value hasn't changed, no signal needed
     } else {
       // D-Bus connection not available - this is expected during initialization
-      console.log(`D-Bus not ready for ${this.dbusServiceName}, storing ${path} = ${value} for later emission`);
     }
   }
 
@@ -1220,7 +1178,6 @@ export class VEDBusService extends EventEmitter {
         this.exportedInterfaces['/'].emit('ItemsChanged', changes);
       } else {
         // Fallback to simple property update without complex signal emission
-        console.log(`📡 Property updated: ${path} = ${props.Value} for ${this.dbusServiceName}`);
       }
 
     } catch (err) {
@@ -1236,7 +1193,6 @@ export class VEDBusService extends EventEmitter {
 
     // Validate value before emitting
     if (value === null || value === undefined) {
-      console.log(`🔧 Skipping ValueChanged for ${path} with null/undefined value`);
       return;
     }
 
@@ -1266,7 +1222,6 @@ export class VEDBusService extends EventEmitter {
         ]]]);
       } else {
         // Just log the value change without complex signal emission
-        console.log(`📡 Value changed: ${path} = ${value} for ${this.dbusServiceName}`);
       }
     } catch (err) {
       console.error(`❌ Error emitting ValueChanged for ${path}:`, err.message || err);
