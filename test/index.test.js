@@ -163,16 +163,27 @@ describe('Signal K Plugin - Main Index', () => {
       const mockSubscription = { onValue: vi.fn() };
       mockApp.streambundle.getSelfBus.mockReturnValue(mockSubscription);
       
+      // Mock D-Bus connectivity test to succeed quickly (without 20s wait)
+      const mockTestBus = {
+        listNames: vi.fn((callback) => {
+          // Simulate successful D-Bus connection immediately
+          callback(null, ['some.service']);
+        }),
+        end: vi.fn()
+      };
+      mockDbusNative.createClient.mockReturnValue(mockTestBus);
+      
       plugin.start(options);
       
       expect(mockApp.setPluginStatus).toHaveBeenCalledWith('Starting Signal K to Venus OS bridge');
       expect(mockApp.debug).toHaveBeenCalledWith('Starting Signal K to Venus OS bridge');
       
-      // Wait longer for the full async startup sequence:
-      // 1. waitForSignalKReadiness (includes 1s initial delay)
-      // 2. testVenusConnectivity
+      // Wait for the async startup sequence (the 20s wait in testVenusConnectivity 
+      // should be skipped because it's mocked, but we still need time for:
+      // 1. waitForSignalKReadiness (1s initial delay + check)
+      // 2. mocked testVenusConnectivity (immediate)  
       // 3. setupSignalKSubscription
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise(resolve => setTimeout(resolve, 3000));
       
       // Check that subscription setup was attempted
       expect(mockApp.streambundle.getSelfBus).toHaveBeenCalled();
