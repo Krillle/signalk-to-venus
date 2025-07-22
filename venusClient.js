@@ -61,7 +61,7 @@ export class VenusClient extends EventEmitter {
     const basePath = this._extractBasePath(path);
     
     if (!this.deviceInstances.has(basePath)) {
-      console.log(`🔧 Creating device instance for ${basePath} (${this._internalDeviceType}) with index ${this._generateStableIndex(basePath)}`);
+      console.log(`Creating device instance for ${basePath} (${this._internalDeviceType}) with index ${this._generateStableIndex(basePath)}`);
       // Mark that we're creating this device to prevent duplicate creation
       this.deviceInstances.set(basePath, 'creating');
 
@@ -76,7 +76,7 @@ export class VenusClient extends EventEmitter {
         
         // Create device service for this device with its own D-Bus connection
         const deviceService = new VEDBusService(
-          `signalk_${deviceInstance.index}`,
+          `SignalK${deviceInstance.index}`,
           deviceInstance,
           this.settings,
           this.deviceConfig
@@ -173,7 +173,7 @@ export class VenusClient extends EventEmitter {
         this.deviceServices.set(basePath, deviceService);
         this.deviceInstances.set(basePath, deviceInstance);
         
-        console.log(`✅ Successfully created device instance for ${basePath}`);
+        console.log(`Successfully created device instance for ${basePath}`);
         return deviceInstance;
       } catch (error) {
         console.error(`❌ Error creating device instance for ${basePath} (from path: ${path}):`, error);
