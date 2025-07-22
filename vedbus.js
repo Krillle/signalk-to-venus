@@ -489,7 +489,7 @@ export class VEDBusService extends EventEmitter {
 
       console.log(`Successfully registered ${this.deviceConfig.serviceType} service ${this.dbusServiceName} on D-Bus`);
       
-      // Export management interface AFTER service name is registered
+      // Export management interface AFTER service name is registered  
       this._exportManagementInterface();
       
       // Verify that critical properties are properly set
