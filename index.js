@@ -114,6 +114,15 @@ export default function(app) {
       const pendingPaths = [];
       let isProcessingQueue = false;
       
+      // TEMPORARY: Track devices sent to Venus OS to limit to 1 per type (loop prevention)
+      const sentToVenusDevices = {
+        batteries: new Set(),
+        tanks: new Set(),
+        environment: new Set(),
+        switches: new Set()
+      };
+      const MAX_DEVICES_PER_TYPE = 1; // TEMPORARY: Limit to prevent loops
+      
       const deviceTypeNames = {
         'batteries': 'Batteries',
         'tanks': 'Tanks', 
@@ -570,6 +579,13 @@ export default function(app) {
           return; // Skip disabled paths
         }
         
+        // TEMPORARY: Check device limit per type to prevent loops
+        const devicePath = getDevicePath(deviceType, path);
+        if (devicePath && sentToVenusDevices[deviceType].size >= MAX_DEVICES_PER_TYPE && !sentToVenusDevices[deviceType].has(devicePath)) {
+          app.debug(`TEMPORARY LOOP PREVENTION: Skipping ${path} - already sending ${MAX_DEVICES_PER_TYPE} ${deviceType} device(s) to Venus OS`);
+          return; // Skip additional devices of same type
+        }
+        
         // Create Venus client for this device type if it doesn't exist yet or has failed
         if (!plugin.clients[deviceType] || plugin.clients[deviceType] === null) {
           app.setPluginStatus(`Creating Venus OS service for ${deviceTypeNames[deviceType]}`);
@@ -580,7 +596,7 @@ export default function(app) {
             activeClientTypes.add(deviceTypeNames[deviceType]);
             
             const deviceCountText = generateEnabledDeviceCountText(config);
-            app.setPluginStatus(`Connected to Venus OS, injecting ${deviceCountText}`);
+            app.setPluginStatus(`Connected to Venus OS, injecting ${deviceCountText} (TEMP: 1 device per type max)`);
             app.debug(`Successfully created Venus client for ${deviceType}`);
             
             // After creating a new client, force immediate updates with ALL current data
@@ -592,10 +608,21 @@ export default function(app) {
                 // Send data for all discovered devices of this type that are enabled
                 if (discoveredPaths[deviceType]) {
                   const pathMap = discoveredPaths[deviceType];
+                  let devicesSent = 0;
                   
                   for (const [devicePath, pathInfo] of pathMap) {
+                    // TEMPORARY: Respect device limit in initial batch too
+                    if (devicesSent >= MAX_DEVICES_PER_TYPE) {
+                      app.debug(`TEMPORARY LOOP PREVENTION: Limiting initial batch to ${MAX_DEVICES_PER_TYPE} ${deviceType} device(s)`);
+                      break;
+                    }
+                    
                     const safePathKey = devicePath.replace(/[^a-zA-Z0-9]/g, '_');
                     if (config[deviceType] && config[deviceType][safePathKey] === true) {
+                      // Track this device as sent to Venus OS
+                      sentToVenusDevices[deviceType].add(devicePath);
+                      devicesSent++;
+                      
                       // Send all properties for this enabled device
                       for (const fullPath of pathInfo.properties) {
                         try {
@@ -649,6 +676,16 @@ export default function(app) {
         // Update the Venus client with the new data (whether client is new or existing)
         if (plugin.clients[deviceType] && plugin.clients[deviceType] !== null) {
           app.debug(`Updating Venus client ${deviceType} with path: ${path}`);
+          
+          // TEMPORARY: Track this device as sent to Venus OS
+          const devicePath = getDevicePath(deviceType, path);
+          if (devicePath) {
+            sentToVenusDevices[deviceType].add(devicePath);
+            if (sentToVenusDevices[deviceType].size === 1) {
+              app.debug(`TEMPORARY LOOP PREVENTION: First ${deviceType} device sent to Venus OS: ${devicePath}`);
+            }
+          }
+          
           try {
             await plugin.clients[deviceType].handleSignalKUpdate(path, value);
           } catch (err) {

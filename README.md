@@ -4,7 +4,12 @@ This plugin for Signal K Server injects battery, tank, environment, and switch d
 
 ## Features
 
-- **Dynamic Device Discovery**: Automatically discovers all Signal K devices on your boat and presents them in an intuitive configuration UI
+- **Dynamic Device Discovery**: Automatically discovers all Signal K devices on your boat and presents them in an intuit### v1.0.13 (2025/07/22 17:30)
+**First working version. Known issues:**
+- Loop prevention from signalk-venus is not working yet
+- **TEMPORARY: Limited to 1 device per type** (batteries, tanks, environment, switches) to prevent potential endless loops until signalk-venus loop prevention is verified
+- Switches not tested yet (and probably not working), as Venus OS does not yet support switches
+- Battery Monitor Time To Go (TTG) is not displayed correctlyonfiguration UI
 - **Selective Device Control**: Enable/disable individual devices - only send the data you want to Venus OS
 - **Smart Device Naming**: Intelligent display names (e.g., "Freshwater", "Fuel", "Water Temperature")
 - **Registers as Proper D-Bus Services**: Creates valid devices and battery monitor on Victron D-Bus services for seamless VRM integration
@@ -133,6 +138,8 @@ After starting the plugin, it will automatically discover all compatible Signal 
 ```
 
 **All devices are disabled by default** - you must explicitly enable in the plugin settings the ones you want to send to Venus OS. This gives you complete control over what data appears in your VRM dashboard. (Display is limited by the maximum numbers of devices, the VRM/Cerbo UI is able to display.)
+
+**⚠️ TEMPORARY LIMITATION**: Currently limited to **1 device per type** (1 battery, 1 tank, 1 environment sensor, 1 switch) to prevent potential endless loops while we verify signalk-venus plugin loop prevention is working correctly.
 
 ### Supported Signal K Paths
 
