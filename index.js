@@ -237,8 +237,8 @@ export default function(app) {
           plugin.venusConnected = true;
           app.setPluginStatus(`Venus OS reachable at ${config.venusHost} - waiting for data to stabilize...`);
           
-          // Wait 5 seconds after Venus becomes reachable to let Signal K data fully populate
-          await new Promise(resolve => setTimeout(resolve, 5000));
+          // Wait 10 seconds after Venus becomes reachable to let Signal K data fully populate
+          await new Promise(resolve => setTimeout(resolve, 10000));
           app.setPluginStatus(`Venus OS ready at ${config.venusHost}`);
           
           return true;
@@ -298,10 +298,18 @@ export default function(app) {
           // Start periodic Venus connectivity tests
           plugin.connectivityInterval = setInterval(runConnectivityTest, 120000); // Check every 2 minutes
           
-          // Add a comprehensive forced update after startup to ensure VRM visibility
+          // Add multiple comprehensive forced updates after startup to ensure VRM visibility
           setTimeout(() => {
-            triggerComprehensiveForceUpdate(config);
-          }, 10000); // Wait 10 seconds after startup for all devices to be created
+            triggerComprehensiveForceUpdate(config, 1);
+          }, 15000); // Wait 15 seconds after startup for all devices to be created
+          
+          setTimeout(() => {
+            triggerComprehensiveForceUpdate(config, 2);
+          }, 25000); // Second wave at 25 seconds
+          
+          setTimeout(() => {
+            triggerComprehensiveForceUpdate(config, 3);
+          }, 40000); // Final wave at 40 seconds
           
         } catch (err) {
           app.error('Error during bridge startup:', err);
@@ -500,12 +508,12 @@ export default function(app) {
           const wasReachable = venusReachable;
           const isReachable = await testVenusConnectivity();
           
-          // If Venus just became reachable, process any queued paths after a delay
+          // If Venus just became reachable, process any queued paths after a longer delay
           if (!wasReachable && isReachable && pendingPaths.length > 0) {
-            app.debug(`Venus OS became reachable, waiting 5 seconds before processing ${pendingPaths.length} queued paths`);
+            app.debug(`Venus OS became reachable, waiting 10 seconds before processing ${pendingPaths.length} queued paths`);
             setTimeout(() => {
               processPendingPaths();
-            }, 5000);
+            }, 10000);
           }
         } catch (err) {
           app.error('Connectivity test error:', err);
@@ -513,50 +521,53 @@ export default function(app) {
       }
       
       // Comprehensive force update to ensure all devices appear in VRM
-      async function triggerComprehensiveForceUpdate(config) {
+      async function triggerComprehensiveForceUpdate(config, waveNumber = 1) {
         if (!venusReachable) {
-          app.debug('Skipping comprehensive force update - Venus OS not reachable');
+          app.debug(`Skipping comprehensive force update wave ${waveNumber} - Venus OS not reachable`);
           return;
         }
         
-        app.debug('Starting comprehensive force update for VRM visibility...');
+        app.debug(`Starting comprehensive force update wave ${waveNumber} for VRM visibility...`);
         
         // Wait a moment for any pending device creation to complete
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        
+        let updateCount = 0;
         
         // Force update all enabled devices with current Signal K data
-        Object.entries(plugin.clients).forEach(([deviceType, client]) => {
+        for (const [deviceType, client] of Object.entries(plugin.clients)) {
           if (client && client !== null && discoveredPaths[deviceType]) {
             const pathMap = discoveredPaths[deviceType];
             
-            pathMap.forEach((pathInfo, devicePath) => {
+            for (const [devicePath, pathInfo] of pathMap) {
               const safePathKey = devicePath.replace(/[^a-zA-Z0-9]/g, '_');
               if (config[deviceType] && config[deviceType][safePathKey] === true) {
-                app.debug(`Forcing comprehensive update for device: ${devicePath} (${deviceType})`);
+                app.debug(`Wave ${waveNumber}: Forcing comprehensive update for device: ${devicePath} (${deviceType})`);
                 
                 // Force update each property of this device
-                pathInfo.properties.forEach(async (fullPath) => {
+                for (const fullPath of pathInfo.properties) {
                   try {
-                    // Wait a moment between each update to avoid overwhelming
-                    await new Promise(resolve => setTimeout(resolve, 100));
+                    // Longer delay between updates for stability
+                    await new Promise(resolve => setTimeout(resolve, 200));
                     
                     const currentValue = app.getSelfPath(fullPath);
                     if (currentValue !== undefined && currentValue !== null) {
-                      app.debug(`Comprehensive force update: ${fullPath} = ${currentValue}`);
+                      app.debug(`Wave ${waveNumber} comprehensive force update: ${fullPath} = ${currentValue}`);
                       await client.handleSignalKUpdate(fullPath, currentValue);
+                      updateCount++;
                     } else {
-                      app.debug(`No current value for ${fullPath}, skipping comprehensive update`);
+                      app.debug(`Wave ${waveNumber}: No current value for ${fullPath}, skipping comprehensive update`);
                     }
                   } catch (err) {
-                    app.debug(`Comprehensive force update failed for ${fullPath}: ${err.message}`);
+                    app.debug(`Wave ${waveNumber} comprehensive force update failed for ${fullPath}: ${err.message}`);
                   }
-                });
+                }
               }
-            });
+            }
           }
-        });
+        }
         
-        app.debug('Comprehensive force update completed');
+        app.debug(`Comprehensive force update wave ${waveNumber} completed with ${updateCount} updates`);
       }
       
       // Process paths that were queued while Venus OS was not reachable
@@ -580,7 +591,7 @@ export default function(app) {
           }
         }
         
-        // After processing all queued paths, give devices a moment to initialize
+        // After processing all queued paths, give devices more time to initialize
         // then trigger a forced update to ensure VRM sees the devices
         setTimeout(async () => {
           app.debug('Triggering forced device updates for VRM visibility...');
@@ -609,7 +620,7 @@ export default function(app) {
               });
             }
           });
-        }, 2000); // Wait 2 seconds after device creation to force updates
+        }, 5000); // Wait 5 seconds after device creation to force updates
         
         isProcessingQueue = false;
         app.debug(`Finished processing queued paths`);
@@ -682,8 +693,8 @@ export default function(app) {
                           if (currentValue !== undefined && currentValue !== null) {
                             app.debug(`Initial data: ${fullPath} = ${currentValue}`);
                             await plugin.clients[deviceType].handleSignalKUpdate(fullPath, currentValue);
-                            // Small delay between updates to avoid overwhelming
-                            await new Promise(resolve => setTimeout(resolve, 50));
+                            // Longer delay between updates to avoid overwhelming
+                            await new Promise(resolve => setTimeout(resolve, 100));
                           }
                         } catch (pathErr) {
                           app.debug(`Could not send initial data for ${fullPath}: ${pathErr.message}`);
@@ -697,7 +708,7 @@ export default function(app) {
               } catch (err) {
                 app.debug(`Could not send initial data batch to new ${deviceType} client: ${err.message}`);
               }
-            }, 1000); // Wait 1 second for client to fully initialize
+            }, 2000); // Wait 2 seconds for client to fully initialize
             
           } catch (err) {
             // Clean up connection error messages for better user experience
