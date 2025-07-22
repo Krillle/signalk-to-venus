@@ -298,11 +298,6 @@ export default function(app) {
           // Start periodic Venus connectivity tests
           plugin.connectivityInterval = setInterval(runConnectivityTest, 120000); // Check every 2 minutes
           
-          // Add a single comprehensive forced update after startup to ensure VRM visibility
-          setTimeout(() => {
-            triggerComprehensiveForceUpdate(config);
-          }, 15000); // Wait 15 seconds after startup for all devices to be created
-          
         } catch (err) {
           app.error('Error during bridge startup:', err);
           app.setPluginError(`Bridge startup failed: ${err.message}`);
@@ -510,56 +505,6 @@ export default function(app) {
         } catch (err) {
           app.error('Connectivity test error:', err);
         }
-      }
-      
-      // Comprehensive force update to ensure all devices appear in VRM
-      async function triggerComprehensiveForceUpdate(config) {
-        if (!venusReachable) {
-          app.debug('Skipping comprehensive force update - Venus OS not reachable');
-          return;
-        }
-        
-        app.debug('Starting comprehensive force update for VRM visibility...');
-        
-        // Wait a moment for any pending device creation to complete
-        await new Promise(resolve => setTimeout(resolve, 3000));
-        
-        let updateCount = 0;
-        
-        // Force update all enabled devices with current Signal K data
-        for (const [deviceType, client] of Object.entries(plugin.clients)) {
-          if (client && client !== null && discoveredPaths[deviceType]) {
-            const pathMap = discoveredPaths[deviceType];
-            
-            for (const [devicePath, pathInfo] of pathMap) {
-              const safePathKey = devicePath.replace(/[^a-zA-Z0-9]/g, '_');
-              if (config[deviceType] && config[deviceType][safePathKey] === true) {
-                app.debug(`Forcing comprehensive update for device: ${devicePath} (${deviceType})`);
-                
-                // Force update each property of this device
-                for (const fullPath of pathInfo.properties) {
-                  try {
-                    // Reasonable delay between updates for stability
-                    await new Promise(resolve => setTimeout(resolve, 100));
-                    
-                    const currentValue = app.getSelfPath(fullPath);
-                    if (currentValue !== undefined && currentValue !== null) {
-                      app.debug(`Comprehensive force update: ${fullPath} = ${currentValue}`);
-                      await client.handleSignalKUpdate(fullPath, currentValue);
-                      updateCount++;
-                    } else {
-                      app.debug(`No current value for ${fullPath}, skipping comprehensive update`);
-                    }
-                  } catch (err) {
-                    app.debug(`Comprehensive force update failed for ${fullPath}: ${err.message}`);
-                  }
-                }
-              }
-            }
-          }
-        }
-        
-        app.debug(`Comprehensive force update completed with ${updateCount} updates`);
       }
       
       // Process paths that were queued while Venus OS was not reachable
