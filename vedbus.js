@@ -1075,9 +1075,17 @@ export class VEDBusService extends EventEmitter {
 
     try {
       // CRITICAL: Validate the serial number is available before emitting any signals
-      const serialNumber = this.deviceData['/Serial'] || this.managementProperties['/Serial']?.value;
+      const deviceDataSerial = this.deviceData['/Serial'];
+      const managementSerial = this.managementProperties['/Serial']?.value;
+      const serialNumber = deviceDataSerial || managementSerial;
+      
+      // Debug logging to understand the serial number issue
+      console.log(`🔧 Serial check for ${this.dbusServiceName}: deviceData=${deviceDataSerial}, management=${managementSerial}, final=${serialNumber}`);
+      
       if (!serialNumber) {
         console.warn(`❌ Cannot emit signals for ${path}: No serial number available for ${this.dbusServiceName}`);
+        console.warn(`❌ Debug: deviceData keys: ${Object.keys(this.deviceData)}`);
+        console.warn(`❌ Debug: managementProperties keys: ${Object.keys(this.managementProperties)}`);
         return;
       }
 
@@ -1126,9 +1134,17 @@ export class VEDBusService extends EventEmitter {
     }
 
     // Ensure serial number is available
-    const serialNumber = this.deviceData['/Serial'] || this.managementProperties['/Serial']?.value;
+    const deviceDataSerial = this.deviceData['/Serial'];
+    const managementSerial = this.managementProperties['/Serial']?.value;
+    const serialNumber = deviceDataSerial || managementSerial;
+    
+    // Debug logging to understand the serial number issue
+    console.log(`🔧 ValueChanged serial check for ${this.dbusServiceName}: deviceData=${deviceDataSerial}, management=${managementSerial}, final=${serialNumber}`);
+    
     if (!serialNumber) {
       console.warn(`❌ Cannot emit ValueChanged for ${path}: No serial number available for ${this.dbusServiceName}`);
+      console.warn(`❌ Debug: deviceData keys: ${Object.keys(this.deviceData)}`);
+      console.warn(`❌ Debug: managementProperties keys: ${Object.keys(this.managementProperties)}`);
       return;
     }
 
