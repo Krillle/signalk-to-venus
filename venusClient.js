@@ -70,8 +70,6 @@ export class VenusClient extends EventEmitter {
           basePath: basePath
         };
         
-        console.log(`🔧 Creating device instance for ${basePath} (${this._internalDeviceType}) with index ${index}`);
-        
         // Create device service for this device with its own D-Bus connection
         const deviceService = new VEDBusService(
           `signalk_${deviceInstance.index}`,
@@ -432,9 +430,9 @@ export class VenusClient extends EventEmitter {
         return;
       }
       
-      // Check if device service is connected
+      // Check if device service is connected and ready for data updates
       if (!deviceService.isConnected) {
-        console.warn(`❌ Device service ${deviceInstance.basePath} is not connected - skipping update for ${path} = ${value}`);
+        console.warn(`⚠️ RACE CONDITION: Device service ${deviceInstance.basePath} not connected yet - data update ${path} = ${value} will be dropped`);
         return;
       }
       
@@ -494,6 +492,7 @@ export class VenusClient extends EventEmitter {
     if (path.includes('currentLevel')) {
       if (typeof value === 'number' && !isNaN(value)) {
         const levelPercent = value * 100;
+        console.log(`🪣 Tank ${deviceName}: Updating /Level = ${levelPercent.toFixed(1)}% (from ${value})`);
         await deviceService.updateProperty('/Level', levelPercent, 'd', `${deviceName} level`);
         if ("/Capacity" in deviceService.deviceData)
         {
@@ -503,6 +502,7 @@ export class VenusClient extends EventEmitter {
       }
     } else if (path.includes('capacity')) {
       if (typeof value === 'number' && !isNaN(value)) {
+        console.log(`🪣 Tank ${deviceName}: Updating /Capacity = ${value.toFixed(1)}L`);
         await deviceService.updateProperty('/Capacity', value, 'd', `${deviceName} capacity`);
         this.emit('dataUpdated', 'Tank Capacity', `${deviceName}: ${value.toFixed(1)}L`);
       }
@@ -528,6 +528,7 @@ export class VenusClient extends EventEmitter {
   async _handleBatteryUpdate(path, value, deviceService, deviceName) {
     if (path.includes('voltage')) {
       if (typeof value === 'number' && !isNaN(value)) {
+        console.log(`🔋 Battery ${deviceName}: Updating /Dc/0/Voltage = ${value.toFixed(2)}V`);
         await deviceService.updateProperty('/Dc/0/Voltage', value, 'd', `${deviceName} voltage`);
         this.emit('dataUpdated', 'Battery Voltage', `${deviceName}: ${value.toFixed(2)}V`);
         
@@ -542,6 +543,7 @@ export class VenusClient extends EventEmitter {
       }
     } else if (path.includes('current')) {
       if (typeof value === 'number' && !isNaN(value)) {
+        console.log(`🔋 Battery ${deviceName}: Updating /Dc/0/Current = ${value.toFixed(1)}A`);
         await deviceService.updateProperty('/Dc/0/Current', value, 'd', `${deviceName} current`);
         this.emit('dataUpdated', 'Battery Current', `${deviceName}: ${value.toFixed(1)}A`);
         
@@ -557,6 +559,7 @@ export class VenusClient extends EventEmitter {
     } else if (path.includes('stateOfCharge') || (path.includes('capacity') && path.includes('state'))) {
       if (typeof value === 'number' && !isNaN(value)) {
         const socPercent = value > 1 ? value : value * 100;
+        console.log(`🔋 Battery ${deviceName}: Updating /Soc = ${socPercent.toFixed(1)}% (from ${value})`);
         await deviceService.updateProperty('/Soc', socPercent, 'd', `${deviceName} state of charge`);
         this.emit('dataUpdated', 'Battery SoC', `${deviceName}: ${socPercent.toFixed(1)}%`);
         
@@ -655,12 +658,14 @@ export class VenusClient extends EventEmitter {
     if (path.includes('temperature')) {
       if (typeof value === 'number' && !isNaN(value)) {
         const tempCelsius = value > 200 ? value - 273.15 : value; // Convert from Kelvin if needed
+        console.log(`🌡️ Environment ${deviceName}: Updating /Temperature = ${tempCelsius.toFixed(1)}°C (from ${value})`);
         await deviceService.updateProperty('/Temperature', tempCelsius, 'd', `${deviceName} temperature`);
         this.emit('dataUpdated', 'Environment Temperature', `${deviceName}: ${tempCelsius.toFixed(1)}°C`);
       }
     } else if (path.includes('humidity') || path.includes('relativeHumidity')) {
       if (typeof value === 'number' && !isNaN(value)) {
         const humidityPercent = value > 1 ? value : value * 100;
+        console.log(`💧 Environment ${deviceName}: Updating /Humidity = ${humidityPercent.toFixed(1)}%`);
         await deviceService.updateProperty('/Humidity', humidityPercent, 'd', `${deviceName} humidity`);
         this.emit('dataUpdated', 'Environment Humidity', `${deviceName}: ${humidityPercent.toFixed(1)}%`);
       }
