@@ -117,6 +117,80 @@ export default function(app) {
         'switches': 'Switches'
       };
 
+      // Function to check if Signal K has populated any device data
+      async function waitForSignalKReadiness() {
+        app.setPluginStatus('Waiting for Signal K to populate data...');
+        
+        const maxWaitTime = 15000; // Reduced to 15 seconds - we just need Signal K to be generally ready
+        const checkInterval = 1000; // Check every 1 second
+        let waitTime = 0;
+        
+        return new Promise((resolve) => {
+          const checkReadiness = () => {
+            try {
+              // Check if Signal K has any data available at all (not specific device types)
+              let hasSignalKData = false;
+              
+              // Try to get the root vessel data to see if Signal K is populated
+              if (app.getSelfPath) {
+                try {
+                  const rootData = app.getSelfPath('');
+                  if (rootData && typeof rootData === 'object' && Object.keys(rootData).length > 0) {
+                    hasSignalKData = true;
+                  }
+                } catch (err) {
+                  // getSelfPath might fail if data isn't ready yet
+                }
+              }
+              
+              // Also check if we have a streambundle with any data
+              if (!hasSignalKData && app.streambundle && app.streambundle.getSelfStream) {
+                try {
+                  const stream = app.streambundle.getSelfStream('');
+                  if (stream && stream.value && typeof stream.value === 'object' && Object.keys(stream.value).length > 0) {
+                    hasSignalKData = true;
+                  }
+                } catch (err) {
+                  // Stream might not be ready
+                }
+              }
+              
+              // If we still don't have data, check if the app has basic vessel info
+              if (!hasSignalKData && app.getSelfPath) {
+                try {
+                  // Check for basic vessel information that should always be present
+                  const vesselInfo = app.getSelfPath('design') || app.getSelfPath('navigation') || app.getSelfPath('name');
+                  if (vesselInfo) {
+                    hasSignalKData = true;
+                  }
+                } catch (err) {
+                  // Ignore errors, we'll timeout if needed
+                }
+              }
+              
+              if (hasSignalKData || waitTime >= maxWaitTime) {
+                if (hasSignalKData) {
+                  app.setPluginStatus('Signal K data ready, starting device discovery...');
+                } else {
+                  app.setPluginStatus('Signal K readiness timeout, starting discovery anyway...');
+                }
+                resolve();
+              } else {
+                waitTime += checkInterval;
+                setTimeout(checkReadiness, checkInterval);
+              }
+            } catch (err) {
+              app.debug('Error checking Signal K readiness:', err);
+              // Continue anyway after a short delay
+              setTimeout(() => resolve(), 1000);
+            }
+          };
+          
+          // Start checking after a short initial delay to let Signal K initialize
+          setTimeout(checkReadiness, 1000);
+        });
+      }
+
       // Test Venus OS connectivity before processing any data
       async function testVenusConnectivity() {
         let testBus = null;
@@ -200,6 +274,27 @@ export default function(app) {
         }
       }
 
+      // Main startup sequence - wait for Signal K to be ready
+      async function startBridge() {
+        try {
+          // Wait for Signal K to populate device data
+          await waitForSignalKReadiness();
+          
+          // Test Venus OS connectivity initially
+          await runConnectivityTest();
+          
+          // Set up Signal K subscription after Signal K is ready
+          setupSignalKSubscription();
+          
+          // Start periodic Venus connectivity tests
+          plugin.connectivityInterval = setInterval(runConnectivityTest, 120000); // Check every 2 minutes
+          
+        } catch (err) {
+          app.error('Error during bridge startup:', err);
+          app.setPluginError(`Bridge startup failed: ${err.message}`);
+        }
+      }
+
       // Subscribe to Signal K updates for discovery and processing
       // We always subscribe to all device types for discovery, filtering happens later
       const subscriptions = [
@@ -209,8 +304,9 @@ export default function(app) {
         { path: 'electrical.switches.*', period: config.interval }
       ];
 
-      // Subscribe to Signal K delta stream using multiple approaches for compatibility
-      app.setPluginStatus('Setting up Signal K subscription');
+      // Function to set up Signal K subscription
+      function setupSignalKSubscription() {
+        app.setPluginStatus('Setting up Signal K subscription');
       let deltaCount = 0;
       let lastDataTime = Date.now();
       
@@ -287,6 +383,57 @@ export default function(app) {
         return;
       }
       
+        // Monitor subscription health
+        setTimeout(() => {
+          if (deltaCount === 0) {
+            app.setPluginStatus(`No Signal K data received - check server configuration`);
+          }
+        }, 5000);
+
+        // Handle venus client value changes by setting values back to Signal K
+        Object.values(plugin.clients).forEach(client => {
+          client.on('valueChanged', async (venusPath, value) => {
+            try {
+              const signalKPath = mapVenusToSignalKPath(venusPath);
+              if (signalKPath) {
+                // Use Signal K's internal API instead of external PUT
+                await app.putSelfPath(signalKPath, value, 'venus-bridge');
+                app.debug(`Updated Signal K path ${signalKPath} with value ${value}`);
+              }
+            } catch (err) {
+              app.error(`Error updating Signal K path from venus ${venusPath}:`, err);
+            }
+          });
+        });
+        
+        // Set initial status if no data comes in
+        setTimeout(() => {
+          if (activeClientTypes.size === 0) {
+            // Check if any devices are enabled
+            const hasEnabledDevices = ['batteries', 'tanks', 'environment', 'switches'].some(deviceType => {
+              if (config[deviceType]) {
+                return Object.values(config[deviceType]).some(enabled => enabled === true);
+              }
+              return false;
+            });
+            
+            if (!hasEnabledDevices) {
+              const deviceCountText = generateDeviceCountText();
+              if (deviceCountText.includes('0 devices')) {
+                app.setPluginStatus('Discovering Signal K devices');
+              } else {
+                app.setPluginStatus(`Device Discovery: Found ${deviceCountText} - configure in settings`);
+              }
+            } else if (venusReachable === false) {
+              const deviceCountText = generateDeviceCountText();
+              app.setPluginStatus(`Discovery: ${deviceCountText} found - Venus OS not connected at ${config.venusHost}`);
+            } else {
+              app.setPluginStatus(`Waiting for Signal K data (${config.venusHost})`);
+            }
+          }
+        }, 2000);
+      }
+      
       // Test Venus OS connectivity initially and periodically
       async function runConnectivityTest() {
         try {
@@ -295,9 +442,6 @@ export default function(app) {
           app.error('Connectivity test error:', err);
         }
       }
-      
-      runConnectivityTest(); // Run initial test
-      plugin.connectivityInterval = setInterval(runConnectivityTest, 120000); // Check every 2 minutes when testing (reduced frequency)
       
       // Function to process delta messages
       function processDelta(delta) {
@@ -344,18 +488,17 @@ export default function(app) {
                     return; // Skip disabled paths
                   }
                   
+                  // Create Venus client for this device type if it doesn't exist yet
                   if (!plugin.clients[deviceType]) {
-                    app.setPluginStatus(`Connecting to Venus OS at ${config.venusHost} for ${deviceTypeNames[deviceType]}`);
+                    app.setPluginStatus(`Creating Venus OS service for ${deviceTypeNames[deviceType]}`);
                     
                     try {
                       plugin.clients[deviceType] = VenusClientFactory(config, deviceType);
-                      
-                      await plugin.clients[deviceType].handleSignalKUpdate(pathValue.path, pathValue.value);
-                      
                       activeClientTypes.add(deviceTypeNames[deviceType]);
+                      
                       const deviceCountText = generateEnabledDeviceCountText(config);
                       app.setPluginStatus(`Connected to Venus OS, injecting ${deviceCountText}`);
-
+                      
                     } catch (err) {
                       // Clean up connection error messages for better user experience
                       let cleanMessage = err.message || err.toString();
@@ -379,12 +522,10 @@ export default function(app) {
                       }
                       return;
                     }
-                  } else {
-                    // Client already exists - but check if it's null (failed connection)
-                    if (plugin.clients[deviceType] === null) {
-                      return;
-                    }
-                    
+                  }
+                  
+                  // Update the Venus client with the new data (whether client is new or existing)
+                  if (plugin.clients[deviceType] && plugin.clients[deviceType] !== null) {
                     try {
                       await plugin.clients[deviceType].handleSignalKUpdate(pathValue.path, pathValue.value);
                     } catch (err) {
@@ -395,6 +536,7 @@ export default function(app) {
                         
                         // Mark client as failed
                         plugin.clients[deviceType] = null;
+                        activeClientTypes.delete(deviceTypeNames[deviceType]);
                       } else {
                         app.error(`Error updating ${deviceType} client for ${pathValue.path}: ${err.message}`);
                       }
@@ -465,6 +607,9 @@ export default function(app) {
           }
         }
       }, 2000);
+      
+      // Start the bridge with Signal K readiness check
+      startBridge();
     },
 
     stop: function() {
@@ -613,7 +758,9 @@ export default function(app) {
       const devicePath = getDevicePath(deviceType, path);
       if (!devicePath) return;
 
-      if (!pathMap.has(devicePath)) {
+      const isNewDevice = !pathMap.has(devicePath);
+      
+      if (isNewDevice) {
         // Generate a human-readable display name
         let displayName = generateDisplayName(deviceType, devicePath);
         
@@ -643,19 +790,22 @@ export default function(app) {
           }
         }
         
-        // Update status with discovered paths count by device type
-        const deviceCountText = generateDeviceCountText();
-        
-        const statusMsg = plugin.venusConnected ? 
-          `Connected to Venus OS, injecting ${generateEnabledDeviceCountText(config)}` :
-          `Device Discovery: Found ${deviceCountText} (Venus OS: ${config.venusHost})`; 
-        app.setPluginStatus(statusMsg);
+        app.debug(`Discovered new ${deviceType} device: ${displayName} (${devicePath})`);
       } else {
         // Update last seen value and add this property to the set
         const deviceInfo = pathMap.get(devicePath);
         deviceInfo.lastValue = value;
         deviceInfo.properties.add(path);
       }
+      
+      // Update status with discovered paths count by device type
+      const deviceCountText = generateDeviceCountText();
+      
+      const statusMsg = plugin.venusConnected ? 
+        `Connected to Venus OS, injecting ${generateEnabledDeviceCountText(config)}` :
+        `Device Discovery: Found ${deviceCountText} (Venus OS: ${config.venusHost})`; 
+      app.setPluginStatus(statusMsg);
+      
     } catch (err) {
       app.error(`Error in addDiscoveredPath: ${err.message}`);
     }
