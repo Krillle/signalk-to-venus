@@ -576,7 +576,7 @@ export default function(app) {
           app.debug(`Creating new Venus client for device type: ${deviceType}`);
           
           try {
-            plugin.clients[deviceType] = VenusClientFactory(config, deviceType);
+            plugin.clients[deviceType] = VenusClientFactory(config, deviceType, app);
             activeClientTypes.add(deviceTypeNames[deviceType]);
             
             const deviceCountText = generateEnabledDeviceCountText(config);

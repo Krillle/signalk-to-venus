@@ -7,10 +7,11 @@ import EventEmitter from 'events';
  * This replaces the individual device clients with a single, configurable implementation
  */
 export class VenusClient extends EventEmitter {
-  constructor(settings, deviceType) {
+  constructor(settings, deviceType, logger = null) {
     super();
     this.settings = settings;
     this.deviceType = deviceType;
+    this.logger = logger || { debug: () => {}, error: () => {} }; // Fallback logger
     
     // Map plural device types to singular for internal configuration lookup
     const deviceTypeMap = {
@@ -78,7 +79,8 @@ export class VenusClient extends EventEmitter {
           `SignalK${deviceInstance.index}`,
           deviceInstance,
           this.settings,
-          this.deviceConfig
+          this.deviceConfig,
+          this.logger
         );
 
         await deviceService.init(); // Initialize the device service
@@ -172,7 +174,7 @@ export class VenusClient extends EventEmitter {
         this.deviceServices.set(basePath, deviceService);
         this.deviceInstances.set(basePath, deviceInstance);
 
-        console.log(`Successfully created device instance for ${basePath} as ${this._internalDeviceType} with VRM instance ${deviceInstance.index}`);
+        this.logger.debug(`Successfully created device instance for ${basePath} as ${this._internalDeviceType} with VRM instance ${deviceInstance.index}`);
         return deviceInstance;
       } catch (error) {
         console.error(`❌ Error creating device instance for ${basePath} (from path: ${path}):`, error);
@@ -451,7 +453,7 @@ export class VenusClient extends EventEmitter {
     } catch (err) {
       // Handle connection errors gracefully
       if (err.code === 'ECONNRESET' || err.code === 'ECONNREFUSED' || err.code === 'EPIPE') {
-        console.log(`Connection lost while updating ${path} - Venus OS may be restarting`);
+        this.logger.debug(`Connection lost while updating ${path} - Venus OS may be restarting`);
         // Don't throw the error, just log it
       } else {
         console.error(`❌ Error in handleSignalKUpdate for ${path}:`, err);
@@ -669,7 +671,7 @@ export class VenusClient extends EventEmitter {
     } else if (path.includes('humidity') || path.includes('relativeHumidity')) {
       if (typeof value === 'number' && !isNaN(value)) {
         const humidityPercent = value > 1 ? value : value * 100;
-        console.log(`💧 Environment ${deviceName}: Updating /Humidity = ${humidityPercent.toFixed(1)}%`);
+        this.logger.debug(`Environment ${deviceName}: Updating /Humidity = ${humidityPercent.toFixed(1)}%`);
         await deviceService.updateProperty('/Humidity', humidityPercent, 'd', `${deviceName} humidity`);
         this.emit('dataUpdated', 'Environment Humidity', `${deviceName}: ${humidityPercent.toFixed(1)}%`);
       }
@@ -744,7 +746,7 @@ export class VenusClient extends EventEmitter {
         await deviceService.updateProperty('/ConsumedAmphours', consumedAh, 'd', `${deviceName} consumed Ah`);
       } catch (err) {
         if (err.code === 'ECONNRESET' || err.code === 'ECONNREFUSED' || err.code === 'EPIPE') {
-          console.log(`Connection lost while updating consumed Ah for ${deviceName}`);
+          this.logger.debug(`Connection lost while updating consumed Ah for ${deviceName}`);
         } else {
           console.error(`Error updating consumed Ah for ${deviceName}:`, err);
         }
@@ -772,7 +774,7 @@ export class VenusClient extends EventEmitter {
         await deviceService.updateProperty('/Dc/0/MidVoltageDeviation', 0.0, 'd', `${deviceName} mid voltage deviation`);
       } catch (err) {
         if (err.code === 'ECONNRESET' || err.code === 'ECONNREFUSED' || err.code === 'EPIPE') {
-          console.log(`Connection lost while updating voltage tracking for ${deviceName}`);
+          this.logger.debug(`Connection lost while updating voltage tracking for ${deviceName}`);
         } else {
           console.error(`Error updating voltage tracking for ${deviceName}:`, err);
         }
@@ -791,7 +793,7 @@ export class VenusClient extends EventEmitter {
         await deviceService.updateProperty('/TimeToGo', timeToGoSeconds, 'i', `${deviceName} time to go`);
       } catch (err) {
         if (err.code === 'ECONNRESET' || err.code === 'ECONNREFUSED' || err.code === 'EPIPE') {
-          console.log(`Connection lost while updating time to go for ${deviceName}`);
+          this.logger.debug(`Connection lost while updating time to go for ${deviceName}`);
         } else {
           console.error(`Error updating time to go for ${deviceName}:`, err);
         }
@@ -805,7 +807,7 @@ export class VenusClient extends EventEmitter {
         await deviceService.updateProperty('/TimeToGo', defaultTimeToGo, 'i', `${deviceName} time to go`);
       } catch (err) {
         if (err.code === 'ECONNRESET' || err.code === 'ECONNREFUSED' || err.code === 'EPIPE') {
-          console.log(`Connection lost while updating default time to go for ${deviceName}`);
+          this.logger.debug(`Connection lost while updating default time to go for ${deviceName}`);
         } else {
           console.error(`Error updating default time to go for ${deviceName}:`, err);
         }
@@ -826,7 +828,7 @@ export class VenusClient extends EventEmitter {
         await deviceService.updateProperty('/Dc/0/Temperature', baseTemp, 'd', `${deviceName} temperature`);
       } catch (err) {
         if (err.code === 'ECONNRESET' || err.code === 'ECONNREFUSED' || err.code === 'EPIPE') {
-          console.log(`Connection lost while updating temperature for ${deviceName}`);
+          this.logger.debug(`Connection lost while updating temperature for ${deviceName}`);
         } else {
           console.error(`Error updating temperature for ${deviceName}:`, err);
         }
@@ -849,7 +851,7 @@ export class VenusClient extends EventEmitter {
       
     } catch (err) {
       if (err.code === 'ECONNRESET' || err.code === 'ECONNREFUSED' || err.code === 'EPIPE') {
-        console.log(`Connection lost while notifying system service for ${deviceName}`);
+        this.logger.debug(`Connection lost while notifying system service for ${deviceName}`);
       } else {
         console.error(`Error notifying system service for ${deviceName}:`, err);
       }

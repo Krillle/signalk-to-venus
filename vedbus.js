@@ -20,12 +20,13 @@ const Variant = dbusNative.Variant || dbusNative.variant || function(type, value
  * This class provides a common D-Bus service implementation for all Venus OS devices
  */
 export class VEDBusService extends EventEmitter {
-  constructor(serviceName, deviceInstance, settings, deviceConfig) {
+  constructor(serviceName, deviceInstance, settings, deviceConfig, logger = null) {
     super();
     this.serviceName = serviceName;
     this.deviceInstance = deviceInstance;
     this.settings = settings;
     this.deviceConfig = deviceConfig;
+    this.logger = logger || { debug: () => {}, error: () => {} }; // Fallback logger
     this.dbusServiceName = `com.victronenergy.${deviceConfig.serviceType}.${serviceName}`;
     this.deviceData = {};
     this.exportedInterfaces = {};
@@ -442,7 +443,7 @@ export class VEDBusService extends EventEmitter {
           body: [settingsArray]
         }, (err, result) => {
           if (err) {
-            console.log('Settings API error:', err);
+            this.logger.debug('Settings API error:', err);
             reject(new Error(`Settings registration failed: ${err.message || err}`));
           } else {
             resolve(result);
