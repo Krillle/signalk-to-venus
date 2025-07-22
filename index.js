@@ -528,6 +528,37 @@ export default function(app) {
           }
         }
         
+        // After processing all queued paths, give devices a moment to initialize
+        // then trigger a forced update to ensure VRM sees the devices
+        setTimeout(async () => {
+          app.debug('Triggering forced device updates for VRM visibility...');
+          
+          // Get the latest values for all enabled devices and send them
+          Object.entries(plugin.clients).forEach(([deviceType, client]) => {
+            if (client && client !== null && discoveredPaths[deviceType]) {
+              const pathMap = discoveredPaths[deviceType];
+              
+              pathMap.forEach((pathInfo, devicePath) => {
+                const safePathKey = devicePath.replace(/[^a-zA-Z0-9]/g, '_');
+                if (config[deviceType] && config[deviceType][safePathKey] === true) {
+                  // Force update with the last known value
+                  pathInfo.properties.forEach(async (fullPath) => {
+                    try {
+                      const currentValue = app.getSelfPath(fullPath);
+                      if (currentValue !== undefined && currentValue !== null) {
+                        app.debug(`Forcing update for ${fullPath} with value ${currentValue}`);
+                        await client.handleSignalKUpdate(fullPath, currentValue);
+                      }
+                    } catch (err) {
+                      app.debug(`Could not force update for ${fullPath}: ${err.message}`);
+                    }
+                  });
+                }
+              });
+            }
+          });
+        }, 2000); // Wait 2 seconds after device creation to force updates
+        
         isProcessingQueue = false;
         app.debug(`Finished processing queued paths`);
       }
@@ -578,6 +609,20 @@ export default function(app) {
             const deviceCountText = generateEnabledDeviceCountText(config);
             app.setPluginStatus(`Connected to Venus OS, injecting ${deviceCountText}`);
             app.debug(`Successfully created Venus client for ${deviceType}`);
+            
+            // After creating a new client, force an immediate update with current data
+            // to ensure the device appears in VRM with valid data
+            setTimeout(async () => {
+              try {
+                const currentValue = app.getSelfPath(path);
+                if (currentValue !== undefined && currentValue !== null) {
+                  app.debug(`Sending initial data to new ${deviceType} client: ${path} = ${currentValue}`);
+                  await plugin.clients[deviceType].handleSignalKUpdate(path, currentValue);
+                }
+              } catch (err) {
+                app.debug(`Could not send initial data to new ${deviceType} client: ${err.message}`);
+              }
+            }, 1000); // Wait 1 second for client to fully initialize
             
           } catch (err) {
             // Clean up connection error messages for better user experience
