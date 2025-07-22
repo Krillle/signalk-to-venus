@@ -187,8 +187,32 @@ export class VenusClient extends EventEmitter {
       if (existing === 'creating') {
         // Device is currently being created, wait a bit and try again
         console.log(`🔧 Debug: Device instance for '${basePath}' is being created, waiting...`);
-        await new Promise(resolve => setTimeout(resolve, 100));
-        return this._getOrCreateDeviceInstance(path); // Retry
+        
+        // Wait for creation to complete with timeout
+        const maxWaitTime = 5000; // 5 seconds max wait
+        const pollInterval = 200; // Check every 200ms
+        let waitTime = 0;
+        
+        while (waitTime < maxWaitTime) {
+          await new Promise(resolve => setTimeout(resolve, pollInterval));
+          waitTime += pollInterval;
+          
+          const updated = this.deviceInstances.get(basePath);
+          if (updated !== 'creating') {
+            // Creation completed (either success or failure)
+            if (updated) {
+              console.log(`🔧 Debug: Device creation completed for '${basePath}', using existing instance`);
+              return updated;
+            } else {
+              console.log(`🔧 Debug: Device creation failed for '${basePath}'`);
+              return null;
+            }
+          }
+        }
+        
+        // Timeout waiting for creation
+        console.warn(`⚠️ Timeout waiting for device creation: ${basePath}`);
+        return null;
       }
       
       console.log(`🔧 Debug: Using existing device instance for basePath '${basePath}' (from path '${path}')`);
