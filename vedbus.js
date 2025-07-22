@@ -479,10 +479,7 @@ export class VEDBusService extends EventEmitter {
 
   async _registerService() {
     try {
-      // Export management interface FIRST - this is critical for D-Bus service availability
-      this._exportManagementInterface();
-
-      // Request service name on our own bus connection
+      // Request service name on our own bus connection FIRST
       await new Promise((resolve, reject) => {
         this.bus.requestName(this.dbusServiceName, 0, (err, result) => {
           if (err) reject(err);
@@ -491,6 +488,9 @@ export class VEDBusService extends EventEmitter {
       });
 
       console.log(`Successfully registered ${this.deviceConfig.serviceType} service ${this.dbusServiceName} on D-Bus`);
+      
+      // Export management interface AFTER service name is registered
+      this._exportManagementInterface();
       
       // Verify that critical properties are properly set
       const serialNumber = this.deviceData['/Serial'] || this.managementProperties['/Serial']?.value;
