@@ -298,18 +298,10 @@ export default function(app) {
           // Start periodic Venus connectivity tests
           plugin.connectivityInterval = setInterval(runConnectivityTest, 120000); // Check every 2 minutes
           
-          // Add multiple comprehensive forced updates after startup to ensure VRM visibility
+          // Add a single comprehensive forced update after startup to ensure VRM visibility
           setTimeout(() => {
-            triggerComprehensiveForceUpdate(config, 1);
+            triggerComprehensiveForceUpdate(config);
           }, 15000); // Wait 15 seconds after startup for all devices to be created
-          
-          setTimeout(() => {
-            triggerComprehensiveForceUpdate(config, 2);
-          }, 25000); // Second wave at 25 seconds
-          
-          setTimeout(() => {
-            triggerComprehensiveForceUpdate(config, 3);
-          }, 40000); // Final wave at 40 seconds
           
         } catch (err) {
           app.error('Error during bridge startup:', err);
@@ -521,13 +513,13 @@ export default function(app) {
       }
       
       // Comprehensive force update to ensure all devices appear in VRM
-      async function triggerComprehensiveForceUpdate(config, waveNumber = 1) {
+      async function triggerComprehensiveForceUpdate(config) {
         if (!venusReachable) {
-          app.debug(`Skipping comprehensive force update wave ${waveNumber} - Venus OS not reachable`);
+          app.debug('Skipping comprehensive force update - Venus OS not reachable');
           return;
         }
         
-        app.debug(`Starting comprehensive force update wave ${waveNumber} for VRM visibility...`);
+        app.debug('Starting comprehensive force update for VRM visibility...');
         
         // Wait a moment for any pending device creation to complete
         await new Promise(resolve => setTimeout(resolve, 3000));
@@ -542,24 +534,24 @@ export default function(app) {
             for (const [devicePath, pathInfo] of pathMap) {
               const safePathKey = devicePath.replace(/[^a-zA-Z0-9]/g, '_');
               if (config[deviceType] && config[deviceType][safePathKey] === true) {
-                app.debug(`Wave ${waveNumber}: Forcing comprehensive update for device: ${devicePath} (${deviceType})`);
+                app.debug(`Forcing comprehensive update for device: ${devicePath} (${deviceType})`);
                 
                 // Force update each property of this device
                 for (const fullPath of pathInfo.properties) {
                   try {
-                    // Longer delay between updates for stability
-                    await new Promise(resolve => setTimeout(resolve, 200));
+                    // Reasonable delay between updates for stability
+                    await new Promise(resolve => setTimeout(resolve, 100));
                     
                     const currentValue = app.getSelfPath(fullPath);
                     if (currentValue !== undefined && currentValue !== null) {
-                      app.debug(`Wave ${waveNumber} comprehensive force update: ${fullPath} = ${currentValue}`);
+                      app.debug(`Comprehensive force update: ${fullPath} = ${currentValue}`);
                       await client.handleSignalKUpdate(fullPath, currentValue);
                       updateCount++;
                     } else {
-                      app.debug(`Wave ${waveNumber}: No current value for ${fullPath}, skipping comprehensive update`);
+                      app.debug(`No current value for ${fullPath}, skipping comprehensive update`);
                     }
                   } catch (err) {
-                    app.debug(`Wave ${waveNumber} comprehensive force update failed for ${fullPath}: ${err.message}`);
+                    app.debug(`Comprehensive force update failed for ${fullPath}: ${err.message}`);
                   }
                 }
               }
@@ -567,7 +559,7 @@ export default function(app) {
           }
         }
         
-        app.debug(`Comprehensive force update wave ${waveNumber} completed with ${updateCount} updates`);
+        app.debug(`Comprehensive force update completed with ${updateCount} updates`);
       }
       
       // Process paths that were queued while Venus OS was not reachable
