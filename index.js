@@ -304,20 +304,10 @@ export default function(app) {
         }
       }
 
-      // Subscribe to Signal K updates for discovery and processing
-      // We always subscribe to all device types for discovery, filtering happens later
-      const subscriptions = [
-        { path: 'electrical.batteries.*', period: config.interval },
-        { path: 'tanks.*', period: config.interval },
-        { path: 'environment.*', period: config.interval },
-        { path: 'electrical.switches.*', period: config.interval }
-      ];
-
       // Function to set up Signal K subscription
       function setupSignalKSubscription() {
         app.setPluginStatus('Setting up Signal K subscription');
       let deltaCount = 0;
-      let lastDataTime = Date.now();
       
       // Try multiple subscription methods in order of compatibility
       if (app.streambundle && app.streambundle.getSelfBus) {
@@ -396,7 +386,6 @@ export default function(app) {
       function processDelta(delta) {
         try {
           deltaCount++;
-          lastDataTime = Date.now();
           
           if (delta.updates) {
             delta.updates.forEach(update => {
@@ -444,22 +433,6 @@ export default function(app) {
             app.setPluginStatus(`No Signal K data received - check server configuration`);
           }
         }, 5000);
-
-        // Handle venus client value changes by setting values back to Signal K
-        Object.values(plugin.clients).forEach(client => {
-          client.on('valueChanged', async (venusPath, value) => {
-            try {
-              const signalKPath = mapVenusToSignalKPath(venusPath);
-              if (signalKPath) {
-                // Use Signal K's internal API instead of external PUT
-                await app.putSelfPath(signalKPath, value, 'venus-bridge');
-                app.debug(`Updated Signal K path ${signalKPath} with value ${value}`);
-              }
-            } catch (err) {
-              app.error(`Error updating Signal K path from venus ${venusPath}:`, err);
-            }
-          });
-        });
         
         // Set initial status if no data comes in
         setTimeout(() => {
