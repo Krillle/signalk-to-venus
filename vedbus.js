@@ -527,15 +527,17 @@ export class VEDBusService extends EventEmitter {
       // Initialize connection status in device data for heartbeat
       this.deviceData["/Mgmt/Connection"] = 1;
       
+      // CRITICAL: Set connected state immediately after successful service registration
+      // This ensures data updates will work even if the D-Bus 'connect' event doesn't fire
+      // and prevents race conditions during ServiceAnnouncement
+      this.isConnected = true;
+      console.log(`🔗 Connection state set to true for ${this.dbusServiceName} - ready for data updates`);
+      
       // Start heartbeat to keep service alive
       this.startHeartbeat();
       
       // Send ServiceAnnouncement so systemcalc picks up the service for GX Touch
       await this._sendServiceAnnouncement();
-      
-      // CRITICAL: Set connected state after successful service registration
-      // This ensures data updates will work even if the D-Bus 'connect' event doesn't fire
-      this.isConnected = true;
       
     } catch (err) {
       console.error(`Failed to register ${this.deviceConfig.serviceType} service ${this.dbusServiceName}:`, err);
@@ -1008,7 +1010,7 @@ export class VEDBusService extends EventEmitter {
   // Public method to update device properties
   updateProperty(path, value, type = 'd', text = `${this.deviceConfig.serviceType} property`) {
     if (!this.isConnected) {
-      console.warn(`Cannot update property ${path} - D-Bus not connected for ${this.dbusServiceName}`);
+      console.warn(`⚠️ RACE CONDITION: Cannot update property ${path} - D-Bus not connected for ${this.dbusServiceName} (value: ${value})`);
       return;
     }
 
