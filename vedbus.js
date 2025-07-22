@@ -532,6 +532,11 @@ export class VEDBusService extends EventEmitter {
       
       // Send ServiceAnnouncement so systemcalc picks up the service for GX Touch
       await this._sendServiceAnnouncement();
+      
+      // CRITICAL: Set connected state after successful service registration
+      // This ensures data updates will work even if the D-Bus 'connect' event doesn't fire
+      this.isConnected = true;
+      
     } catch (err) {
       console.error(`Failed to register ${this.deviceConfig.serviceType} service ${this.dbusServiceName}:`, err);
       throw err;

@@ -442,9 +442,11 @@ export class VenusClient extends EventEmitter {
       
       // Check if device service is connected
       if (!deviceService.isConnected) {
-        console.warn(`Device service ${deviceInstance.basePath} is not connected - skipping update`);
+        console.warn(`❌ Device service ${deviceInstance.basePath} is not connected - skipping update for ${path} = ${value}`);
         return;
       }
+      
+      console.log(`📊 Processing data update: ${path} = ${value} for ${deviceInstance.basePath}`);
       
       // Handle the update based on device type
       await this._handleDeviceSpecificUpdate(path, value, deviceService, deviceInstance);
