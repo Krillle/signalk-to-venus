@@ -30,7 +30,8 @@ export class VEDBusService extends EventEmitter {
     this.maxReconnectAttempts = 10;
     
     // Generate unique serial number like dbus-serialbattery - combine serviceType and instance
-    const uniqueSerial = `SK_${deviceConfig.serviceType}_${serviceName}_${this.vrmInstanceId}`;
+    // const uniqueSerial = `SK_${deviceConfig.serviceType}_${serviceName}_${this.vrmInstanceId}`;
+    const uniqueSerial = `SK${deviceConfig.serviceType}${serviceName}${this.vrmInstanceId}`;
     
     // Management properties that are common to all devices
     this.managementProperties = {
