@@ -503,7 +503,6 @@ export class VenusClient extends EventEmitter {
     if (path.includes('currentLevel')) {
       if (typeof value === 'number' && !isNaN(value)) {
         const levelPercent = value * 100;
-        console.log(`🪣 Tank ${deviceName}: Updating /Level = ${levelPercent.toFixed(1)}% (from ${value})`);
         await deviceService.updateProperty('/Level', levelPercent, 'd', `${deviceName} level`);
         if ("/Capacity" in deviceService.deviceData)
         {
@@ -513,7 +512,6 @@ export class VenusClient extends EventEmitter {
       }
     } else if (path.includes('capacity')) {
       if (typeof value === 'number' && !isNaN(value)) {
-        console.log(`🪣 Tank ${deviceName}: Updating /Capacity = ${value.toFixed(1)}L`);
         await deviceService.updateProperty('/Capacity', value, 'd', `${deviceName} capacity`);
         this.emit('dataUpdated', 'Tank Capacity', `${deviceName}: ${value.toFixed(1)}L`);
       }
@@ -631,11 +629,9 @@ export class VenusClient extends EventEmitter {
         if (value > 100) {
           // Likely Kelvin (anything above 100 is probably Kelvin)
           tempCelsius = value - 273.15;
-          console.log(`🌡️ Converting battery temperature from Kelvin: ${value}K -> ${tempCelsius.toFixed(1)}°C`);
         } else {
           // Likely already in Celsius
           tempCelsius = value;
-          console.log(`🌡️ Battery temperature in Celsius: ${tempCelsius.toFixed(1)}°C`);
         }
         
         // Sanity check for reasonable battery temperatures
@@ -676,7 +672,6 @@ export class VenusClient extends EventEmitter {
     if (path.includes('temperature')) {
       if (typeof value === 'number' && !isNaN(value)) {
         const tempCelsius = value > 200 ? value - 273.15 : value; // Convert from Kelvin if needed
-        console.log(`🌡️ Environment ${deviceName}: Updating /Temperature = ${tempCelsius.toFixed(1)}°C (from ${value})`);
         await deviceService.updateProperty('/Temperature', tempCelsius, 'd', `${deviceName} temperature`);
         this.emit('dataUpdated', 'Environment Temperature', `${deviceName}: ${tempCelsius.toFixed(1)}°C`);
       }
