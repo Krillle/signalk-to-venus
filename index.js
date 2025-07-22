@@ -353,7 +353,7 @@ export default function(app) {
                       await plugin.clients[deviceType].handleSignalKUpdate(pathValue.path, pathValue.value);
                       
                       activeClientTypes.add(deviceTypeNames[deviceType]);
-                      const deviceCountText = generateDeviceCountText();
+                      const deviceCountText = generateEnabledDeviceCountText(config);
                       app.setPluginStatus(`Connected to Venus OS, injecting ${deviceCountText}`);
 
                     } catch (err) {
@@ -525,7 +525,7 @@ export default function(app) {
     return null;
   }
 
-  // Helper function to generate device count text by type
+  // Helper function to generate device count text by type (all discovered devices)
   function generateDeviceCountText() {
     const deviceCounts = {
       batteries: discoveredPaths.batteries.size,
@@ -553,6 +553,48 @@ export default function(app) {
     } else {
       const totalPaths = Object.values(discoveredPaths).reduce((sum, map) => sum + map.size, 0);
       return `${totalPaths} devices`;
+    }
+  }
+
+  // Helper function to generate device count text for enabled devices only
+  function generateEnabledDeviceCountText(config) {
+    const enabledCounts = {
+      batteries: 0,
+      tanks: 0,
+      environment: 0,
+      switches: 0
+    };
+    
+    // Count enabled devices by checking configuration
+    Object.entries(discoveredPaths).forEach(([deviceType, pathMap]) => {
+      if (config[deviceType]) {
+        pathMap.forEach((pathInfo, devicePath) => {
+          const safePathKey = devicePath.replace(/[^a-zA-Z0-9]/g, '_');
+          if (config[deviceType][safePathKey] === true) {
+            enabledCounts[deviceType]++;
+          }
+        });
+      }
+    });
+    
+    const deviceCountParts = [];
+    if (enabledCounts.batteries > 0) {
+      deviceCountParts.push(`${enabledCounts.batteries} ${enabledCounts.batteries === 1 ? 'battery' : 'batteries'}`);
+    }
+    if (enabledCounts.tanks > 0) {
+      deviceCountParts.push(`${enabledCounts.tanks} ${enabledCounts.tanks === 1 ? 'tank' : 'tanks'}`);
+    }
+    if (enabledCounts.environment > 0) {
+      deviceCountParts.push(`${enabledCounts.environment} environment ${enabledCounts.environment === 1 ? 'sensor' : 'sensors'}`);
+    }
+    if (enabledCounts.switches > 0) {
+      deviceCountParts.push(`${enabledCounts.switches} ${enabledCounts.switches === 1 ? 'switch' : 'switches'}`);
+    }
+    
+    if (deviceCountParts.length > 0) {
+      return deviceCountParts.join(', ');
+    } else {
+      return '0 devices';
     }
   }
 
@@ -605,7 +647,7 @@ export default function(app) {
         const deviceCountText = generateDeviceCountText();
         
         const statusMsg = plugin.venusConnected ? 
-          `Connected to Venus OS, injecting ${deviceCountText}` :
+          `Connected to Venus OS, injecting ${generateEnabledDeviceCountText(config)}` :
           `Device Discovery: Found ${deviceCountText} (Venus OS: ${config.venusHost})`; 
         app.setPluginStatus(statusMsg);
       } else {
