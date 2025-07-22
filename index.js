@@ -237,8 +237,8 @@ export default function(app) {
           plugin.venusConnected = true;
           app.setPluginStatus(`Venus OS reachable at ${config.venusHost} - waiting for data to stabilize...`);
           
-          // Wait 10 seconds after Venus becomes reachable to let Signal K data fully populate
-          await new Promise(resolve => setTimeout(resolve, 10000));
+          // Wait 20 seconds after Venus becomes reachable to let Signal K data fully populate
+          await new Promise(resolve => setTimeout(resolve, 20000));
           app.setPluginStatus(`Venus OS ready at ${config.venusHost}`);
           
           return true;
@@ -497,10 +497,10 @@ export default function(app) {
           
           // If Venus just became reachable, process any queued paths after a longer delay
           if (!wasReachable && isReachable && pendingPaths.length > 0) {
-            app.debug(`Venus OS became reachable, waiting 10 seconds before processing ${pendingPaths.length} queued paths`);
+            app.debug(`Venus OS became reachable, waiting 20 seconds before processing ${pendingPaths.length} queued paths`);
             setTimeout(() => {
               processPendingPaths();
-            }, 10000);
+            }, 20000);
           }
         } catch (err) {
           app.error('Connectivity test error:', err);
