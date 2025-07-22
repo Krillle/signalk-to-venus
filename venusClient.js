@@ -59,114 +59,125 @@ export class VenusClient extends EventEmitter {
     if (!this.deviceInstances.has(basePath)) {
       this.deviceInstances.set(basePath, null);
 
-      // Create a deterministic index based on the path hash to ensure consistency
-      const index = this._generateStableIndex(basePath);
-      const deviceInstance = {
-        index: index,
-        name: this._getDeviceName(path),
-        basePath: basePath
-      };
-      
-      // Create device service for this device with its own D-Bus connection
-      const deviceService = new VEDBusService(
-        `signalk_${deviceInstance.index}`,
-        deviceInstance,
-        this.settings,
-        this.deviceConfig
-      );
+      try {
+        // Create a deterministic index based on the path hash to ensure consistency
+        const index = this._generateStableIndex(basePath);
+        const deviceInstance = {
+          index: index,
+          name: this._getDeviceName(path),
+          basePath: basePath
+        };
+        
+        console.log(`🔧 Creating device instance for ${basePath} (${this._internalDeviceType}) with index ${index}`);
+        
+        // Create device service for this device with its own D-Bus connection
+        const deviceService = new VEDBusService(
+          `signalk_${deviceInstance.index}`,
+          deviceInstance,
+          this.settings,
+          this.deviceConfig
+        );
 
-      await deviceService.init(); // Initialize the device service
+        await deviceService.init(); // Initialize the device service
 
-      // we should really have a vedbus-tank, vedbus-battery, etc to get rid of this.
-      switch (this._internalDeviceType) {
-        case 'tank':
-          await deviceService.updateProperty('/FluidType', this._getFluidType(path), 'i', `Fluid Type`);
-          break;
+        // we should really have a vedbus-tank, vedbus-battery, etc to get rid of this.
+        switch (this._internalDeviceType) {
+          case 'tank':
+            await deviceService.updateProperty('/FluidType', this._getFluidType(path), 'i', `Fluid Type`);
+            break;
 
-        case 'battery':
-          // Initialize battery monitor properties - Venus OS requires all these paths to be present
-          await deviceService.updateProperty('/System/HasBatteryMonitor', 1, 'i', 'Has battery monitor');
-          await deviceService.updateProperty('/Capacity', this.settings.defaultBatteryCapacity, 'd', 'Battery capacity');
-          
-          // Initialize with realistic dummy data for consumed amp hours based on SOC
-          // If battery is at 50% SOC, consumed would be roughly 50% of capacity
-          const defaultConsumedAh = this.settings.defaultBatteryCapacity * 0.5; // 50% consumed = 400Ah
-          await deviceService.updateProperty('/ConsumedAmphours', defaultConsumedAh, 'd', 'Consumed Ah');
-          
-          // Initialize time to go with realistic dummy data (8 hours at current consumption)
-          const defaultTimeToGo = 8 * 3600; // 8 hours in seconds
-          await deviceService.updateProperty('/TimeToGo', defaultTimeToGo, 'i', 'Time to go');
-          
-          // Initialize basic battery values with sensible defaults until Signal K data arrives
-          await deviceService.updateProperty('/Dc/0/Voltage', 12.0, 'd', 'Battery voltage');
-          await deviceService.updateProperty('/Dc/0/Current', 0.0, 'd', 'Battery current');
-          await deviceService.updateProperty('/Dc/0/Power', 0.0, 'd', 'Battery power');
-          await deviceService.updateProperty('/Soc', 50.0, 'd', 'State of charge');
-          
-          // Initialize temperature with realistic dummy data (20°C)
-          await deviceService.updateProperty('/Dc/0/Temperature', 20.0, 'd', 'Battery temperature');
-          
-          // Initialize relay state (normally closed for battery monitors)
-          await deviceService.updateProperty('/Relay/0/State', 0, 'i', 'Battery relay state');
-          
-          // Additional battery monitor specific paths that Venus OS might need
-          await deviceService.updateProperty('/System/BatteryService', 1, 'i', 'Battery service');
-          
-          // Critical properties for BMV recognition by Venus OS system service
-          await deviceService.updateProperty('/System/NrOfBatteries', 1, 'i', 'Number of batteries');
-          await deviceService.updateProperty('/System/MinCellVoltage', 12.0, 'd', 'Minimum cell voltage');
-          await deviceService.updateProperty('/System/MaxCellVoltage', 14.4, 'd', 'Maximum cell voltage');
-          
-          // Initialize additional paths that might be needed for proper battery monitor display
-          // State: 0 = Offline, 1 = Online, 2 = Error, 3 = Unavailable - use 1 for Online
-          await deviceService.updateProperty('/State', 1, 'i', 'Battery state');
-          await deviceService.updateProperty('/ErrorCode', 0, 'i', 'Error code');
-          await deviceService.updateProperty('/Alarms/LowVoltage', 0, 'i', 'Low voltage alarm');
-          await deviceService.updateProperty('/Alarms/HighVoltage', 0, 'i', 'High voltage alarm');
-          await deviceService.updateProperty('/Alarms/LowSoc', 0, 'i', 'Low SOC alarm');
-          await deviceService.updateProperty('/Alarms/HighCurrent', 0, 'i', 'High current alarm');
-          await deviceService.updateProperty('/Alarms/HighTemperature', 0, 'i', 'High temperature alarm');
-          await deviceService.updateProperty('/Alarms/LowTemperature', 0, 'i', 'Low temperature alarm');
-          
-          // Add Connected property which Venus OS requires for BMV recognition
-          await deviceService.updateProperty('/Connected', 1, 'i', 'Connected');
-          
-          // Add DeviceType property - 512 is the code for BMV
-          await deviceService.updateProperty('/DeviceType', 512, 'i', 'Device type');
-          
-          // Add critical system integration properties that Venus OS system service needs
-          // These are essential for proper VRM integration and BMV recognition
-          await deviceService.updateProperty('/Info/BatteryLowVoltage', 0, 'i', 'Battery low voltage info');
-          await deviceService.updateProperty('/Info/MaxChargeCurrent', 100, 'i', 'Max charge current');
-          await deviceService.updateProperty('/Info/MaxDischargeCurrent', 100, 'i', 'Max discharge current');
-          await deviceService.updateProperty('/Info/MaxChargeVoltage', 14.4, 'd', 'Max charge voltage');
-          await deviceService.updateProperty('/History/DischargedEnergy', 0, 'd', 'Discharged energy');
-          await deviceService.updateProperty('/History/ChargedEnergy', 0, 'd', 'Charged energy');
-          await deviceService.updateProperty('/History/TotalAhDrawn', 0, 'd', 'Total Ah drawn');
-          
-          // Add voltage and current min/max tracking for system service compatibility
-          await deviceService.updateProperty('/History/MinimumVoltage', 12.0, 'd', 'Minimum voltage');
-          await deviceService.updateProperty('/History/MaximumVoltage', 14.4, 'd', 'Maximum voltage');
-          await deviceService.updateProperty('/Dc/0/MidVoltage', 12.5, 'd', 'Mid voltage');
-          await deviceService.updateProperty('/Dc/0/MidVoltageDeviation', 0.0, 'd', 'Mid voltage deviation');
-          
-          // Add balancer information for system service
-          await deviceService.updateProperty('/Balancer', 0, 'i', 'Balancer active');
-          await deviceService.updateProperty('/Io/AllowToCharge', 1, 'i', 'Allow to charge');
-          await deviceService.updateProperty('/Io/AllowToDischarge', 1, 'i', 'Allow to discharge');
-          await deviceService.updateProperty('/Io/ExternalRelay', 0, 'i', 'External relay');
-          
-          // Force a system service notification after initialization
-          console.log(`🔋 Battery monitor ${deviceInstance.name} initialized with full BMV compatibility`);
-          break;
+          case 'battery':
+            // Initialize battery monitor properties - Venus OS requires all these paths to be present
+            await deviceService.updateProperty('/System/HasBatteryMonitor', 1, 'i', 'Has battery monitor');
+            await deviceService.updateProperty('/Capacity', this.settings.defaultBatteryCapacity, 'd', 'Battery capacity');
+            
+            // Initialize with realistic dummy data for consumed amp hours based on SOC
+            // If battery is at 50% SOC, consumed would be roughly 50% of capacity
+            const defaultConsumedAh = this.settings.defaultBatteryCapacity * 0.5; // 50% consumed = 400Ah
+            await deviceService.updateProperty('/ConsumedAmphours', defaultConsumedAh, 'd', 'Consumed Ah');
+            
+            // Initialize time to go with realistic dummy data (8 hours at current consumption)
+            const defaultTimeToGo = 8 * 3600; // 8 hours in seconds
+            await deviceService.updateProperty('/TimeToGo', defaultTimeToGo, 'i', 'Time to go');
+            
+            // Initialize basic battery values with sensible defaults until Signal K data arrives
+            await deviceService.updateProperty('/Dc/0/Voltage', 12.0, 'd', 'Battery voltage');
+            await deviceService.updateProperty('/Dc/0/Current', 0.0, 'd', 'Battery current');
+            await deviceService.updateProperty('/Dc/0/Power', 0.0, 'd', 'Battery power');
+            await deviceService.updateProperty('/Soc', 50.0, 'd', 'State of charge');
+            
+            // Initialize temperature with realistic dummy data (20°C)
+            await deviceService.updateProperty('/Dc/0/Temperature', 20.0, 'd', 'Battery temperature');
+            
+            // Initialize relay state (normally closed for battery monitors)
+            await deviceService.updateProperty('/Relay/0/State', 0, 'i', 'Battery relay state');
+            
+            // Additional battery monitor specific paths that Venus OS might need
+            await deviceService.updateProperty('/System/BatteryService', 1, 'i', 'Battery service');
+            
+            // Critical properties for BMV recognition by Venus OS system service
+            await deviceService.updateProperty('/System/NrOfBatteries', 1, 'i', 'Number of batteries');
+            await deviceService.updateProperty('/System/MinCellVoltage', 12.0, 'd', 'Minimum cell voltage');
+            await deviceService.updateProperty('/System/MaxCellVoltage', 14.4, 'd', 'Maximum cell voltage');
+            
+            // Initialize additional paths that might be needed for proper battery monitor display
+            // State: 0 = Offline, 1 = Online, 2 = Error, 3 = Unavailable - use 1 for Online
+            await deviceService.updateProperty('/State', 1, 'i', 'Battery state');
+            await deviceService.updateProperty('/ErrorCode', 0, 'i', 'Error code');
+            await deviceService.updateProperty('/Alarms/LowVoltage', 0, 'i', 'Low voltage alarm');
+            await deviceService.updateProperty('/Alarms/HighVoltage', 0, 'i', 'High voltage alarm');
+            await deviceService.updateProperty('/Alarms/LowSoc', 0, 'i', 'Low SOC alarm');
+            await deviceService.updateProperty('/Alarms/HighCurrent', 0, 'i', 'High current alarm');
+            await deviceService.updateProperty('/Alarms/HighTemperature', 0, 'i', 'High temperature alarm');
+            await deviceService.updateProperty('/Alarms/LowTemperature', 0, 'i', 'Low temperature alarm');
+            
+            // Add Connected property which Venus OS requires for BMV recognition
+            await deviceService.updateProperty('/Connected', 1, 'i', 'Connected');
+            
+            // Add DeviceType property - 512 is the code for BMV
+            await deviceService.updateProperty('/DeviceType', 512, 'i', 'Device type');
+            
+            // Add critical system integration properties that Venus OS system service needs
+            // These are essential for proper VRM integration and BMV recognition
+            await deviceService.updateProperty('/Info/BatteryLowVoltage', 0, 'i', 'Battery low voltage info');
+            await deviceService.updateProperty('/Info/MaxChargeCurrent', 100, 'i', 'Max charge current');
+            await deviceService.updateProperty('/Info/MaxDischargeCurrent', 100, 'i', 'Max discharge current');
+            await deviceService.updateProperty('/Info/MaxChargeVoltage', 14.4, 'd', 'Max charge voltage');
+            await deviceService.updateProperty('/History/DischargedEnergy', 0, 'd', 'Discharged energy');
+            await deviceService.updateProperty('/History/ChargedEnergy', 0, 'd', 'Charged energy');
+            await deviceService.updateProperty('/History/TotalAhDrawn', 0, 'd', 'Total Ah drawn');
+            
+            // Add voltage and current min/max tracking for system service compatibility
+            await deviceService.updateProperty('/History/MinimumVoltage', 12.0, 'd', 'Minimum voltage');
+            await deviceService.updateProperty('/History/MaximumVoltage', 14.4, 'd', 'Maximum voltage');
+            await deviceService.updateProperty('/Dc/0/MidVoltage', 12.5, 'd', 'Mid voltage');
+            await deviceService.updateProperty('/Dc/0/MidVoltageDeviation', 0.0, 'd', 'Mid voltage deviation');
+            
+            // Add balancer information for system service
+            await deviceService.updateProperty('/Balancer', 0, 'i', 'Balancer active');
+            await deviceService.updateProperty('/Io/AllowToCharge', 1, 'i', 'Allow to charge');
+            await deviceService.updateProperty('/Io/AllowToDischarge', 1, 'i', 'Allow to discharge');
+            await deviceService.updateProperty('/Io/ExternalRelay', 0, 'i', 'External relay');
+            
+            // Force a system service notification after initialization
+            console.log(`🔋 Battery monitor ${deviceInstance.name} initialized with full BMV compatibility`);
+            break;
 
-        case 'switch':
-        case 'environment':
-        default:
-          break;
+          case 'switch':
+          case 'environment':
+          default:
+            break;
+        }
+        this.deviceServices.set(basePath, deviceService);
+        this.deviceInstances.set(basePath, deviceInstance);
+        
+        console.log(`✅ Successfully created device instance for ${basePath}`);
+      } catch (error) {
+        console.error(`❌ Error creating device instance for ${basePath}:`, error);
+        // Remove the null entry to allow retry on next call
+        this.deviceInstances.delete(basePath);
+        return null;
       }
-      this.deviceServices.set(basePath, deviceService);
-      this.deviceInstances.set(basePath, deviceInstance);
     }
     
     // can return null if the device instance is not yet created
