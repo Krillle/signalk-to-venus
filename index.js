@@ -235,7 +235,12 @@ export default function(app) {
           
           venusReachable = true;
           plugin.venusConnected = true;
-          app.setPluginStatus(`Venus OS reachable at ${config.venusHost}`);
+          app.setPluginStatus(`Venus OS reachable at ${config.venusHost} - waiting for data to stabilize...`);
+          
+          // Wait 5 seconds after Venus becomes reachable to let Signal K data fully populate
+          await new Promise(resolve => setTimeout(resolve, 5000));
+          app.setPluginStatus(`Venus OS ready at ${config.venusHost}`);
+          
           return true;
         } catch (err) {
           venusReachable = false;
@@ -490,10 +495,12 @@ export default function(app) {
           const wasReachable = venusReachable;
           const isReachable = await testVenusConnectivity();
           
-          // If Venus just became reachable, process any queued paths
+          // If Venus just became reachable, process any queued paths after a delay
           if (!wasReachable && isReachable && pendingPaths.length > 0) {
-            app.debug(`Venus OS became reachable, processing ${pendingPaths.length} queued paths`);
-            processPendingPaths();
+            app.debug(`Venus OS became reachable, waiting 5 seconds before processing ${pendingPaths.length} queued paths`);
+            setTimeout(() => {
+              processPendingPaths();
+            }, 5000);
           }
         } catch (err) {
           app.error('Connectivity test error:', err);
