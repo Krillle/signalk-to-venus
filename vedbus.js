@@ -1,7 +1,10 @@
 import dbusNative from 'dbus-native';
 import EventEmitter from 'events';
 
-const Variant = dbusNative.Variant;
+// Get Variant constructor - dbus-native exports it differently
+const Variant = dbusNative.Variant || dbusNative.variant || function(type, value) {
+  return { type, value };
+};
 
 /**
  * Central VEDBus service class inspired by velib_python/vedbus.py
@@ -58,28 +61,45 @@ export class VEDBusService extends EventEmitter {
       switch (type) {
         case 'd': // double
           if (typeof value === 'number' && isFinite(value) && !isNaN(value)) {
-            return new Variant('d', value);
+            // Try different ways to create Variant based on dbus-native version
+            if (typeof Variant === 'function') {
+              return new Variant('d', value);
+            } else {
+              return [type, value]; // Fallback to simple array format
+            }
           }
           console.warn(`⚠️ Invalid double value for Variant: ${value} (type: ${typeof value})`);
           return null;
           
         case 'i': // integer
           if (typeof value === 'number' && Number.isInteger(value) && isFinite(value)) {
-            return new Variant('i', value);
+            if (typeof Variant === 'function') {
+              return new Variant('i', value);
+            } else {
+              return [type, value];
+            }
           }
           console.warn(`⚠️ Invalid integer value for Variant: ${value} (type: ${typeof value})`);
           return null;
           
         case 's': // string
           if (typeof value === 'string' && value.length > 0) {
-            return new Variant('s', value);
+            if (typeof Variant === 'function') {
+              return new Variant('s', value);
+            } else {
+              return [type, value];
+            }
           }
           console.warn(`⚠️ Invalid string value for Variant: ${value} (type: ${typeof value})`);
           return null;
           
         case 'b': // boolean
           if (typeof value === 'boolean') {
-            return new Variant('b', value);
+            if (typeof Variant === 'function') {
+              return new Variant('b', value);
+            } else {
+              return [type, value];
+            }
           }
           console.warn(`⚠️ Invalid boolean value for Variant: ${value} (type: ${typeof value})`);
           return null;
@@ -90,7 +110,8 @@ export class VEDBusService extends EventEmitter {
       }
     } catch (err) {
       console.error(`❌ Error creating Variant(${type}, ${value}):`, err.message);
-      return null;
+      // Fallback to array format if Variant constructor fails
+      return [type, value];
     }
   }
 
@@ -1060,42 +1081,7 @@ export class VEDBusService extends EventEmitter {
         return;
       }
 
-      // Create D-Bus compatible signal data with proper Venus OS format
-      const changes = {};
-      for (const key in props) {
-        const val = props[key];
-        
-        // CRITICAL: Validate values before creating Variants to prevent "Missing or invalid serial" errors
-        if (val === null || val === undefined) {
-          console.warn(`❗ Skipping ${key} with null/undefined value for ${path}`);
-          continue; // Skip null/undefined values instead of creating invalid Variants
-        }
-        
-        if (key === 'Value' && typeof val === 'number' && isFinite(val) && !isNaN(val)) {
-          const variant = this._safeVariant('d', val);
-          if (variant) changes[key] = variant;
-        } else if (key === 'Text' && typeof val === 'string' && val.length > 0) {
-          const variant = this._safeVariant('s', val);
-          if (variant) changes[key] = variant;
-        } else if (typeof val === 'boolean') {
-          const variant = this._safeVariant('b', val);
-          if (variant) changes[key] = variant;
-        } else if (typeof val === 'number' && Number.isInteger(val) && isFinite(val) && !isNaN(val)) {
-          const variant = this._safeVariant('i', val);
-          if (variant) changes[key] = variant;
-        } else {
-          console.warn(`❗ Unsupported property type for ${key}=${val} on ${path} (type: ${typeof val})`);
-          continue; // Skip unsupported types
-        }
-      }
-
-      // Only emit if we have valid changes
-      if (Object.keys(changes).length === 0) {
-        console.log(`🔧 No valid properties to emit for ${path}, skipping signal`);
-        return;
-      }
-
-      // Simplified approach - just emit basic ItemsChanged signal
+      // Simplified approach - just emit basic ItemsChanged signal without complex Variants
       if (this.bus && this.bus.connection && this.bus.connection.message) {
         const itemChanges = [];
         itemChanges.push([path, [
