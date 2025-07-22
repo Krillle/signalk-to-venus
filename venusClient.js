@@ -55,9 +55,9 @@ export class VenusClient extends EventEmitter {
   async _getOrCreateDeviceInstance(path) {
     // Extract the base device path using device-specific logic
     const basePath = this._extractBasePath(path);
-    console.log(`🔧 Debug: Path '${path}' -> basePath '${basePath}' for device type '${this._internalDeviceType}'`);
     
     if (!this.deviceInstances.has(basePath)) {
+      console.log(`🔧 Creating device instance for ${basePath} (${this._internalDeviceType}) with index ${this._generateStableIndex(basePath)}`);
       // Mark that we're creating this device to prevent duplicate creation
       this.deviceInstances.set(basePath, 'creating');
 
@@ -186,7 +186,6 @@ export class VenusClient extends EventEmitter {
       const existing = this.deviceInstances.get(basePath);
       if (existing === 'creating') {
         // Device is currently being created, wait a bit and try again
-        console.log(`🔧 Debug: Device instance for '${basePath}' is being created, waiting...`);
         
         // Wait for creation to complete with timeout
         const maxWaitTime = 5000; // 5 seconds max wait
@@ -200,13 +199,7 @@ export class VenusClient extends EventEmitter {
           const updated = this.deviceInstances.get(basePath);
           if (updated !== 'creating') {
             // Creation completed (either success or failure)
-            if (updated) {
-              console.log(`🔧 Debug: Device creation completed for '${basePath}', using existing instance`);
-              return updated;
-            } else {
-              console.log(`🔧 Debug: Device creation failed for '${basePath}'`);
-              return null;
-            }
+            return updated || null;
           }
         }
         
@@ -215,7 +208,6 @@ export class VenusClient extends EventEmitter {
         return null;
       }
       
-      console.log(`🔧 Debug: Using existing device instance for basePath '${basePath}' (from path '${path}')`);
       return existing;
     }
   }

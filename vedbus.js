@@ -442,8 +442,6 @@ export class VEDBusService extends EventEmitter {
 
       // Call the Venus OS Settings API to register the device
       const settingsResult = await new Promise((resolve, reject) => {
-        console.log('Invoking Settings API with:', JSON.stringify(settingsArray, null, 2));
-        
         this.bus.invoke({
           destination: 'com.victronenergy.settings',
           path: '/',
@@ -456,7 +454,6 @@ export class VEDBusService extends EventEmitter {
             console.log('Settings API error:', err);
             reject(new Error(`Settings registration failed: ${err.message || err}`));
           } else {
-            console.log('Settings API result:', result);
             resolve(result);
           }
         });
