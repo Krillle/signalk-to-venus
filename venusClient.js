@@ -55,6 +55,7 @@ export class VenusClient extends EventEmitter {
   async _getOrCreateDeviceInstance(path) {
     // Extract the base device path using device-specific logic
     const basePath = this._extractBasePath(path);
+    console.log(`🔧 Debug: Path '${path}' -> basePath '${basePath}' for device type '${this._internalDeviceType}'`);
     
     if (!this.deviceInstances.has(basePath)) {
       this.deviceInstances.set(basePath, null);
@@ -173,11 +174,14 @@ export class VenusClient extends EventEmitter {
         
         console.log(`✅ Successfully created device instance for ${basePath}`);
       } catch (error) {
-        console.error(`❌ Error creating device instance for ${basePath}:`, error);
+        console.error(`❌ Error creating device instance for ${basePath} (from path: ${path}):`, error);
+        console.error(`❌ Error stack:`, error.stack);
         // Remove the null entry to allow retry on next call
         this.deviceInstances.delete(basePath);
         return null;
       }
+    } else {
+      console.log(`🔧 Debug: Using existing device instance for basePath '${basePath}' (from path '${path}')`);
     }
     
     // can return null if the device instance is not yet created
@@ -187,6 +191,8 @@ export class VenusClient extends EventEmitter {
   _extractBasePath(path) {
     switch (this._internalDeviceType) {
       case 'tank':
+        // Handle tank paths like 'tanks.freshWater.0.capacity' -> 'tanks.freshWater.0'
+        // and also 'tanks.freshWater.0.currentLevel' -> 'tanks.freshWater.0'
         return path.replace(/\.(currentLevel|capacity|name|currentVolume|voltage)$/, '');
       case 'battery':
         return path.replace(/\.(voltage|current|stateOfCharge|consumed|timeRemaining|relay|temperature|name|capacity\..*|power)$/, '');
