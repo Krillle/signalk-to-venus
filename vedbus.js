@@ -479,6 +479,9 @@ export class VEDBusService extends EventEmitter {
 
   async _registerService() {
     try {
+      // Export management interface FIRST - this is critical for D-Bus service availability
+      this._exportManagementInterface();
+
       // Request service name on our own bus connection
       await new Promise((resolve, reject) => {
         this.bus.requestName(this.dbusServiceName, 0, (err, result) => {
@@ -1418,30 +1421,33 @@ export class VEDBusService extends EventEmitter {
   // }
 
   updateValue(path, value) {
-  // Update device data
-  this.deviceData[path] = value;
+    // Update device data
+    this.deviceData[path] = value;
 
-  // Ensure the interface is exported before emitting
-  if (!this.exportedInterfaces[path]) {
-    this.exportPath(path);  // <-- wichtig: Stelle sicher, dass der Pfad bekannt ist
-  }
+    // Ensure the interface is exported before emitting
+    if (!this.exportedInterfaces[path]) {
+      // Create a config for the property if it doesn't exist
+      const type = this.deviceConfig.pathTypes?.[path] || 'd';
+      const text = this.deviceConfig.pathMappings?.[path] || `${this.deviceConfig.serviceType} property`;
+      this._exportProperty(path, { value, type, text });
+    }
 
-  // Emit PropertiesChanged signal if we have the interface
-  if (this.exportedInterfaces[path] && this.exportedInterfaces[path].PropertiesChanged) {
-    try {
-      const wrapped = this._wrapValue(this.deviceConfig.pathTypes?.[path] || 'd', value);
-      if (wrapped !== undefined) {
-        this.exportedInterfaces[path].PropertiesChanged([[path, wrapped]]);
+    // Emit PropertiesChanged signal if we have the interface
+    if (this.exportedInterfaces[path] && this.exportedInterfaces[path].PropertiesChanged) {
+      try {
+        const wrapped = this._wrapValue(this.deviceConfig.pathTypes?.[path] || 'd', value);
+        if (wrapped !== undefined) {
+          this.exportedInterfaces[path].PropertiesChanged([[path, wrapped]]);
+        }
+      } catch (error) {
+        console.warn(`❌ Failed to emit signal for ${path}:`, error.message);
       }
-    } catch (error) {
-      console.warn(`❌ Failed to emit signal for ${path}:`, error.message);
+    }
+
+    // Update management properties if it's a management property
+    if (this.managementProperties[path] && !this.managementProperties[path].immutable) {
+      this.managementProperties[path].value = value;
     }
   }
-
-  // Update management properties if it's a management property
-  if (this.managementProperties[path] && !this.managementProperties[path].immutable) {
-    this.managementProperties[path].value = value;
-  }
-}
 
 }
