@@ -423,8 +423,9 @@ export class VenusClient extends EventEmitter {
         console.log(`Connection lost while updating ${path} - Venus OS may be restarting`);
         // Don't throw the error, just log it
       } else {
-        console.error(`Error in handleSignalKUpdate for ${path}:`, err);
-        throw new Error(err.message);
+        console.error(`❌ Error in handleSignalKUpdate for ${path}:`, err);
+        console.error(`❌ Error stack:`, err.stack);
+        // Don't throw the error, just log it to prevent higher-level catching
       }
     }
   }
@@ -574,7 +575,27 @@ export class VenusClient extends EventEmitter {
       }
     } else if (path.includes('temperature')) {
       if (typeof value === 'number' && !isNaN(value)) {
-        const tempCelsius = value > 200 ? value - 273.15 : value; // Convert from Kelvin if needed
+        let tempCelsius;
+        
+        // Convert temperature from Kelvin to Celsius if needed
+        // SignalK typically uses Kelvin for temperatures
+        // Normal battery temperatures are -40°C to +80°C (-40°F to +176°F)
+        // In Kelvin: 233K to 353K
+        if (value > 100) {
+          // Likely Kelvin (anything above 100 is probably Kelvin)
+          tempCelsius = value - 273.15;
+          console.log(`🌡️ Converting battery temperature from Kelvin: ${value}K -> ${tempCelsius.toFixed(1)}°C`);
+        } else {
+          // Likely already in Celsius
+          tempCelsius = value;
+          console.log(`🌡️ Battery temperature in Celsius: ${tempCelsius.toFixed(1)}°C`);
+        }
+        
+        // Sanity check for reasonable battery temperatures
+        if (tempCelsius < -50 || tempCelsius > 100) {
+          console.warn(`⚠️ Battery temperature seems unreasonable: ${tempCelsius.toFixed(1)}°C (from ${value})`);
+        }
+        
         await deviceService.updateProperty('/Dc/0/Temperature', tempCelsius, 'd', `${deviceName} temperature`);
         this.emit('dataUpdated', 'Battery Temperature', `${deviceName}: ${tempCelsius.toFixed(1)}°C`);
       }
