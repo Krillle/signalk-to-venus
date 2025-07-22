@@ -17,7 +17,7 @@ export class VEDBusService extends EventEmitter {
     this.deviceInstance = deviceInstance;
     this.settings = settings;
     this.deviceConfig = deviceConfig;
-    this.dbusServiceName = `com.victronenergy.${deviceConfig.serviceType}.signalkconnector_${serviceName}`;
+    this.dbusServiceName = `com.victronenergy.${deviceConfig.serviceType}.${serviceName}`;
     this.deviceData = {};
     this.exportedInterfaces = {};
     this.bus = null;
