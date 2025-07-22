@@ -168,8 +168,11 @@ describe('Signal K Plugin - Main Index', () => {
       expect(mockApp.setPluginStatus).toHaveBeenCalledWith('Starting Signal K to Venus OS bridge');
       expect(mockApp.debug).toHaveBeenCalledWith('Starting Signal K to Venus OS bridge');
       
-      // Give time for async startup sequence
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Wait longer for the full async startup sequence:
+      // 1. waitForSignalKReadiness (includes 1s initial delay)
+      // 2. testVenusConnectivity
+      // 3. setupSignalKSubscription
+      await new Promise(resolve => setTimeout(resolve, 2000));
       
       // Check that subscription setup was attempted
       expect(mockApp.streambundle.getSelfBus).toHaveBeenCalled();

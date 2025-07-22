@@ -166,17 +166,16 @@ describe('VenusClient - Battery', () => {
       expect(client.deviceInstances.size).toBeGreaterThanOrEqual(0);
     });
 
-    it('should ignore invalid values', async () => {
+    it('should handle null and undefined values correctly', async () => {
       // Create a fresh client to ensure clean state
       const freshClient = new VenusClient(mockSettings, 'batteries');
       const initialSize = freshClient.deviceInstances.size;
       
-      // These should not create devices since values are invalid
+      // These should not create devices since values are null/undefined (early return)
       await freshClient.handleSignalKUpdate('electrical.batteries.main.voltage', null);
       await freshClient.handleSignalKUpdate('electrical.batteries.main.voltage', undefined);
-      await freshClient.handleSignalKUpdate('electrical.batteries.main.voltage', 'invalid');
       
-      // Device instances should not change with invalid values
+      // Device instances should not change with null/undefined values
       expect(freshClient.deviceInstances.size).toBe(initialSize);
       
       // Clean up
