@@ -417,20 +417,26 @@ export default function(app) {
                   // Track this discovered path (always do discovery regardless of Venus OS connection)
                   addDiscoveredPath(deviceType, pathValue.path, pathValue.value, config);
                   
+                  // Debug logging for device creation flow
+                  app.debug(`Processing ${deviceType} path: ${pathValue.path}, Venus reachable: ${venusReachable}, Enabled: ${isPathEnabled(deviceType, pathValue.path, config)}`);
+                  
                   // Only proceed with Venus OS operations if Venus is reachable and path is enabled
                   if (venusReachable !== true) {
                     // Venus OS not reachable, skip Venus operations but continue discovery
+                    app.debug(`Skipping Venus operations for ${pathValue.path} - Venus not reachable`);
                     return;
                   }
                   
                   // Check if this specific path is enabled
                   if (!isPathEnabled(deviceType, pathValue.path, config)) {
+                    app.debug(`Skipping ${pathValue.path} - not enabled in configuration`);
                     return; // Skip disabled paths
                   }
                   
-                  // Create Venus client for this device type if it doesn't exist yet
-                  if (!plugin.clients[deviceType]) {
+                  // Create Venus client for this device type if it doesn't exist yet or has failed
+                  if (!plugin.clients[deviceType] || plugin.clients[deviceType] === null) {
                     app.setPluginStatus(`Creating Venus OS service for ${deviceTypeNames[deviceType]}`);
+                    app.debug(`Creating new Venus client for device type: ${deviceType}`);
                     
                     try {
                       plugin.clients[deviceType] = VenusClientFactory(config, deviceType);
@@ -438,6 +444,7 @@ export default function(app) {
                       
                       const deviceCountText = generateEnabledDeviceCountText(config);
                       app.setPluginStatus(`Connected to Venus OS, injecting ${deviceCountText}`);
+                      app.debug(`Successfully created Venus client for ${deviceType}`);
                       
                     } catch (err) {
                       // Clean up connection error messages for better user experience
@@ -451,6 +458,7 @@ export default function(app) {
                       }
                       
                       app.setPluginError(`Venus OS not reachable: ${cleanMessage}`);
+                      app.debug(`Failed to create Venus client for ${deviceType}: ${cleanMessage}`);
                       
                       // Mark this client as failed to prevent retries
                       plugin.clients[deviceType] = null;
@@ -466,6 +474,7 @@ export default function(app) {
                   
                   // Update the Venus client with the new data (whether client is new or existing)
                   if (plugin.clients[deviceType] && plugin.clients[deviceType] !== null) {
+                    app.debug(`Updating Venus client ${deviceType} with path: ${pathValue.path}`);
                     try {
                       await plugin.clients[deviceType].handleSignalKUpdate(pathValue.path, pathValue.value);
                     } catch (err) {
@@ -477,6 +486,7 @@ export default function(app) {
                         // Mark client as failed
                         plugin.clients[deviceType] = null;
                         activeClientTypes.delete(deviceTypeNames[deviceType]);
+                        app.debug(`Marked Venus client ${deviceType} as failed due to connection error`);
                       } else {
                         app.error(`Error updating ${deviceType} client for ${pathValue.path}: ${err.message}`);
                       }
