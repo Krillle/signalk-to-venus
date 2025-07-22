@@ -298,6 +298,11 @@ export default function(app) {
           // Start periodic Venus connectivity tests
           plugin.connectivityInterval = setInterval(runConnectivityTest, 120000); // Check every 2 minutes
           
+          // Add a comprehensive forced update after startup to ensure VRM visibility
+          setTimeout(() => {
+            triggerComprehensiveForceUpdate(config);
+          }, 10000); // Wait 10 seconds after startup for all devices to be created
+          
         } catch (err) {
           app.error('Error during bridge startup:', err);
           app.setPluginError(`Bridge startup failed: ${err.message}`);
@@ -507,6 +512,53 @@ export default function(app) {
         }
       }
       
+      // Comprehensive force update to ensure all devices appear in VRM
+      async function triggerComprehensiveForceUpdate(config) {
+        if (!venusReachable) {
+          app.debug('Skipping comprehensive force update - Venus OS not reachable');
+          return;
+        }
+        
+        app.debug('Starting comprehensive force update for VRM visibility...');
+        
+        // Wait a moment for any pending device creation to complete
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        // Force update all enabled devices with current Signal K data
+        Object.entries(plugin.clients).forEach(([deviceType, client]) => {
+          if (client && client !== null && discoveredPaths[deviceType]) {
+            const pathMap = discoveredPaths[deviceType];
+            
+            pathMap.forEach((pathInfo, devicePath) => {
+              const safePathKey = devicePath.replace(/[^a-zA-Z0-9]/g, '_');
+              if (config[deviceType] && config[deviceType][safePathKey] === true) {
+                app.debug(`Forcing comprehensive update for device: ${devicePath} (${deviceType})`);
+                
+                // Force update each property of this device
+                pathInfo.properties.forEach(async (fullPath) => {
+                  try {
+                    // Wait a moment between each update to avoid overwhelming
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    
+                    const currentValue = app.getSelfPath(fullPath);
+                    if (currentValue !== undefined && currentValue !== null) {
+                      app.debug(`Comprehensive force update: ${fullPath} = ${currentValue}`);
+                      await client.handleSignalKUpdate(fullPath, currentValue);
+                    } else {
+                      app.debug(`No current value for ${fullPath}, skipping comprehensive update`);
+                    }
+                  } catch (err) {
+                    app.debug(`Comprehensive force update failed for ${fullPath}: ${err.message}`);
+                  }
+                });
+              }
+            });
+          }
+        });
+        
+        app.debug('Comprehensive force update completed');
+      }
+      
       // Process paths that were queued while Venus OS was not reachable
       async function processPendingPaths() {
         if (isProcessingQueue || pendingPaths.length === 0) {
@@ -610,17 +662,40 @@ export default function(app) {
             app.setPluginStatus(`Connected to Venus OS, injecting ${deviceCountText}`);
             app.debug(`Successfully created Venus client for ${deviceType}`);
             
-            // After creating a new client, force an immediate update with current data
-            // to ensure the device appears in VRM with valid data
+            // After creating a new client, force immediate updates with ALL current data
+            // for this device type to ensure the device appears in VRM with valid data
             setTimeout(async () => {
               try {
-                const currentValue = app.getSelfPath(path);
-                if (currentValue !== undefined && currentValue !== null) {
-                  app.debug(`Sending initial data to new ${deviceType} client: ${path} = ${currentValue}`);
-                  await plugin.clients[deviceType].handleSignalKUpdate(path, currentValue);
+                app.debug(`Sending initial data batch to new ${deviceType} client...`);
+                
+                // Send data for all discovered devices of this type that are enabled
+                if (discoveredPaths[deviceType]) {
+                  const pathMap = discoveredPaths[deviceType];
+                  
+                  for (const [devicePath, pathInfo] of pathMap) {
+                    const safePathKey = devicePath.replace(/[^a-zA-Z0-9]/g, '_');
+                    if (config[deviceType] && config[deviceType][safePathKey] === true) {
+                      // Send all properties for this enabled device
+                      for (const fullPath of pathInfo.properties) {
+                        try {
+                          const currentValue = app.getSelfPath(fullPath);
+                          if (currentValue !== undefined && currentValue !== null) {
+                            app.debug(`Initial data: ${fullPath} = ${currentValue}`);
+                            await plugin.clients[deviceType].handleSignalKUpdate(fullPath, currentValue);
+                            // Small delay between updates to avoid overwhelming
+                            await new Promise(resolve => setTimeout(resolve, 50));
+                          }
+                        } catch (pathErr) {
+                          app.debug(`Could not send initial data for ${fullPath}: ${pathErr.message}`);
+                        }
+                      }
+                    }
+                  }
                 }
+                
+                app.debug(`Completed initial data batch for ${deviceType} client`);
               } catch (err) {
-                app.debug(`Could not send initial data to new ${deviceType} client: ${err.message}`);
+                app.debug(`Could not send initial data batch to new ${deviceType} client: ${err.message}`);
               }
             }, 1000); // Wait 1 second for client to fully initialize
             
