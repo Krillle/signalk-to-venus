@@ -1,5 +1,14 @@
 import dbusNative from 'dbus-native';
 import EventEmitter from 'events';
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+// Read package.json to get the current version
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const packageJson = JSON.parse(readFileSync(join(__dirname, 'package.json'), 'utf8'));
+const PACKAGE_VERSION = packageJson.version;
 
 // Get Variant constructor - dbus-native exports it differently
 const Variant = dbusNative.Variant || dbusNative.variant || function(type, value) {
@@ -36,12 +45,12 @@ export class VEDBusService extends EventEmitter {
     // Management properties that are common to all devices
     this.managementProperties = {
       "/Mgmt/ProcessName": { type: "s", value: deviceConfig.processName, text: "Process name", immutable: true },
-      "/Mgmt/ProcessVersion": { type: "s", value: "1.0.12", text: "Process version", immutable: true },
+      "/Mgmt/ProcessVersion": { type: "s", value: PACKAGE_VERSION, text: "Process version", immutable: true },
       "/Mgmt/Connection": { type: "i", value: 1, text: "Connected", immutable: true },
       "/DeviceInstance": { type: "i", value: this.vrmInstanceId, text: "Device instance", immutable: true },
       "/ProductId": { type: "i", value: deviceConfig.serviceType === 'battery' ? 0xBA77 : 0, text: "Product ID", immutable: true },
       "/ProductName": { type: "s", value: deviceConfig.productName, text: "Product name", immutable: true },
-      "/FirmwareVersion": { type: "s", value: "1.0.12", text: "Firmware Version", immutable: true },
+      "/FirmwareVersion": { type: "s", value: PACKAGE_VERSION, text: "Firmware Version", immutable: true },
       "/HardwareVersion": { type: "s", value: "1.0", text: "Hardware Version", immutable: true },
       "/Connected": { type: "i", value: 1, text: "Connected", immutable: true },
       "/Serial": { type: "s", value: uniqueSerial, text: "Serial number", immutable: true },
