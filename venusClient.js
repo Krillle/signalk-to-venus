@@ -163,8 +163,6 @@ export class VenusClient extends EventEmitter {
             await deviceService.updateProperty('/Io/AllowToDischarge', 1, 'i', 'Allow to discharge');
             await deviceService.updateProperty('/Io/ExternalRelay', 0, 'i', 'External relay');
             
-            // Force a system service notification after initialization
-            console.log(`🔋 Battery monitor ${deviceInstance.name} initialized with full BMV compatibility`);
             break;
 
           case 'switch':
@@ -445,7 +443,6 @@ export class VenusClient extends EventEmitter {
       const lastLogTime = this._lastDataUpdateLog.get(deviceInstance.basePath) || 0;
       
       if (now - lastLogTime > this._dataUpdateLogInterval) {
-        console.log(`📊 Processing data updates for ${deviceInstance.basePath} (last ${Math.round((now - lastLogTime) / 1000)}s ago)`);
         this._lastDataUpdateLog.set(deviceInstance.basePath, now);
       }
       
@@ -537,7 +534,6 @@ export class VenusClient extends EventEmitter {
   async _handleBatteryUpdate(path, value, deviceService, deviceName) {
     if (path.includes('voltage')) {
       if (typeof value === 'number' && !isNaN(value)) {
-        console.log(`🔋 Battery ${deviceName}: Updating /Dc/0/Voltage = ${value.toFixed(2)}V`);
         await deviceService.updateProperty('/Dc/0/Voltage', value, 'd', `${deviceName} voltage`);
         this.emit('dataUpdated', 'Battery Voltage', `${deviceName}: ${value.toFixed(2)}V`);
         
@@ -552,7 +548,6 @@ export class VenusClient extends EventEmitter {
       }
     } else if (path.includes('current')) {
       if (typeof value === 'number' && !isNaN(value)) {
-        console.log(`🔋 Battery ${deviceName}: Updating /Dc/0/Current = ${value.toFixed(1)}A`);
         await deviceService.updateProperty('/Dc/0/Current', value, 'd', `${deviceName} current`);
         this.emit('dataUpdated', 'Battery Current', `${deviceName}: ${value.toFixed(1)}A`);
         
@@ -568,7 +563,6 @@ export class VenusClient extends EventEmitter {
     } else if (path.includes('stateOfCharge') || (path.includes('capacity') && path.includes('state'))) {
       if (typeof value === 'number' && !isNaN(value)) {
         const socPercent = value > 1 ? value : value * 100;
-        console.log(`🔋 Battery ${deviceName}: Updating /Soc = ${socPercent.toFixed(1)}% (from ${value})`);
         await deviceService.updateProperty('/Soc', socPercent, 'd', `${deviceName} state of charge`);
         this.emit('dataUpdated', 'Battery SoC', `${deviceName}: ${socPercent.toFixed(1)}%`);
         

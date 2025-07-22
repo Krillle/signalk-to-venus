@@ -13,25 +13,25 @@ This directory contains comprehensive tests for the Signal K to Venus OS bridge 
 
 ### Key Test Areas
 
-#### 🔧 **D-Bus Integration**
+#### **D-Bus Integration**
 - Interface export protection (prevents duplicate nodes)
 - Stable device indexing (consistent IDs across restarts)
 - Proper value wrapping and type conversion
 - Venus OS Settings registration
 
-#### 🚢 **Signal K Processing** 
+#### **Signal K Processing** 
 - Path identification and validation
 - Tank level/capacity/name handling
 - Switch state and dimming level processing
 - Invalid value rejection
 
-#### 🛡️ **Error Handling**
+#### **Error Handling**
 - Connection failure recovery
 - Graceful degradation
 - Resource cleanup
 - Invalid input handling
 
-#### 📊 **Data Integrity**
+#### **Data Integrity**
 - Consistent device naming
 - Stable hash-based indexing
 - Tank instance management
@@ -75,19 +75,19 @@ test/
 
 ## Test Philosophy
 
-### ✅ **What We Test**
+### **What We Test**
 - **Critical business logic** - Tank indexing, name generation, value conversion
 - **Integration points** - D-Bus export, Signal K processing, Settings registration
 - **Edge cases** - Invalid inputs, connection failures, duplicate prevention
 - **State management** - Instance tracking, export deduplication, cleanup
 
-### ❌ **What We Don't Test**
+### **What We Don't Test**
 - External dependencies (D-Bus, Signal K server)
 - Network connectivity
 - Venus OS specific behavior
 - Real hardware integration
 
-### 🎯 **Test Approach**
+### **Test Approach**
 - **Unit tests** for individual functions and methods
 - **Integration tests** for component interaction
 - **Mock-heavy** to isolate units under test
