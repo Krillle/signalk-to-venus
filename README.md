@@ -387,6 +387,14 @@ MIT © Christian Wegerhoff
 
 ### v1.0.13 (2025/07/22 17:30)
 **First working version. Known issues:**
-- Loop prevention from signalk-venus not working yet
 - Switches not tested yet (and probably not working), as Venus OS does not yet support switches
-- Battery Monitor Time To Go (TTG) is not shown correctly
+
+## Known Issues
+- **Loop prevention from signalk-venus not working yet**
+If you're using the signalk-venus plugin, virtual devices from Venus OS will loop back into Signal K. This can cause duplicate data. An update to signalk-venus is in progress to resolve this.
+
+- **Virtual devices missing after startup**
+There is a remaining race condition that has not yet been fully identified. Although the plugin waits 15 seconds to allow the Signal K data tree to populate and Venus OS to initialize, not all virtual devices are always recognized by Venus OS on startup. A manual toggle (disabling and re-enabling the plugin) resolves the issue and all devices appear as expected.
+
+- **Battery Monitor Time To Go (TTG) is not shown correctly**
+Although the plugin sends correct TTG values in seconds, Venus OS may show strange or unstable values in the Battery Monitor. This seems to be a display issue on the Venus side.

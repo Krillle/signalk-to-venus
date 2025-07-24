@@ -177,6 +177,7 @@ export class VEDBusService extends EventEmitter {
       }
       
       // Export minimal BMV properties with real Signal K values if available
+      // IMPORTANT: Only export properties if we have real values - no fake defaults!
       const minimalBMVProperties = {
         '/Soc': { 
           value: currentValues['/Soc'] ?? initialValues?.['/Soc'] ?? null, 
@@ -201,16 +202,14 @@ export class VEDBusService extends EventEmitter {
       };
       
       Object.entries(minimalBMVProperties).forEach(([path, config]) => {
-        if (!this.deviceData[path]) {
-          // Only set the property if we have a real value, otherwise skip initialization
-          if (config.value !== null && config.value !== undefined) {
-            this.deviceData[path] = config.value;
-            this._exportProperty(path, config);
-            this.logger.debug(`Initialized ${path} with value: ${config.value}`);
-          } else {
-            // Don't initialize with fake data - let updateProperty handle first real value
-            this.logger.debug(`Skipping initialization of ${path} - waiting for real Signal K data`);
-          }
+        // CRITICAL: Only export if we have a real value - don't pollute Venus OS with fake data
+        if (config.value !== null && config.value !== undefined && !this.deviceData[path]) {
+          this.deviceData[path] = config.value;
+          this._exportProperty(path, config);
+          this.logger.debug(`Initialized ${path} with real value: ${config.value}`);
+        } else if (config.value === null || config.value === undefined) {
+          // Skip initialization - property will be exported when first real Signal K data arrives
+          this.logger.debug(`Skipping initialization of ${path} - waiting for real Signal K data to avoid fake defaults`);
         }
       });
       
@@ -771,10 +770,11 @@ export class VEDBusService extends EventEmitter {
           ]]);
         });
 
-        // CRITICAL: For battery services, ensure all BMV-required properties are present
+        // CRITICAL: For battery services, ensure critical BMV properties are present
+        // But only export them if we have real values (no fake defaults)
         if (this.deviceConfig.serviceType === 'battery') {
-          const requiredBMVProperties = ['/Serial', '/Soc', '/Dc/0/Voltage', '/Dc/0/Current', '/DeviceInstance'];
-          requiredBMVProperties.forEach(path => {
+          const criticalBMVProperties = ['/Serial', '/DeviceInstance'];
+          criticalBMVProperties.forEach(path => {
             if (!items.find(item => item[0] === path)) {
               let value, type, text;
               if (path === '/Serial') {
@@ -785,10 +785,6 @@ export class VEDBusService extends EventEmitter {
                 value = this.vrmInstanceId;
                 type = 'i';
                 text = 'Device instance';
-              } else {
-                value = 0;
-                type = 'd';
-                text = 'Battery property';
               }
               items.push([path, [
                 ["Value", this._wrapValue(type, value)],
@@ -796,6 +792,9 @@ export class VEDBusService extends EventEmitter {
               ]]);
             }
           });
+          
+          // Note: We no longer add default values for /Soc, /Dc/0/Voltage, /Dc/0/Current
+          // These will only be exported when real Signal K data arrives via updateProperty
         }
 
         // Only log GetItems if it's the first time or if there's a significant change in properties count
@@ -914,13 +913,9 @@ export class VEDBusService extends EventEmitter {
         // CRITICAL: Special handling for other key properties Venus OS looks for
         if (propertyName === 'DeviceInstance' || propertyName === '/DeviceInstance') {
           return this._wrapValue('i', this.vrmInstanceId);
-        } else if (this.deviceConfig.serviceType === 'battery') {
-          // For unknown battery properties, return sensible defaults
-          if (propertyName.includes('Voltage') || propertyName.includes('Current') || propertyName.includes('Soc')) {
-            return this._wrapValue('d', 0);
-          }
         }
         
+        // Don't return fake defaults for battery properties - let them be undefined until real data arrives
         return this._wrapValue('s', '');
       },
       GetAll: (interfaceName) => {
