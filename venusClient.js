@@ -887,26 +887,9 @@ export class VenusClient extends EventEmitter {
       }
     }
     
-    // Update battery temperature with a realistic value if not provided
-    // Only update if temperature is not already set from real data
-    const currentTemp = deviceService.deviceData['/Dc/0/Temperature'];
-    if (typeof currentTemp !== 'number' || isNaN(currentTemp) || currentTemp === 20.0) {
-      // Use a temperature that varies slightly based on current load
-      let baseTemp = 20.0; // 20°C base temperature
-      if (typeof current === 'number' && !isNaN(current)) {
-        // Add 0.1°C per amp of current (batteries warm up under load)
-        baseTemp += Math.abs(current) * 0.1;
-      }
-      try {
-        await deviceService.updateProperty('/Dc/0/Temperature', baseTemp, 'd', `${deviceName} temperature`);
-      } catch (err) {
-        if (err.code === 'ECONNRESET' || err.code === 'ECONNREFUSED' || err.code === 'EPIPE') {
-          this.logger.debug(`Connection lost while updating temperature for ${deviceName}`);
-        } else {
-          console.error(`Error updating temperature for ${deviceName}:`, err);
-        }
-      }
-    }
+    // NOTE: We no longer generate fake temperature data
+    // If a battery doesn't provide temperature, Venus OS will simply not show temperature data
+    // This is much better than showing fake values that could mislead users
   }
 
   async _notifySystemService(deviceService, deviceName) {
@@ -948,15 +931,23 @@ export class VenusClient extends EventEmitter {
     this._lastSystemRefresh = now;
     
     try {
-      // Get current values from deviceData and refresh key properties
-      const socValue = deviceService.deviceData['/Soc'] || 50.0;
-      const currentValue = deviceService.deviceData['/Dc/0/Current'] || 0.0;
-      const voltageValue = deviceService.deviceData['/Dc/0/Voltage'] || 24.0;
+      // Get current values from deviceData - NO DEFAULT VALUES!
+      // Only update if we have real values in deviceData
+      const socValue = deviceService.deviceData['/Soc'];
+      const currentValue = deviceService.deviceData['/Dc/0/Current'];
+      const voltageValue = deviceService.deviceData['/Dc/0/Voltage'];
 
-      // Only update the core BMV values that Venus OS needs for system integration
-      await deviceService.updateProperty('/Soc', socValue, 'd', `${deviceName} state of charge`);
-      await deviceService.updateProperty('/Dc/0/Current', currentValue, 'd', `${deviceName} current`);
-      await deviceService.updateProperty('/Dc/0/Voltage', voltageValue, 'd', `${deviceName} voltage`);
+      // Only update the core BMV values if we have real data
+      // This prevents sending fake default values to Venus OS
+      if (typeof socValue === 'number' && !isNaN(socValue)) {
+        await deviceService.updateProperty('/Soc', socValue, 'd', `${deviceName} state of charge`);
+      }
+      if (typeof currentValue === 'number' && !isNaN(currentValue)) {
+        await deviceService.updateProperty('/Dc/0/Current', currentValue, 'd', `${deviceName} current`);
+      }
+      if (typeof voltageValue === 'number' && !isNaN(voltageValue)) {
+        await deviceService.updateProperty('/Dc/0/Voltage', voltageValue, 'd', `${deviceName} voltage`);
+      }
       
     } catch (err) {
       console.error(`Error in system service refresh for ${deviceName}:`, err);
