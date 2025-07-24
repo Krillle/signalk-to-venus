@@ -114,25 +114,78 @@ export class VenusClient extends EventEmitter {
           case 'battery':
             // Initialize battery monitor properties - Venus OS requires all these paths to be present
             await deviceService.updateProperty('/System/HasBatteryMonitor', 1, 'i', 'Has battery monitor');
+            // Initialize with default battery capacity from settings
             await deviceService.updateProperty('/Capacity', this.settings.defaultBatteryCapacity, 'd', 'Battery capacity');
             
-            // Initialize with realistic dummy data for consumed amp hours based on SOC
-            // If battery is at 50% SOC, consumed would be roughly 50% of capacity
-            const defaultConsumedAh = this.settings.defaultBatteryCapacity * 0.5; // 50% consumed = 400Ah
-            await deviceService.updateProperty('/ConsumedAmphours', defaultConsumedAh, 'd', 'Consumed Ah');
+            // IMPORTANT: Don't initialize ConsumedAmphours with fake data
+            // This will be calculated from real SOC when Signal K data arrives
             
-            // Initialize time to go with realistic dummy data (8 hours at current consumption)
-            const defaultTimeToGo = 8 * 3600; // 8 hours in seconds
-            await deviceService.updateProperty('/TimeToGo', defaultTimeToGo, 'i', 'Time to go');
+            // CRITICAL: Don't initialize battery data properties with fake values!
+            // Only initialize if we have real Signal K values available
+            // These properties will be set when actual Signal K data arrives
             
-            // Initialize basic battery values with sensible defaults until Signal K data arrives
-            await deviceService.updateProperty('/Dc/0/Voltage', 12.0, 'd', 'Battery voltage');
-            await deviceService.updateProperty('/Dc/0/Current', 0.0, 'd', 'Battery current');
-            await deviceService.updateProperty('/Dc/0/Power', 0.0, 'd', 'Battery power');
-            await deviceService.updateProperty('/Soc', 50.0, 'd', 'State of charge');
+            // Check if we have real Signal K values and use those for initialization
+            const basePath = deviceInstance.basePath;
+            if (basePath && this.signalKApp) {
+              try {
+                // Try to get real current values from Signal K
+                const currentSoc = this._getCurrentSignalKValue(`${basePath}.capacity.stateOfCharge`);
+                const currentVoltage = this._getCurrentSignalKValue(`${basePath}.voltage`);
+                const currentCurrent = this._getCurrentSignalKValue(`${basePath}.current`);
+                const currentPower = this._getCurrentSignalKValue(`${basePath}.power`);
+                const currentTemp = this._getCurrentSignalKValue(`${basePath}.temperature`);
+                
+                // Only initialize properties if we have real values
+                if (currentSoc !== null && currentSoc !== undefined && typeof currentSoc === 'number') {
+                  const socPercent = currentSoc > 1 ? currentSoc : currentSoc * 100;
+                  await deviceService.updateProperty('/Soc', socPercent, 'd', 'State of charge');
+                  this.logger.debug(`Initialized SOC with real Signal K value: ${socPercent}%`);
+                }
+                
+                if (currentVoltage !== null && currentVoltage !== undefined && typeof currentVoltage === 'number') {
+                  await deviceService.updateProperty('/Dc/0/Voltage', currentVoltage, 'd', 'Battery voltage');
+                  this.logger.debug(`Initialized voltage with real Signal K value: ${currentVoltage}V`);
+                }
+                
+                if (currentCurrent !== null && currentCurrent !== undefined && typeof currentCurrent === 'number') {
+                  await deviceService.updateProperty('/Dc/0/Current', currentCurrent, 'd', 'Battery current');
+                  this.logger.debug(`Initialized current with real Signal K value: ${currentCurrent}A`);
+                }
+                
+                if (currentPower !== null && currentPower !== undefined && typeof currentPower === 'number') {
+                  await deviceService.updateProperty('/Dc/0/Power', currentPower, 'd', 'Battery power');
+                  this.logger.debug(`Initialized power with real Signal K value: ${currentPower}W`);
+                }
+                
+                if (currentTemp !== null && currentTemp !== undefined && typeof currentTemp === 'number') {
+                  // Convert temperature if needed (from Kelvin)
+                  const tempCelsius = currentTemp > 100 ? currentTemp - 273.15 : currentTemp;
+                  await deviceService.updateProperty('/Dc/0/Temperature', tempCelsius, 'd', 'Battery temperature');
+                  this.logger.debug(`Initialized temperature with real Signal K value: ${tempCelsius}°C`);
+                }
+                
+                // Calculate initial consumed Ah and time to go if we have SOC and capacity
+                if (currentSoc !== null && typeof currentSoc === 'number') {
+                  const socPercent = currentSoc > 1 ? currentSoc : currentSoc * 100;
+                  const consumedAh = this.settings.defaultBatteryCapacity * (100 - socPercent) / 100;
+                  await deviceService.updateProperty('/ConsumedAmphours', consumedAh, 'd', 'Consumed Ah');
+                  
+                  // Calculate realistic time to go based on SOC
+                  if (currentCurrent !== null && typeof currentCurrent === 'number' && currentCurrent > 0) {
+                    const remainingCapacity = this.settings.defaultBatteryCapacity * (socPercent / 100);
+                    const timeToGoSeconds = Math.round((remainingCapacity / currentCurrent) * 3600);
+                    await deviceService.updateProperty('/TimeToGo', timeToGoSeconds, 'i', 'Time to go');
+                  }
+                }
+                
+              } catch (err) {
+                this.logger.debug(`Could not get initial Signal K values for battery initialization: ${err.message}`);
+                // Don't set any default values - let updateProperty handle first real values
+              }
+            }
             
-            // Initialize temperature with realistic dummy data (20°C)
-            await deviceService.updateProperty('/Dc/0/Temperature', 20.0, 'd', 'Battery temperature');
+            // NOTE: We no longer initialize /Soc, /Dc/0/Voltage, /Dc/0/Current, /Dc/0/Power with fake defaults
+            // These will only be set when real Signal K data arrives via handleSignalKUpdate
             
             // Initialize relay state (normally closed for battery monitors)
             await deviceService.updateProperty('/Relay/0/State', 0, 'i', 'Battery relay state');
