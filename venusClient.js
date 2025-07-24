@@ -114,8 +114,8 @@ export class VenusClient extends EventEmitter {
           case 'battery':
             // Initialize battery monitor properties - Venus OS requires all these paths to be present
             await deviceService.updateProperty('/System/HasBatteryMonitor', 1, 'i', 'Has battery monitor');
-            // Initialize with default battery capacity from settings
-            await deviceService.updateProperty('/Capacity', this.settings.defaultBatteryCapacity, 'd', 'Battery capacity');
+            // NOTE: Battery capacity will only be set when real Signal K data arrives
+            // No more fake default capacity to prevent false data pollution
             
             // IMPORTANT: Don't initialize ConsumedAmphours with fake data
             // This will be calculated from real SOC when Signal K data arrives
@@ -164,17 +164,24 @@ export class VenusClient extends EventEmitter {
                   this.logger.debug(`Initialized temperature with real Signal K value: ${tempCelsius}°C`);
                 }
                 
-                // Calculate initial consumed Ah and time to go if we have SOC and capacity
+                // Calculate initial consumed Ah and time to go if we have SOC and real capacity
                 if (currentSoc !== null && typeof currentSoc === 'number') {
                   const socPercent = currentSoc > 1 ? currentSoc : currentSoc * 100;
-                  const consumedAh = this.settings.defaultBatteryCapacity * (100 - socPercent) / 100;
-                  await deviceService.updateProperty('/ConsumedAmphours', consumedAh, 'd', 'Consumed Ah');
                   
-                  // Calculate realistic time to go based on SOC
-                  if (currentCurrent !== null && typeof currentCurrent === 'number' && currentCurrent > 0) {
-                    const remainingCapacity = this.settings.defaultBatteryCapacity * (socPercent / 100);
-                    const timeToGoSeconds = Math.round((remainingCapacity / currentCurrent) * 3600);
-                    await deviceService.updateProperty('/TimeToGo', timeToGoSeconds, 'i', 'Time to go');
+                  // Only calculate consumed Ah if we have real capacity data from Signal K
+                  const capacityPath = `${basePath}.capacity.nominal`;
+                  const realCapacity = this.signalKApp.getSelfPath(capacityPath);
+                  if (realCapacity && typeof realCapacity === 'number' && realCapacity > 0) {
+                    const consumedAh = realCapacity * (100 - socPercent) / 100;
+                    await deviceService.updateProperty('/ConsumedAmphours', consumedAh, 'd', 'Consumed Ah');
+                    await deviceService.updateProperty('/Capacity', realCapacity, 'd', 'Battery capacity');
+                    
+                    // Calculate realistic time to go based on SOC and real capacity
+                    if (currentCurrent !== null && typeof currentCurrent === 'number' && currentCurrent > 0) {
+                      const remainingCapacity = realCapacity * (socPercent / 100);
+                      const timeToGoSeconds = Math.round((remainingCapacity / currentCurrent) * 3600);
+                      await deviceService.updateProperty('/TimeToGo', timeToGoSeconds, 'i', 'Time to go');
+                    }
                   }
                 }
                 
@@ -195,8 +202,7 @@ export class VenusClient extends EventEmitter {
             
             // Critical properties for BMV recognition by Venus OS system service
             await deviceService.updateProperty('/System/NrOfBatteries', 1, 'i', 'Number of batteries');
-            await deviceService.updateProperty('/System/MinCellVoltage', 12.0, 'd', 'Minimum cell voltage');
-            await deviceService.updateProperty('/System/MaxCellVoltage', 14.4, 'd', 'Maximum cell voltage');
+            // NOTE: Min/Max cell voltage removed - they'll be set with real data only
             
             // Initialize additional paths that might be needed for proper battery monitor display
             // State: 0 = Offline, 1 = Online, 2 = Error, 3 = Unavailable - use 1 for Online
@@ -221,15 +227,10 @@ export class VenusClient extends EventEmitter {
             await deviceService.updateProperty('/Info/MaxChargeCurrent', 100, 'i', 'Max charge current');
             await deviceService.updateProperty('/Info/MaxDischargeCurrent', 100, 'i', 'Max discharge current');
             await deviceService.updateProperty('/Info/MaxChargeVoltage', 14.4, 'd', 'Max charge voltage');
-            await deviceService.updateProperty('/History/DischargedEnergy', 0, 'd', 'Discharged energy');
-            await deviceService.updateProperty('/History/ChargedEnergy', 0, 'd', 'Charged energy');
-            await deviceService.updateProperty('/History/TotalAhDrawn', 0, 'd', 'Total Ah drawn');
             
-            // Add voltage and current min/max tracking for system service compatibility
-            await deviceService.updateProperty('/History/MinimumVoltage', 12.0, 'd', 'Minimum voltage');
-            await deviceService.updateProperty('/History/MaximumVoltage', 14.4, 'd', 'Maximum voltage');
-            await deviceService.updateProperty('/Dc/0/MidVoltage', 12.5, 'd', 'Mid voltage');
-            await deviceService.updateProperty('/Dc/0/MidVoltageDeviation', 0.0, 'd', 'Mid voltage deviation');
+            // NOTE: History properties no longer have fake defaults - they'll be set with real data only
+            // NOTE: Min/Max voltage tracking removed - will be implemented with real data only  
+            // NOTE: Mid voltage properties removed - they'll be set with real data only
             
             // Add balancer information for system service
             await deviceService.updateProperty('/Balancer', 0, 'i', 'Balancer active');
@@ -871,21 +872,9 @@ export class VenusClient extends EventEmitter {
           console.error(`Error updating time to go for ${deviceName}:`, err);
         }
       }
-    } else if (typeof currentSoc === 'number' && !isNaN(currentSoc)) {
-      // If no current data or current is 0/negative, use a default based on SOC
-      // Scale time to go based on SOC: higher SOC = more time remaining
-      let defaultTimeToGo = Math.round((currentSoc / 100) * 20 * 3600); // Up to 20 hours
-      defaultTimeToGo = Math.max(defaultTimeToGo, 1800); // Minimum 30 minutes
-      try {
-        await deviceService.updateProperty('/TimeToGo', defaultTimeToGo, 'i', `${deviceName} time to go`);
-      } catch (err) {
-        if (err.code === 'ECONNRESET' || err.code === 'ECONNREFUSED' || err.code === 'EPIPE') {
-          this.logger.debug(`Connection lost while updating default time to go for ${deviceName}`);
-        } else {
-          console.error(`Error updating default time to go for ${deviceName}:`, err);
-        }
-      }
     }
+    // NOTE: We no longer calculate fake time to go values without real current data
+    // This prevents generating misleading information for Venus OS
     
     // NOTE: We no longer generate fake temperature data
     // If a battery doesn't provide temperature, Venus OS will simply not show temperature data
