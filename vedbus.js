@@ -20,13 +20,14 @@ const Variant = dbusNative.Variant || dbusNative.variant || function(type, value
  * This class provides a common D-Bus service implementation for all Venus OS devices
  */
 export class VEDBusService extends EventEmitter {
-  constructor(serviceName, deviceInstance, settings, deviceConfig, logger = null) {
+  constructor(serviceName, deviceInstance, settings, deviceConfig, logger = null, signalKValueGetter = null) {
     super();
     this.serviceName = serviceName;
     this.deviceInstance = deviceInstance;
     this.settings = settings;
     this.deviceConfig = deviceConfig;
     this.logger = logger || { debug: () => {}, error: () => {} }; // Fallback logger
+    this.signalKValueGetter = signalKValueGetter; // Function to get current Signal K values
     this.dbusServiceName = `com.victronenergy.${deviceConfig.serviceType}.${serviceName}`;
     this.deviceData = {};
     this.exportedInterfaces = {};
@@ -126,7 +127,7 @@ export class VEDBusService extends EventEmitter {
     }
   }
 
-  async init() {
+  async init(initialValues = null) {
     // Create own D-Bus connection and register service
     await this._createBusConnection();
     
@@ -143,18 +144,73 @@ export class VEDBusService extends EventEmitter {
         this._exportProperty(path, config);
       });
       
-      // Export minimal BMV properties with default values to prevent validation errors
+      // Try to get current Signal K values if a getter is provided
+      let currentValues = {};
+      if (this.signalKValueGetter && this.deviceInstance.basePath) {
+        try {
+          const basePath = this.deviceInstance.basePath;
+          // Map Signal K paths to Venus paths for batteries
+          const signalKToVenusPaths = {
+            [`${basePath}.capacity.stateOfCharge`]: '/Soc',
+            [`${basePath}.voltage`]: '/Dc/0/Voltage', 
+            [`${basePath}.current`]: '/Dc/0/Current',
+            [`${basePath}.power`]: '/Dc/0/Power'
+          };
+          
+          for (const [signalKPath, venusPath] of Object.entries(signalKToVenusPaths)) {
+            const value = this.signalKValueGetter(signalKPath);
+            if (value !== null && value !== undefined && typeof value === 'number' && isFinite(value)) {
+              // Convert units if necessary
+              if (venusPath === '/Soc' && value >= 0 && value <= 1) {
+                currentValues[venusPath] = value * 100; // Convert 0-1 to 0-100%
+              } else if (venusPath === '/Soc' && value >= 0 && value <= 100) {
+                currentValues[venusPath] = value; // Already in percentage
+              } else {
+                currentValues[venusPath] = value;
+              }
+              this.logger.debug(`Initializing ${venusPath} with real Signal K value: ${currentValues[venusPath]} (from ${signalKPath})`);
+            }
+          }
+        } catch (err) {
+          this.logger.debug(`Could not get initial Signal K values: ${err.message}`);
+        }
+      }
+      
+      // Export minimal BMV properties with real Signal K values if available
       const minimalBMVProperties = {
-        '/Soc': { value: 50, type: 'd', text: 'State of charge (%)' },
-        '/Dc/0/Voltage': { value: 12.6, type: 'd', text: 'DC voltage' },
-        '/Dc/0/Current': { value: 0, type: 'd', text: 'DC current' },
-        '/Dc/0/Power': { value: 0, type: 'd', text: 'DC power' }
+        '/Soc': { 
+          value: currentValues['/Soc'] ?? initialValues?.['/Soc'] ?? null, 
+          type: 'd', 
+          text: 'State of charge (%)' 
+        },
+        '/Dc/0/Voltage': { 
+          value: currentValues['/Dc/0/Voltage'] ?? initialValues?.['/Dc/0/Voltage'] ?? null, 
+          type: 'd', 
+          text: 'DC voltage' 
+        },
+        '/Dc/0/Current': { 
+          value: currentValues['/Dc/0/Current'] ?? initialValues?.['/Dc/0/Current'] ?? null, 
+          type: 'd', 
+          text: 'DC current' 
+        },
+        '/Dc/0/Power': { 
+          value: currentValues['/Dc/0/Power'] ?? initialValues?.['/Dc/0/Power'] ?? null, 
+          type: 'd', 
+          text: 'DC power' 
+        }
       };
       
       Object.entries(minimalBMVProperties).forEach(([path, config]) => {
         if (!this.deviceData[path]) {
-          this.deviceData[path] = config.value;
-          this._exportProperty(path, config);
+          // Only set the property if we have a real value, otherwise skip initialization
+          if (config.value !== null && config.value !== undefined) {
+            this.deviceData[path] = config.value;
+            this._exportProperty(path, config);
+            this.logger.debug(`Initialized ${path} with value: ${config.value}`);
+          } else {
+            // Don't initialize with fake data - let updateProperty handle first real value
+            this.logger.debug(`Skipping initialization of ${path} - waiting for real Signal K data`);
+          }
         }
       });
       

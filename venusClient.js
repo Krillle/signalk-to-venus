@@ -12,6 +12,7 @@ export class VenusClient extends EventEmitter {
     this.settings = settings;
     this.deviceType = deviceType;
     this.logger = logger || { debug: () => {}, error: () => {} }; // Fallback logger
+    this.signalKApp = null; // Store reference to Signal K app for getting current values
     
     // Map plural device types to singular for internal configuration lookup
     const deviceTypeMap = {
@@ -41,6 +42,24 @@ export class VenusClient extends EventEmitter {
     // Throttle mechanism for reducing noisy "Processing data update" logs
     this._lastDataUpdateLog = new Map(); // Map of deviceInstance.basePath -> last log timestamp
     this._dataUpdateLogInterval = 10000; // Log every 10 seconds per device
+  }
+
+  // Set Signal K app reference for getting current values
+  setSignalKApp(app) {
+    this.signalKApp = app;
+  }
+
+  // Helper function to get current Signal K value
+  _getCurrentSignalKValue(path) {
+    if (this.signalKApp && this.signalKApp.getSelfPath) {
+      try {
+        return this.signalKApp.getSelfPath(path);
+      } catch (err) {
+        this.logger.debug(`Could not get Signal K value for ${path}: ${err.message}`);
+        return null;
+      }
+    }
+    return null;
   }
 
   // Helper function to wrap values in D-Bus variant format
@@ -80,7 +99,8 @@ export class VenusClient extends EventEmitter {
           deviceInstance,
           this.settings,
           this.deviceConfig,
-          this.logger
+          this.logger,
+          (path) => this._getCurrentSignalKValue(path) // Signal K value getter
         );
 
         await deviceService.init(); // Initialize the device service

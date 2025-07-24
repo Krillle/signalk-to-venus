@@ -9,5 +9,12 @@ export function VenusClientFactory(settings, deviceType, logger = null) {
   }
   
   // Pass the original device type and logger to VenusClient - it will handle the mapping internally
-  return new VenusClient(settings, deviceType, logger);
+  const client = new VenusClient(settings, deviceType, logger);
+  
+  // Set Signal K app reference if logger has getSelfPath method (indicating it's the app object)
+  if (logger && logger.getSelfPath) {
+    client.setSignalKApp(logger);
+  }
+  
+  return client;
 }
