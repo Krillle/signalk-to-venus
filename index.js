@@ -331,13 +331,7 @@ export default function(app) {
             
             // Skip data that originated from Venus OS to prevent feedback loops
             if (isVenusOSSource(data.source)) {
-              app.debug(`Skipping Venus OS source data: ${data.path} from ${data.source?.label || data.source}`);
               return;
-            }
-            
-            // Debug log the source format to understand why filtering isn't working
-            if (data.path && data.path.includes('electrical.batteries.697')) {
-              app.debug(`DEBUG: Battery 697 source format - type: ${typeof data.source}, value: ${JSON.stringify(data.source)}`);
             }
             
             // Skip null/undefined values at the source - don't process them at all
@@ -409,7 +403,6 @@ export default function(app) {
               
               // Skip data that originated from Venus OS to prevent feedback loops
               if (isVenusOSSource(update.source)) {
-                app.debug(`Skipping Venus OS source update from ${update.source?.label || update.source}`);
                 return;
               }
               
@@ -565,9 +558,6 @@ export default function(app) {
         // Always do discovery
         addDiscoveredPath(deviceType, path, value, config);
         
-        // Debug logging for device creation flow
-        app.debug(`Processing ${deviceType} path: ${path}, Venus reachable: ${venusReachable}, Enabled: ${isPathEnabled(deviceType, path, config)}`);
-        
         // Only proceed with Venus OS operations if Venus is reachable and path is enabled
         if (venusReachable !== true) {
           // Venus OS not reachable, add to queue for later processing
@@ -579,14 +569,12 @@ export default function(app) {
             // Add new path to queue
             pendingPaths.push({ path, value, timestamp: Date.now() });
           }
-          app.debug(`Queued path for later processing: ${path} (queue size: ${pendingPaths.length})`);
           return;
         }
         
         // Check if this specific path is enabled
         if (!isPathEnabled(deviceType, path, config)) {
-          app.debug(`Skipping ${path} - not enabled in configuration`);
-          return; // Skip disabled paths
+          return; // Skip disabled paths silently
         }
         
         // Create Venus client for this device type if it doesn't exist yet or has failed
@@ -667,7 +655,6 @@ export default function(app) {
         
         // Update the Venus client with the new data (whether client is new or existing)
         if (plugin.clients[deviceType] && plugin.clients[deviceType] !== null) {
-          app.debug(`Updating Venus client ${deviceType} with path: ${path}`);
           try {
             await plugin.clients[deviceType].handleSignalKUpdate(path, value);
           } catch (err) {
