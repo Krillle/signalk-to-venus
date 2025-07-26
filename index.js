@@ -733,10 +733,8 @@ export default function(app) {
 
   // Helper function to identify device type from Signal K path
   function identifyDeviceType(path) {
-    // Filter out Cerbo GX relays (venus-0, venus-1) to prevent feedback loops
-    if (path.match(/electrical\.switches\.venus-[01]\./)) {
-      return null;
-    }
+    // Note: Venus OS devices (including Cerbo switches) are filtered out by source
+    // checking (venus.com.*) rather than hardcoded path patterns for better reliability
     
     if (settings.batteryRegex.test(path)) return 'batteries';
     if (settings.tankRegex.test(path)) return 'tanks';
@@ -752,10 +750,8 @@ export default function(app) {
     if (venusPath.includes('/Switches/')) {
       const id = venusPath.match(/\/Switches\/([^\/]+)/)?.[1];
       
-      // Filter out Cerbo GX relays to prevent feedback loops
-      if (id === 'venus-0' || id === 'venus-1') {
-        return null;
-      }
+      // Note: Venus OS source filtering handles preventing feedback loops
+      // rather than hardcoded path exclusions
       
       if (venusPath.endsWith('/State')) {
         return `electrical.switches.${id}.state`;
