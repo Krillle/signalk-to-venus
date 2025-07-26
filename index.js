@@ -335,6 +335,11 @@ export default function(app) {
               return;
             }
             
+            // Debug log the source format to understand why filtering isn't working
+            if (data.path && data.path.includes('electrical.batteries.697')) {
+              app.debug(`DEBUG: Battery 697 source format - type: ${typeof data.source}, value: ${JSON.stringify(data.source)}`);
+            }
+            
             // Skip null/undefined values at the source - don't process them at all
             if (data.value === null || data.value === undefined) {
               return;
@@ -723,9 +728,21 @@ export default function(app) {
       return source.label.startsWith('venus.com.victronenergy.');
     }
     
-    // Check for other possible Venus OS source identifiers
+    // Check for bus property (some Venus OS sources might use this)
     if (typeof source === 'object' && source.bus) {
-      return source.bus && source.bus.toString().includes('venus');
+      const busStr = source.bus.toString();
+      return busStr.includes('venus') || busStr.startsWith('venus.com.victronenergy.');
+    }
+    
+    // Check for src property (alternative source identifier)
+    if (typeof source === 'object' && source.src) {
+      return source.src.startsWith('venus.com.victronenergy.');
+    }
+    
+    // Check for any property that contains venus.com.victronenergy
+    if (typeof source === 'object') {
+      const sourceStr = JSON.stringify(source);
+      return sourceStr.includes('venus.com.victronenergy.');
     }
     
     return false;
