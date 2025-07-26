@@ -29,7 +29,7 @@ This plugin for Signal K Server injects battery, tank, environment, and switch d
 On the **touchscreen** or **Remote Console**: 
 - Navigate to: **Settings → General**
 - Set the Access Level to **User & Installer** (the password is ZZZ)
-- In the New UI, select, drag down and hold down the entire list of **Access & Security** menu entries for five seconds, until you see the Access level change to **Superuser** and you see **Root password** and **Enable SSH on LAN**
+- In the New UI, select, drag down and hold down the entire list of **Access & Security** menu entries for five seconds, until you see the access level change to **Superuser** and you see **Root password** and **Enable SSH on LAN**
 - Enter a **Root password**, which will be the SSH password for `ssh root@venus.local`
 - Enable the option **Enable SSH on LAN**
 
@@ -61,16 +61,15 @@ The expected result is a line showing that the Cerbo GX is listening on TCP port
 tcp        0      0 0.0.0.0:78              0.0.0.0:*               LISTEN  
 ```
 
-**X. Manually Update signalk-venus-plugin to avoid feedback loops**
+**X. Manually Update Victron Venus Plugin to Avoid Feedback Loops**
 
-The upcoming version of **venus-signalk** will avoid feedback loops by not resyncing virtual devices back to Signal K. If the latest available version is still **v1.43.1 (2025-02-04)**, it has not been published yet. Then you need to replace the file **dbus-listener.js** manually:
+The upcoming version of **Victron Venus Plugin** (`signalk-venus-plugin`) will ignore virtual devices injected by this plugin, avoiding feedback loops multiplicating devices. If the latest published version of **signalk-venus-plugin** is still **v1.43.1 (2025-02-04)**, the fix hasn’t been released yet. In this case, apply the patch manually:
 
 ```bash
 cd ~/.signalk/node_modules/signalk-venus-plugin
-curl -o dbus-listener.js https://raw.githubusercontent.com/sbender9/signalk-venus-plugin/master/dbus-listener.js
-ls -l dbus-listener.js
+curl -O https://raw.githubusercontent.com/sbender9/signalk-venus-plugin/master/dbus-listener.js
+curl -O https://raw.githubusercontent.com/sbender9/signalk-venus-plugin/31f52684afcf4d60a67850c8402806ba5573137b/index.js
 ```
-The updated file should have the date **Jul 18 12:56**.
 
 **3. Install the plugin**
 
@@ -88,9 +87,9 @@ npm install
 
 The plugin is enabled by default and should work right away with default settings.
 
-If you see in the Signal K dashboard that **signalk-to-venus** is getting connection errors like **"Venus OS not reachable at venus.local"**, this means:
+If you see in the Signal K dashboard **signalk-to-venus** getting connection errors like **"Venus OS not reachable at venus.local"**, this means:
 - Your Cerbo GX is not reachable at **venus.local**. Set the correct host or IP in the plugin settings.
-- D-Bus over TCP is not enabled on the Cerbo GX. See steps 1 and 2.
+- The D-Bus over TCP is not enabled on the Cerbo GX. See step 1 and 2.
 - You don't have a Venus OS device on your network.
 
 
@@ -132,7 +131,7 @@ After starting the plugin, it will automatically discover all compatible Signal 
 ☐ Cabin lights (electrical.switches.cabinLights)
 ```
 
-**All devices are disabled by default** - you must explicitly enable the ones you want to send to Venus OS in the plugin settings. This gives you complete control over what data appears in your VRM dashboard. (Display is limited by the maximum number of devices that the VRM/Cerbo UI is able to display.)
+**All devices are disabled by default** - you must explicitly enable in the plugin settings the ones you want to send to Venus OS. This gives you complete control over what data appears in your VRM dashboard. (Display is limited by the maximum numbers of devices, the VRM/Cerbo UI is able to display.)
 
 ### Supported Signal K Paths
 
@@ -167,7 +166,7 @@ The plugin provides comprehensive real-time status updates in the Signal K dashb
 3. **Selective Bridging**: Only enabled devices are sent to Venus OS - you have full control
 4. **D-Bus Integration**: Creates proper Victron D-Bus services that integrate seamlessly with VRM
 5. **Bidirectional Sync**: Switch and dimmer changes in VRM/Cerbo are reflected back to Signal K
-6. **Smart Naming**: Device names are automatically generated and can be changed in the VRM/Cerbo UI. 
+6. **Smart Naming**: Device names are automatically generated and can be changed in VRM/Cerbo UI. 
 
 ## Device Naming Logic
 
@@ -326,7 +325,7 @@ If you see `com.victronenergy.virtual.tanks` in the D-Bus service list but no de
 
 4. **Monitor Signal K data flow**:
    - Check Signal K Data Browser for actual tank data: `tanks.freshWater.0.currentLevel`
-   - The plugin only exports devices when Signal K data is available
+   - Plugin only exports devices when Signal K data is available
    - Check plugin status for "Waiting for Signal K data" message
 
 5. **Check D-Bus property export**:
@@ -366,7 +365,7 @@ If you see `com.victronenergy.virtual.tanks` in the D-Bus service list but no de
 5. **Check for Signal K data**:
    - Verify Signal K has actual data for enabled devices
    - Check Signal K Data Browser for paths like `electrical.batteries.*`
-   - The plugin only creates devices when Signal K data is available
+   - Plugin only creates devices when Signal K data is available
 
 6. **Verify network connectivity**:
    ```bash
@@ -387,6 +386,14 @@ MIT © Christian Wegerhoff
 
 ### v1.0.13 (2025/07/22 17:30)
 **First working version. Known issues:**
-- Loop prevention from signalk-venus is not working yet
 - Switches not tested yet (and probably not working), as Venus OS does not yet support switches
-- Battery Monitor Time To Go (TTG) is not displayed correctly
+
+## Known Issues
+- **Loop prevention from signalk-venus not working yet**
+If you're using the signalk-venus plugin, virtual devices from Venus OS will loop back into Signal K. This can cause duplicate data. An update to signalk-venus is in progress to resolve this.
+
+- **Virtual devices missing after startup**
+There is a remaining race condition that has not yet been fully identified. Although the plugin waits 15 seconds to allow the Signal K data tree to populate and Venus OS to initialize, not all virtual devices are always recognized by Venus OS on startup. A manual toggle (disabling and re-enabling the plugin) resolves the issue and all devices appear as expected.
+
+- **Battery Monitor Time To Go (TTG) is not shown correctly**
+Although the plugin sends correct TTG values in seconds, Venus OS may show strange or unstable values in the Battery Monitor. This seems to be a display issue on the Venus side.

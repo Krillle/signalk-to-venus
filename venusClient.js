@@ -7,10 +7,12 @@ import EventEmitter from 'events';
  * This replaces the individual device clients with a single, configurable implementation
  */
 export class VenusClient extends EventEmitter {
-  constructor(settings, deviceType) {
+  constructor(settings, deviceType, logger = null) {
     super();
     this.settings = settings;
     this.deviceType = deviceType;
+    this.logger = logger || { debug: () => {}, error: () => {} }; // Fallback logger
+    this.signalKApp = null; // Store reference to Signal K app for getting current values
     
     // Map plural device types to singular for internal configuration lookup
     const deviceTypeMap = {
@@ -40,6 +42,24 @@ export class VenusClient extends EventEmitter {
     // Throttle mechanism for reducing noisy "Processing data update" logs
     this._lastDataUpdateLog = new Map(); // Map of deviceInstance.basePath -> last log timestamp
     this._dataUpdateLogInterval = 10000; // Log every 10 seconds per device
+  }
+
+  // Set Signal K app reference for getting current values
+  setSignalKApp(app) {
+    this.signalKApp = app;
+  }
+
+  // Helper function to get current Signal K value
+  _getCurrentSignalKValue(path) {
+    if (this.signalKApp && this.signalKApp.getSelfPath) {
+      try {
+        return this.signalKApp.getSelfPath(path);
+      } catch (err) {
+        this.logger.debug(`Could not get Signal K value for ${path}: ${err.message}`);
+        return null;
+      }
+    }
+    return null;
   }
 
   // Helper function to wrap values in D-Bus variant format
@@ -78,7 +98,9 @@ export class VenusClient extends EventEmitter {
           `SignalK${deviceInstance.index}`,
           deviceInstance,
           this.settings,
-          this.deviceConfig
+          this.deviceConfig,
+          this.logger,
+          (path) => this._getCurrentSignalKValue(path) // Signal K value getter
         );
 
         await deviceService.init(); // Initialize the device service
@@ -92,25 +114,85 @@ export class VenusClient extends EventEmitter {
           case 'battery':
             // Initialize battery monitor properties - Venus OS requires all these paths to be present
             await deviceService.updateProperty('/System/HasBatteryMonitor', 1, 'i', 'Has battery monitor');
-            await deviceService.updateProperty('/Capacity', this.settings.defaultBatteryCapacity, 'd', 'Battery capacity');
+            // NOTE: Battery capacity will only be set when real Signal K data arrives
+            // No more fake default capacity to prevent false data pollution
             
-            // Initialize with realistic dummy data for consumed amp hours based on SOC
-            // If battery is at 50% SOC, consumed would be roughly 50% of capacity
-            const defaultConsumedAh = this.settings.defaultBatteryCapacity * 0.5; // 50% consumed = 400Ah
-            await deviceService.updateProperty('/ConsumedAmphours', defaultConsumedAh, 'd', 'Consumed Ah');
+            // IMPORTANT: Don't initialize ConsumedAmphours with fake data
+            // This will be calculated from real SOC when Signal K data arrives
             
-            // Initialize time to go with realistic dummy data (8 hours at current consumption)
-            const defaultTimeToGo = 8 * 3600; // 8 hours in seconds
-            await deviceService.updateProperty('/TimeToGo', defaultTimeToGo, 'i', 'Time to go');
+            // CRITICAL: Don't initialize battery data properties with fake values!
+            // Only initialize if we have real Signal K values available
+            // These properties will be set when actual Signal K data arrives
             
-            // Initialize basic battery values with sensible defaults until Signal K data arrives
-            await deviceService.updateProperty('/Dc/0/Voltage', 12.0, 'd', 'Battery voltage');
-            await deviceService.updateProperty('/Dc/0/Current', 0.0, 'd', 'Battery current');
-            await deviceService.updateProperty('/Dc/0/Power', 0.0, 'd', 'Battery power');
-            await deviceService.updateProperty('/Soc', 50.0, 'd', 'State of charge');
+            // Check if we have real Signal K values and use those for initialization
+            const basePath = deviceInstance.basePath;
+            if (basePath && this.signalKApp) {
+              try {
+                // Try to get real current values from Signal K
+                const currentSoc = this._getCurrentSignalKValue(`${basePath}.capacity.stateOfCharge`);
+                const currentVoltage = this._getCurrentSignalKValue(`${basePath}.voltage`);
+                const currentCurrent = this._getCurrentSignalKValue(`${basePath}.current`);
+                const currentPower = this._getCurrentSignalKValue(`${basePath}.power`);
+                const currentTemp = this._getCurrentSignalKValue(`${basePath}.temperature`);
+                
+                // Only initialize properties if we have real values
+                if (currentSoc !== null && currentSoc !== undefined && typeof currentSoc === 'number') {
+                  const socPercent = currentSoc > 1 ? currentSoc : currentSoc * 100;
+                  await deviceService.updateProperty('/Soc', socPercent, 'd', 'State of charge');
+                  this.logger.debug(`Initialized SOC with real Signal K value: ${socPercent}%`);
+                }
+                
+                if (currentVoltage !== null && currentVoltage !== undefined && typeof currentVoltage === 'number') {
+                  await deviceService.updateProperty('/Dc/0/Voltage', currentVoltage, 'd', 'Battery voltage');
+                  this.logger.debug(`Initialized voltage with real Signal K value: ${currentVoltage}V`);
+                }
+                
+                if (currentCurrent !== null && currentCurrent !== undefined && typeof currentCurrent === 'number') {
+                  await deviceService.updateProperty('/Dc/0/Current', currentCurrent, 'd', 'Battery current');
+                  this.logger.debug(`Initialized current with real Signal K value: ${currentCurrent}A`);
+                }
+                
+                if (currentPower !== null && currentPower !== undefined && typeof currentPower === 'number') {
+                  await deviceService.updateProperty('/Dc/0/Power', currentPower, 'd', 'Battery power');
+                  this.logger.debug(`Initialized power with real Signal K value: ${currentPower}W`);
+                }
+                
+                if (currentTemp !== null && currentTemp !== undefined && typeof currentTemp === 'number') {
+                  // Convert temperature if needed (from Kelvin)
+                  const tempCelsius = currentTemp > 100 ? currentTemp - 273.15 : currentTemp;
+                  await deviceService.updateProperty('/Dc/0/Temperature', tempCelsius, 'd', 'Battery temperature');
+                  this.logger.debug(`Initialized temperature with real Signal K value: ${tempCelsius}°C`);
+                }
+                
+                // Calculate initial consumed Ah and time to go if we have SOC and real capacity
+                if (currentSoc !== null && typeof currentSoc === 'number') {
+                  const socPercent = currentSoc > 1 ? currentSoc : currentSoc * 100;
+                  
+                  // Only calculate consumed Ah if we have real capacity data from Signal K
+                  const capacityPath = `${basePath}.capacity.nominal`;
+                  const realCapacity = this.signalKApp.getSelfPath(capacityPath);
+                  if (realCapacity && typeof realCapacity === 'number' && realCapacity > 0) {
+                    const consumedAh = realCapacity * (100 - socPercent) / 100;
+                    await deviceService.updateProperty('/ConsumedAmphours', consumedAh, 'd', 'Consumed Ah');
+                    await deviceService.updateProperty('/Capacity', realCapacity, 'd', 'Battery capacity');
+                    
+                    // Calculate realistic time to go based on SOC and real capacity
+                    if (currentCurrent !== null && typeof currentCurrent === 'number' && currentCurrent > 0) {
+                      const remainingCapacity = realCapacity * (socPercent / 100);
+                      const timeToGoSeconds = Math.round((remainingCapacity / currentCurrent) * 3600);
+                      await deviceService.updateProperty('/TimeToGo', timeToGoSeconds, 'i', 'Time to go');
+                    }
+                  }
+                }
+                
+              } catch (err) {
+                this.logger.debug(`Could not get initial Signal K values for battery initialization: ${err.message}`);
+                // Don't set any default values - let updateProperty handle first real values
+              }
+            }
             
-            // Initialize temperature with realistic dummy data (20°C)
-            await deviceService.updateProperty('/Dc/0/Temperature', 20.0, 'd', 'Battery temperature');
+            // NOTE: We no longer initialize /Soc, /Dc/0/Voltage, /Dc/0/Current, /Dc/0/Power with fake defaults
+            // These will only be set when real Signal K data arrives via handleSignalKUpdate
             
             // Initialize relay state (normally closed for battery monitors)
             await deviceService.updateProperty('/Relay/0/State', 0, 'i', 'Battery relay state');
@@ -120,8 +202,7 @@ export class VenusClient extends EventEmitter {
             
             // Critical properties for BMV recognition by Venus OS system service
             await deviceService.updateProperty('/System/NrOfBatteries', 1, 'i', 'Number of batteries');
-            await deviceService.updateProperty('/System/MinCellVoltage', 12.0, 'd', 'Minimum cell voltage');
-            await deviceService.updateProperty('/System/MaxCellVoltage', 14.4, 'd', 'Maximum cell voltage');
+            // NOTE: Min/Max cell voltage removed - they'll be set with real data only
             
             // Initialize additional paths that might be needed for proper battery monitor display
             // State: 0 = Offline, 1 = Online, 2 = Error, 3 = Unavailable - use 1 for Online
@@ -146,15 +227,10 @@ export class VenusClient extends EventEmitter {
             await deviceService.updateProperty('/Info/MaxChargeCurrent', 100, 'i', 'Max charge current');
             await deviceService.updateProperty('/Info/MaxDischargeCurrent', 100, 'i', 'Max discharge current');
             await deviceService.updateProperty('/Info/MaxChargeVoltage', 14.4, 'd', 'Max charge voltage');
-            await deviceService.updateProperty('/History/DischargedEnergy', 0, 'd', 'Discharged energy');
-            await deviceService.updateProperty('/History/ChargedEnergy', 0, 'd', 'Charged energy');
-            await deviceService.updateProperty('/History/TotalAhDrawn', 0, 'd', 'Total Ah drawn');
             
-            // Add voltage and current min/max tracking for system service compatibility
-            await deviceService.updateProperty('/History/MinimumVoltage', 12.0, 'd', 'Minimum voltage');
-            await deviceService.updateProperty('/History/MaximumVoltage', 14.4, 'd', 'Maximum voltage');
-            await deviceService.updateProperty('/Dc/0/MidVoltage', 12.5, 'd', 'Mid voltage');
-            await deviceService.updateProperty('/Dc/0/MidVoltageDeviation', 0.0, 'd', 'Mid voltage deviation');
+            // NOTE: History properties no longer have fake defaults - they'll be set with real data only
+            // NOTE: Min/Max voltage tracking removed - will be implemented with real data only  
+            // NOTE: Mid voltage properties removed - they'll be set with real data only
             
             // Add balancer information for system service
             await deviceService.updateProperty('/Balancer', 0, 'i', 'Balancer active');
@@ -172,7 +248,7 @@ export class VenusClient extends EventEmitter {
         this.deviceServices.set(basePath, deviceService);
         this.deviceInstances.set(basePath, deviceInstance);
 
-        console.log(`Successfully created device instance for ${basePath} as ${this._internalDeviceType} with VRM instance ${deviceInstance.index}`);
+        this.logger.debug(`Successfully created device instance for ${basePath} as ${this._internalDeviceType} with VRM instance ${deviceInstance.index}`);
         return deviceInstance;
       } catch (error) {
         console.error(`❌ Error creating device instance for ${basePath} (from path: ${path}):`, error);
@@ -451,7 +527,7 @@ export class VenusClient extends EventEmitter {
     } catch (err) {
       // Handle connection errors gracefully
       if (err.code === 'ECONNRESET' || err.code === 'ECONNREFUSED' || err.code === 'EPIPE') {
-        console.log(`Connection lost while updating ${path} - Venus OS may be restarting`);
+        this.logger.debug(`Connection lost while updating ${path} - Venus OS may be restarting`);
         // Don't throw the error, just log it
       } else {
         console.error(`❌ Error in handleSignalKUpdate for ${path}:`, err);
@@ -669,7 +745,7 @@ export class VenusClient extends EventEmitter {
     } else if (path.includes('humidity') || path.includes('relativeHumidity')) {
       if (typeof value === 'number' && !isNaN(value)) {
         const humidityPercent = value > 1 ? value : value * 100;
-        console.log(`💧 Environment ${deviceName}: Updating /Humidity = ${humidityPercent.toFixed(1)}%`);
+        this.logger.debug(`Environment ${deviceName}: Updating /Humidity = ${humidityPercent.toFixed(1)}%`);
         await deviceService.updateProperty('/Humidity', humidityPercent, 'd', `${deviceName} humidity`);
         this.emit('dataUpdated', 'Environment Humidity', `${deviceName}: ${humidityPercent.toFixed(1)}%`);
       }
@@ -744,7 +820,7 @@ export class VenusClient extends EventEmitter {
         await deviceService.updateProperty('/ConsumedAmphours', consumedAh, 'd', `${deviceName} consumed Ah`);
       } catch (err) {
         if (err.code === 'ECONNRESET' || err.code === 'ECONNREFUSED' || err.code === 'EPIPE') {
-          console.log(`Connection lost while updating consumed Ah for ${deviceName}`);
+          this.logger.debug(`Connection lost while updating consumed Ah for ${deviceName}`);
         } else {
           console.error(`Error updating consumed Ah for ${deviceName}:`, err);
         }
@@ -772,7 +848,7 @@ export class VenusClient extends EventEmitter {
         await deviceService.updateProperty('/Dc/0/MidVoltageDeviation', 0.0, 'd', `${deviceName} mid voltage deviation`);
       } catch (err) {
         if (err.code === 'ECONNRESET' || err.code === 'ECONNREFUSED' || err.code === 'EPIPE') {
-          console.log(`Connection lost while updating voltage tracking for ${deviceName}`);
+          this.logger.debug(`Connection lost while updating voltage tracking for ${deviceName}`);
         } else {
           console.error(`Error updating voltage tracking for ${deviceName}:`, err);
         }
@@ -791,47 +867,18 @@ export class VenusClient extends EventEmitter {
         await deviceService.updateProperty('/TimeToGo', timeToGoSeconds, 'i', `${deviceName} time to go`);
       } catch (err) {
         if (err.code === 'ECONNRESET' || err.code === 'ECONNREFUSED' || err.code === 'EPIPE') {
-          console.log(`Connection lost while updating time to go for ${deviceName}`);
+          this.logger.debug(`Connection lost while updating time to go for ${deviceName}`);
         } else {
           console.error(`Error updating time to go for ${deviceName}:`, err);
         }
       }
-    } else if (typeof currentSoc === 'number' && !isNaN(currentSoc)) {
-      // If no current data or current is 0/negative, use a default based on SOC
-      // Scale time to go based on SOC: higher SOC = more time remaining
-      let defaultTimeToGo = Math.round((currentSoc / 100) * 20 * 3600); // Up to 20 hours
-      defaultTimeToGo = Math.max(defaultTimeToGo, 1800); // Minimum 30 minutes
-      try {
-        await deviceService.updateProperty('/TimeToGo', defaultTimeToGo, 'i', `${deviceName} time to go`);
-      } catch (err) {
-        if (err.code === 'ECONNRESET' || err.code === 'ECONNREFUSED' || err.code === 'EPIPE') {
-          console.log(`Connection lost while updating default time to go for ${deviceName}`);
-        } else {
-          console.error(`Error updating default time to go for ${deviceName}:`, err);
-        }
-      }
     }
+    // NOTE: We no longer calculate fake time to go values without real current data
+    // This prevents generating misleading information for Venus OS
     
-    // Update battery temperature with a realistic value if not provided
-    // Only update if temperature is not already set from real data
-    const currentTemp = deviceService.deviceData['/Dc/0/Temperature'];
-    if (typeof currentTemp !== 'number' || isNaN(currentTemp) || currentTemp === 20.0) {
-      // Use a temperature that varies slightly based on current load
-      let baseTemp = 20.0; // 20°C base temperature
-      if (typeof current === 'number' && !isNaN(current)) {
-        // Add 0.1°C per amp of current (batteries warm up under load)
-        baseTemp += Math.abs(current) * 0.1;
-      }
-      try {
-        await deviceService.updateProperty('/Dc/0/Temperature', baseTemp, 'd', `${deviceName} temperature`);
-      } catch (err) {
-        if (err.code === 'ECONNRESET' || err.code === 'ECONNREFUSED' || err.code === 'EPIPE') {
-          console.log(`Connection lost while updating temperature for ${deviceName}`);
-        } else {
-          console.error(`Error updating temperature for ${deviceName}:`, err);
-        }
-      }
-    }
+    // NOTE: We no longer generate fake temperature data
+    // If a battery doesn't provide temperature, Venus OS will simply not show temperature data
+    // This is much better than showing fake values that could mislead users
   }
 
   async _notifySystemService(deviceService, deviceName) {
@@ -849,7 +896,7 @@ export class VenusClient extends EventEmitter {
       
     } catch (err) {
       if (err.code === 'ECONNRESET' || err.code === 'ECONNREFUSED' || err.code === 'EPIPE') {
-        console.log(`Connection lost while notifying system service for ${deviceName}`);
+        this.logger.debug(`Connection lost while notifying system service for ${deviceName}`);
       } else {
         console.error(`Error notifying system service for ${deviceName}:`, err);
       }
@@ -873,15 +920,23 @@ export class VenusClient extends EventEmitter {
     this._lastSystemRefresh = now;
     
     try {
-      // Get current values from deviceData and refresh key properties
-      const socValue = deviceService.deviceData['/Soc'] || 50.0;
-      const currentValue = deviceService.deviceData['/Dc/0/Current'] || 0.0;
-      const voltageValue = deviceService.deviceData['/Dc/0/Voltage'] || 24.0;
+      // Get current values from deviceData - NO DEFAULT VALUES!
+      // Only update if we have real values in deviceData
+      const socValue = deviceService.deviceData['/Soc'];
+      const currentValue = deviceService.deviceData['/Dc/0/Current'];
+      const voltageValue = deviceService.deviceData['/Dc/0/Voltage'];
 
-      // Only update the core BMV values that Venus OS needs for system integration
-      await deviceService.updateProperty('/Soc', socValue, 'd', `${deviceName} state of charge`);
-      await deviceService.updateProperty('/Dc/0/Current', currentValue, 'd', `${deviceName} current`);
-      await deviceService.updateProperty('/Dc/0/Voltage', voltageValue, 'd', `${deviceName} voltage`);
+      // Only update the core BMV values if we have real data
+      // This prevents sending fake default values to Venus OS
+      if (typeof socValue === 'number' && !isNaN(socValue)) {
+        await deviceService.updateProperty('/Soc', socValue, 'd', `${deviceName} state of charge`);
+      }
+      if (typeof currentValue === 'number' && !isNaN(currentValue)) {
+        await deviceService.updateProperty('/Dc/0/Current', currentValue, 'd', `${deviceName} current`);
+      }
+      if (typeof voltageValue === 'number' && !isNaN(voltageValue)) {
+        await deviceService.updateProperty('/Dc/0/Voltage', voltageValue, 'd', `${deviceName} voltage`);
+      }
       
     } catch (err) {
       console.error(`Error in system service refresh for ${deviceName}:`, err);

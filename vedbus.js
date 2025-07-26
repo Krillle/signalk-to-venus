@@ -20,12 +20,14 @@ const Variant = dbusNative.Variant || dbusNative.variant || function(type, value
  * This class provides a common D-Bus service implementation for all Venus OS devices
  */
 export class VEDBusService extends EventEmitter {
-  constructor(serviceName, deviceInstance, settings, deviceConfig) {
+  constructor(serviceName, deviceInstance, settings, deviceConfig, logger = null, signalKValueGetter = null) {
     super();
     this.serviceName = serviceName;
     this.deviceInstance = deviceInstance;
     this.settings = settings;
     this.deviceConfig = deviceConfig;
+    this.logger = logger || { debug: () => {}, error: () => {} }; // Fallback logger
+    this.signalKValueGetter = signalKValueGetter; // Function to get current Signal K values
     this.dbusServiceName = `com.victronenergy.${deviceConfig.serviceType}.${serviceName}`;
     this.deviceData = {};
     this.exportedInterfaces = {};
@@ -125,7 +127,7 @@ export class VEDBusService extends EventEmitter {
     }
   }
 
-  async init() {
+  async init(initialValues = null) {
     // Create own D-Bus connection and register service
     await this._createBusConnection();
     
@@ -142,18 +144,72 @@ export class VEDBusService extends EventEmitter {
         this._exportProperty(path, config);
       });
       
-      // Export minimal BMV properties with default values to prevent validation errors
+      // Try to get current Signal K values if a getter is provided
+      let currentValues = {};
+      if (this.signalKValueGetter && this.deviceInstance.basePath) {
+        try {
+          const basePath = this.deviceInstance.basePath;
+          // Map Signal K paths to Venus paths for batteries
+          const signalKToVenusPaths = {
+            [`${basePath}.capacity.stateOfCharge`]: '/Soc',
+            [`${basePath}.voltage`]: '/Dc/0/Voltage', 
+            [`${basePath}.current`]: '/Dc/0/Current',
+            [`${basePath}.power`]: '/Dc/0/Power'
+          };
+          
+          for (const [signalKPath, venusPath] of Object.entries(signalKToVenusPaths)) {
+            const value = this.signalKValueGetter(signalKPath);
+            if (value !== null && value !== undefined && typeof value === 'number' && isFinite(value)) {
+              // Convert units if necessary
+              if (venusPath === '/Soc' && value >= 0 && value <= 1) {
+                currentValues[venusPath] = value * 100; // Convert 0-1 to 0-100%
+              } else if (venusPath === '/Soc' && value >= 0 && value <= 100) {
+                currentValues[venusPath] = value; // Already in percentage
+              } else {
+                currentValues[venusPath] = value;
+              }
+              this.logger.debug(`Initializing ${venusPath} with real Signal K value: ${currentValues[venusPath]} (from ${signalKPath})`);
+            }
+          }
+        } catch (err) {
+          this.logger.debug(`Could not get initial Signal K values: ${err.message}`);
+        }
+      }
+      
+      // Export minimal BMV properties with real Signal K values if available
+      // IMPORTANT: Only export properties if we have real values - no fake defaults!
       const minimalBMVProperties = {
-        '/Soc': { value: 50, type: 'd', text: 'State of charge (%)' },
-        '/Dc/0/Voltage': { value: 12.6, type: 'd', text: 'DC voltage' },
-        '/Dc/0/Current': { value: 0, type: 'd', text: 'DC current' },
-        '/Dc/0/Power': { value: 0, type: 'd', text: 'DC power' }
+        '/Soc': { 
+          value: currentValues['/Soc'] ?? initialValues?.['/Soc'] ?? null, 
+          type: 'd', 
+          text: 'State of charge (%)' 
+        },
+        '/Dc/0/Voltage': { 
+          value: currentValues['/Dc/0/Voltage'] ?? initialValues?.['/Dc/0/Voltage'] ?? null, 
+          type: 'd', 
+          text: 'DC voltage' 
+        },
+        '/Dc/0/Current': { 
+          value: currentValues['/Dc/0/Current'] ?? initialValues?.['/Dc/0/Current'] ?? null, 
+          type: 'd', 
+          text: 'DC current' 
+        },
+        '/Dc/0/Power': { 
+          value: currentValues['/Dc/0/Power'] ?? initialValues?.['/Dc/0/Power'] ?? null, 
+          type: 'd', 
+          text: 'DC power' 
+        }
       };
       
       Object.entries(minimalBMVProperties).forEach(([path, config]) => {
-        if (!this.deviceData[path]) {
+        // CRITICAL: Only export if we have a real value - don't pollute Venus OS with fake data
+        if (config.value !== null && config.value !== undefined && !this.deviceData[path]) {
           this.deviceData[path] = config.value;
           this._exportProperty(path, config);
+          this.logger.debug(`Initialized ${path} with real value: ${config.value}`);
+        } else if (config.value === null || config.value === undefined) {
+          // Skip initialization - property will be exported when first real Signal K data arrives
+          this.logger.debug(`Skipping initialization of ${path} - waiting for real Signal K data to avoid fake defaults`);
         }
       });
       
@@ -442,7 +498,7 @@ export class VEDBusService extends EventEmitter {
           body: [settingsArray]
         }, (err, result) => {
           if (err) {
-            console.log('Settings API error:', err);
+            this.logger.debug('Settings API error:', err);
             reject(new Error(`Settings registration failed: ${err.message || err}`));
           } else {
             resolve(result);
@@ -714,10 +770,11 @@ export class VEDBusService extends EventEmitter {
           ]]);
         });
 
-        // CRITICAL: For battery services, ensure all BMV-required properties are present
+        // CRITICAL: For battery services, ensure critical BMV properties are present
+        // But only export them if we have real values (no fake defaults)
         if (this.deviceConfig.serviceType === 'battery') {
-          const requiredBMVProperties = ['/Serial', '/Soc', '/Dc/0/Voltage', '/Dc/0/Current', '/DeviceInstance'];
-          requiredBMVProperties.forEach(path => {
+          const criticalBMVProperties = ['/Serial', '/DeviceInstance'];
+          criticalBMVProperties.forEach(path => {
             if (!items.find(item => item[0] === path)) {
               let value, type, text;
               if (path === '/Serial') {
@@ -728,10 +785,6 @@ export class VEDBusService extends EventEmitter {
                 value = this.vrmInstanceId;
                 type = 'i';
                 text = 'Device instance';
-              } else {
-                value = 0;
-                type = 'd';
-                text = 'Battery property';
               }
               items.push([path, [
                 ["Value", this._wrapValue(type, value)],
@@ -739,6 +792,9 @@ export class VEDBusService extends EventEmitter {
               ]]);
             }
           });
+          
+          // Note: We no longer add default values for /Soc, /Dc/0/Voltage, /Dc/0/Current
+          // These will only be exported when real Signal K data arrives via updateProperty
         }
 
         // Only log GetItems if it's the first time or if there's a significant change in properties count
@@ -857,13 +913,9 @@ export class VEDBusService extends EventEmitter {
         // CRITICAL: Special handling for other key properties Venus OS looks for
         if (propertyName === 'DeviceInstance' || propertyName === '/DeviceInstance') {
           return this._wrapValue('i', this.vrmInstanceId);
-        } else if (this.deviceConfig.serviceType === 'battery') {
-          // For unknown battery properties, return sensible defaults
-          if (propertyName.includes('Voltage') || propertyName.includes('Current') || propertyName.includes('Soc')) {
-            return this._wrapValue('d', 0);
-          }
         }
         
+        // Don't return fake defaults for battery properties - let them be undefined until real data arrives
         return this._wrapValue('s', '');
       },
       GetAll: (interfaceName) => {
@@ -1066,9 +1118,11 @@ export class VEDBusService extends EventEmitter {
     
     // Special preprocessing for critical BMV properties
     if (this.deviceConfig.serviceType === 'battery' && path === '/TimeToGo') {
-      // Handle TimeToGo null/undefined/invalid values by converting to -1 (Victron standard for "unknown")
+      // Handle TimeToGo values - convert null/undefined/invalid to -1 (Victron standard for "no TTG available")
       if (value === null || value === undefined || (typeof value === 'number' && (!isFinite(value) || isNaN(value)))) {
         value = -1;
+        type = 'i'; // Ensure we use integer type for -1
+        this.logger.debug(`Converting TTG to -1 (unavailable) for ${this.dbusServiceName}`);
       }
     }
     

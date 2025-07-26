@@ -254,6 +254,62 @@ describe('VenusClient - Battery', () => {
       expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Battery SoC', 'Battery House: 75.0%');
     });
 
+    it('should handle timeRemaining correctly - send TTG=null when null during charging', async () => {
+      // Create a device with known state first
+      await client.handleSignalKUpdate('electrical.batteries.main.voltage', 12.5);
+      await client.handleSignalKUpdate('electrical.batteries.main.current', 5.0); // Discharging
+      await client.handleSignalKUpdate('electrical.batteries.main.stateOfCharge', 0.75);
+      
+      // Get the device service and set up spies
+      const deviceService = Array.from(client.deviceServices.values())[0];
+      const updatePropertySpy = vi.spyOn(deviceService, 'updateProperty');
+      
+      // First, set a valid timeRemaining (8640 seconds = 2.4 hours)
+      await client.handleSignalKUpdate('electrical.batteries.main.capacity.timeRemaining', 8640);
+      
+      // Verify TTG was set with the valid value
+      expect(updatePropertySpy).toHaveBeenCalledWith('/TimeToGo', 8640, 'i', expect.any(String));
+      
+      // Clear spies to focus on the next calls
+      updatePropertySpy.mockClear();
+      
+      // Now simulate charging scenario: negative current, timeRemaining = null
+      await client.handleSignalKUpdate('electrical.batteries.main.current', -2.5); // Charging (negative)
+      await client.handleSignalKUpdate('electrical.batteries.main.capacity.timeRemaining', null);
+      
+      // Verify TTG was set to -1 (Victron standard for "unavailable") when timeRemaining is null during charging
+      expect(updatePropertySpy).toHaveBeenCalledWith('/TimeToGo', -1, 'i', expect.any(String));
+    });
+
+    it('should not override TTG when explicitly set to null', async () => {
+      // Create a device with known state first
+      await client.handleSignalKUpdate('electrical.batteries.main.voltage', 12.5);
+      await client.handleSignalKUpdate('electrical.batteries.main.current', -2.5); // Charging
+      await client.handleSignalKUpdate('electrical.batteries.main.stateOfCharge', 0.85);
+      
+      // Get the device service and set up spies
+      const deviceService = Array.from(client.deviceServices.values())[0];
+      const updatePropertySpy = vi.spyOn(deviceService, 'updateProperty');
+      
+      // Set timeRemaining to null (should set TTG to -1)
+      await client.handleSignalKUpdate('electrical.batteries.main.capacity.timeRemaining', null);
+      
+      // Verify TTG was set to -1 (Victron standard for "unavailable")
+      expect(updatePropertySpy).toHaveBeenCalledWith('/TimeToGo', -1, 'i', expect.any(String));
+      
+      // Clear spies and trigger SOC update (which calls _updateBatteryDummyData)
+      updatePropertySpy.mockClear();
+      await client.handleSignalKUpdate('electrical.batteries.main.stateOfCharge', 0.87);
+      
+      // _updateBatteryDummyData should also set TTG to -1 when charging (current <= 0)
+      // Look for TTG update calls
+      const ttgUpdateCalls = updatePropertySpy.mock.calls.filter(call => call[0] === '/TimeToGo');
+      
+      // Should have one TTG update call setting it to -1 when charging
+      expect(ttgUpdateCalls.length).toBe(1);
+      expect(ttgUpdateCalls[0]).toEqual(['/TimeToGo', -1, 'i', expect.any(String)]);
+    });
+
     it('should ignore invalid values', async () => {
       const emitSpy = vi.spyOn(client, 'emit');
       
