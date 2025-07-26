@@ -4,7 +4,7 @@ import dbusNative from 'dbus-native';
 
 // Signal K plugin entry point
 // This plugin bridges Signal K data to Victron Venus OS via D-Bus
-// It automatically filters out data from Venus OS sources (venus.com.*) to prevent feedback loops
+// It automatically filters out data from Venus OS sources (venus.com.victronenergy.*) to prevent feedback loops
 export default function(app) {
   // Dynamic tracking of discovered Signal K paths
   let discoveredPaths = {
@@ -716,11 +716,11 @@ export default function(app) {
     
     // Handle different source formats
     if (typeof source === 'string') {
-      return source.startsWith('venus.com.');
+      return source.startsWith('venus.com.victronenergy.');
     }
     
     if (typeof source === 'object' && source.label) {
-      return source.label.startsWith('venus.com.');
+      return source.label.startsWith('venus.com.victronenergy.');
     }
     
     // Check for other possible Venus OS source identifiers
@@ -734,7 +734,7 @@ export default function(app) {
   // Helper function to identify device type from Signal K path
   function identifyDeviceType(path) {
     // Note: Venus OS devices (including Cerbo switches) are filtered out by source
-    // checking (venus.com.*) rather than hardcoded path patterns for better reliability
+    // checking (venus.com.victronenergy.*) rather than hardcoded path patterns for better reliability
     
     if (settings.batteryRegex.test(path)) return 'batteries';
     if (settings.tankRegex.test(path)) return 'tanks';
