@@ -29,7 +29,7 @@ This plugin for Signal K Server injects battery, tank, environment, and switch d
 On the **touchscreen** or **Remote Console**: 
 - Navigate to: **Settings → General**
 - Set the Access Level to **User & Installer** (the password is ZZZ)
-- In the New UI, select, drag down and hold down the entire list of **Access & Security** menu entries for five seconds, until you see the Access level change to **Superuser** and you see **Root password** and **Enable SSH on LAN**
+- In the New UI, select, drag down and hold down the entire list of **Access & Security** menu entries for five seconds, until you see the access level change to **Superuser** and you see **Root password** and **Enable SSH on LAN**
 - Enter a **Root password**, which will be the SSH password for `ssh root@venus.local`
 - Enable the option **Enable SSH on LAN**
 
@@ -61,16 +61,15 @@ The expected result is a line showing that the Cerbo GX is listening on TCP port
 tcp        0      0 0.0.0.0:78              0.0.0.0:*               LISTEN  
 ```
 
-**X. Manually Update signalk-venus-plugin, to avoid feeldback loops**
+**X. Manually Update `signalk-venus-plugin` to Avoid Feedback Loops**
 
-The upcoming version of **venus-signalk** will avoid feedback loops, not resyncing virtual devices back to Signal K. If the latest available version is still **v1.43.1 (2025-02-04)**, is has not been published yet. Then you need to replace the file **dbus-listener.js** manually:
+The upcoming version of **venus-signalk** will ignore virtual devices injected by this plugin, avoiding feedback loops multiplicating devices. If the latest published version of **venus-signalk** is still **v1.43.1 (2025-02-04)**, the fix hasn’t been released yet. In this case, apply the patch manually:
 
 ```bash
 cd ~/.signalk/node_modules/signalk-venus-plugin
-curl -o dbus-listener.js https://raw.githubusercontent.com/sbender9/signalk-venus-plugin/master/dbus-listener.js
-ls -l dbus-listener.js
+curl -O https://raw.githubusercontent.com/sbender9/signalk-venus-plugin/master/dbus-listener.js
+curl -O https://raw.githubusercontent.com/sbender9/signalk-venus-plugin/31f52684afcf4d60a67850c8402806ba5573137b/index.js
 ```
-The updated file should have the date **Jul 18 12:56**:
 
 **3. Install the plugin**
 

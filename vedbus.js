@@ -1118,9 +1118,11 @@ export class VEDBusService extends EventEmitter {
     
     // Special preprocessing for critical BMV properties
     if (this.deviceConfig.serviceType === 'battery' && path === '/TimeToGo') {
-      // Handle TimeToGo null/undefined/invalid values by converting to -1 (Victron standard for "unknown")
+      // Handle TimeToGo values - convert null/undefined/invalid to -1 (Victron standard for "no TTG available")
       if (value === null || value === undefined || (typeof value === 'number' && (!isFinite(value) || isNaN(value)))) {
         value = -1;
+        type = 'i'; // Ensure we use integer type for -1
+        this.logger.debug(`Converting TTG to -1 (unavailable) for ${this.dbusServiceName}`);
       }
     }
     
