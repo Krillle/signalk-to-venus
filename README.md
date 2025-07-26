@@ -9,7 +9,8 @@ This plugin for Signal K Server injects batteries, tanks, environment sensors, a
 - **Smart Device Naming**: Intelligent display names (e.g., "Freshwater", "Fuel", "Water Temperature")
 - **Registers as Proper D-Bus Services**: Creates valid devices and battery monitor on Victron D-Bus services for seamless VRM integration
 - **Bidirectional Sync**: (Not tested yet) Switches and dimmers sync both ways (Signal K ⇄ Cerbo GX)
-- **Loop Prevention**: Automatically excludes Cerbo GX internal relays and marks virtual devices to prevent feedback loops
+- **Advanced Loop Prevention**: Automatically excludes Cerbo GX internal relays, marks virtual devices, and filters out Venus OS sourced data to prevent feedback loops
+- **Venus OS Source Filtering**: Intelligent detection and filtering of data originating from Venus OS devices to prevent circular data flows
 - **Robust Error Handling**: Automatic connection retry, timeout handling, and meaningful error messages
 
 ## Requirements
@@ -63,7 +64,7 @@ tcp        0      0 0.0.0.0:78              0.0.0.0:*               LISTEN
 
 **X. Manually Update Victron Venus Plugin to Avoid Feedback Loops**
 
-The upcoming version of **Victron Venus Plugin** (`signalk-venus-plugin`) will ignore virtual devices injected by this plugin, avoiding feedback loops multiplicating devices. If the latest published version of **signalk-venus-plugin** is still **v1.43.1 (2025-02-04)**, the fix hasn’t been released yet. In this case, apply the patch manually:
+The upcoming version of **Victron Venus Plugin** (`signalk-venus-plugin`) will ignore virtual devices injected by this plugin, avoiding reading virtual devices back to Signal K. If the latest published version of **signalk-venus-plugin** is still **v1.43.1 (2025-02-04)**, the fix hasn’t been released yet. In this case, apply the patch manually:
 
 ```bash
 cd ~/.signalk/node_modules/signalk-venus-plugin
@@ -268,7 +269,7 @@ The plugin generates intelligent display names:
 
 ## Loop Prevention & Safety
 
-- **Cerbo Relay Exclusion**: Automatically excludes `venus-0` and `venus-1` relay switches to prevent feedback loops
+- **Venus OS Source Filtering**: The plugin excludes data originating from Venus OS devices (`venus.com.victronenergy.*` sources) at both data processing and device discovery levels
 - **Virtual Device Marking**: All created D-Bus services are marked with `ProcessName: 'signalk-virtual-device'` for identification
 - **Connection Validation**: Tests Venus OS connectivity before attempting to send data
 - **Error Recovery**: Automatic retry logic with exponential backoff for connection failures
@@ -384,6 +385,9 @@ MIT © Christian Wegerhoff
 
 ## Change Log
 
+### v1.0.15 (2025/07/26 12:00)
+Added Venus OS source filtering to prevent feedback loops. The plugin now automatically detects and excludes data originating from Venus OS devices (venus.com.victronenergy.* sources) at both data processing and device discovery levels, ensuring clean separation between Signal K and Venus OS data flows.
+
 ### v1.0.14 (2025/07/25 13:00)
 Sending real values on startup. (Before it has been default values for initialisation.)
 
@@ -391,8 +395,8 @@ Sending real values on startup. (Before it has been default values for initialis
 First working version
 
 ## Known Issues
-- **Loop prevention from signalk-venus not working yet**
-If you're using the signalk-venus plugin, virtual devices from Venus OS will loop back into Signal K. This can cause duplicate data. An update to signalk-venus is in progress to resolve this. (See Installation, Step X)
+- ~~**Loop prevention from signalk-venus not working yet**~~  
+  **RESOLVED**: The plugin now includes comprehensive Venus OS source filtering that prevents feedback loops by automatically detecting and excluding Venus OS originated data at both processing and discovery levels.
 
 - **Virtual devices missing after startup**
 There is a remaining race condition that has not yet been fully identified. Although the plugin waits 15 seconds to allow the Signal K data tree to populate and Venus OS to initialize, not all virtual devices are always recognized by Venus OS on startup. A manual toggle (disabling and re-enabling the plugin) resolves the issue and all devices appear as expected.

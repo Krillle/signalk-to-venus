@@ -423,7 +423,7 @@ export default function(app) {
                   }
                 
                 // Process this path value using the unified processing function
-                await processPathValue(pathValue.path, pathValue.value, config);
+                await processPathValue(pathValue.path, pathValue.value, config, update.source);
               } catch (err) {
                 // Only log unexpected errors, suppress common connection errors
                 if (!err.message || (!err.message.includes('ENOTFOUND') && !err.message.includes('ECONNREFUSED'))) {
@@ -507,7 +507,7 @@ export default function(app) {
         for (const queuedPath of pathsToProcess) {
           try {
             app.debug(`Processing queued path: ${queuedPath.path}`);
-            await processPathValue(queuedPath.path, queuedPath.value, config);
+            await processPathValue(queuedPath.path, queuedPath.value, config, queuedPath.source);
           } catch (err) {
             app.error(`Error processing queued path ${queuedPath.path}:`, err);
           }
@@ -549,14 +549,14 @@ export default function(app) {
       }
       
       // Extract path processing logic into a separate function
-      async function processPathValue(path, value, config) {
+      async function processPathValue(path, value, config, source = null) {
         const deviceType = identifyDeviceType(path);
         if (!deviceType) {
           return;
         }
         
-        // Always do discovery
-        addDiscoveredPath(deviceType, path, value, config);
+        // Always do discovery, but pass source information for filtering
+        addDiscoveredPath(deviceType, path, value, config, source);
         
         // Only proceed with Venus OS operations if Venus is reachable and path is enabled
         if (venusReachable !== true) {
@@ -565,9 +565,10 @@ export default function(app) {
           if (existingIndex >= 0) {
             // Update existing queued path with new value
             pendingPaths[existingIndex].value = value;
+            pendingPaths[existingIndex].source = source;
           } else {
             // Add new path to queue
-            pendingPaths.push({ path, value, timestamp: Date.now() });
+            pendingPaths.push({ path, value, timestamp: Date.now(), source });
           }
           return;
         }
@@ -845,8 +846,14 @@ export default function(app) {
   }
 
   // Function to add a discovered path to tracking
-  function addDiscoveredPath(deviceType, path, value, config) {
+  function addDiscoveredPath(deviceType, path, value, config, source = null) {
     try {
+      // Skip if data came from Venus OS to prevent feedback loops in discovery
+      if (source && isVenusOSSource(source)) {
+        app.debug(`Skipping discovered Venus OS path ${path} (source: ${JSON.stringify(source)})`);
+        return;
+      }
+
       const pathMap = discoveredPaths[deviceType];
       if (!pathMap) return;
 
