@@ -123,7 +123,7 @@ export default function(app) {
 
       // Function to check if Signal K has populated any device data
       async function waitForSignalKReadiness() {
-        app.setPluginStatus('Waiting for Signal K to populate data...');
+        app.setPluginStatus('Waiting for Signal K to populate data');
         
         const maxWaitTime = 15000; // Reduced to 15 seconds - we just need Signal K to be generally ready
         const checkInterval = 1000; // Check every 1 second
@@ -174,9 +174,9 @@ export default function(app) {
               
               if (hasSignalKData || waitTime >= maxWaitTime) {
                 if (hasSignalKData) {
-                  app.setPluginStatus('Signal K data ready, starting device discovery...');
+                  app.setPluginStatus('Signal K data ready, starting device discovery');
                 } else {
-                  app.setPluginStatus('Signal K readiness timeout, starting discovery anyway...');
+                  app.setPluginStatus('Signal K readiness timeout, starting discovery anyway');
                 }
                 resolve();
               } else {
@@ -235,7 +235,7 @@ export default function(app) {
           
           venusReachable = true;
           plugin.venusConnected = true;
-          app.setPluginStatus(`Venus OS reachable at ${config.venusHost} - waiting for data to stabilize...`);
+          app.setPluginStatus(`Venus OS reachable at ${config.venusHost}, waiting for data to stabilize`);
           
           // Wait 20 seconds after Venus becomes reachable to let Signal K data fully populate
           await new Promise(resolve => setTimeout(resolve, 20000));
@@ -430,7 +430,7 @@ export default function(app) {
         // Monitor subscription health
         setTimeout(() => {
           if (deltaCount === 0) {
-            app.setPluginStatus(`No Signal K data received - check server configuration`);
+            app.setPluginStatus(`No Signal K data received, check server configuration`);
           }
         }, 5000);
         
@@ -450,13 +450,13 @@ export default function(app) {
               if (deviceCountText.includes('0 devices')) {
                 app.setPluginStatus('Discovering Signal K devices');
               } else {
-                app.setPluginStatus(`Device Discovery: Found ${deviceCountText} - configure in settings`);
+                app.setPluginStatus(`Select devices, available ${deviceCountText}`);
               }
             } else if (venusReachable === false) {
               const deviceCountText = generateDeviceCountText();
-              app.setPluginStatus(`Discovery: ${deviceCountText} found - Venus OS not connected at ${config.venusHost}`);
+              app.setPluginStatus(`Not connected to ${config.venusHost}, available ${deviceCountText}`);
             } else {
-              app.setPluginStatus(`Waiting for Signal K data (${config.venusHost})`);
+              app.setPluginStatus(`Connected to ${config.venusHost}, waiting for Signal K data`);
             }
           }
         }, 2000);
@@ -580,7 +580,7 @@ export default function(app) {
             activeClientTypes.add(deviceTypeNames[deviceType]);
             
             const deviceCountText = generateEnabledDeviceCountText(config);
-            app.setPluginStatus(`Connected to Venus OS, injecting ${deviceCountText}`);
+            app.setPluginStatus(`Connected to ${config.venusHost}, injecting ${deviceCountText}`);
             app.debug(`Successfully created Venus client for ${deviceType}`);
             
             // After creating a new client, force immediate updates with ALL current data
