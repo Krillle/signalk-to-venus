@@ -3,6 +3,8 @@ import settings from './settings.js';
 import dbusNative from 'dbus-native';
 
 // Signal K plugin entry point
+// This plugin bridges Signal K data to Victron Venus OS via D-Bus
+// It automatically filters out data from Venus OS sources (venus.com.*) to prevent feedback loops
 export default function(app) {
   // Dynamic tracking of discovered Signal K paths
   let discoveredPaths = {
@@ -327,6 +329,12 @@ export default function(app) {
               return;
             }
             
+            // Skip data that originated from Venus OS to prevent feedback loops
+            if (isVenusOSSource(data.source)) {
+              app.debug(`Skipping Venus OS source data: ${data.path} from ${data.source?.label || data.source}`);
+              return;
+            }
+            
             // Skip null/undefined values at the source - don't process them at all
             if (data.value === null || data.value === undefined) {
               return;
@@ -391,6 +399,12 @@ export default function(app) {
             delta.updates.forEach(update => {
               // Check if update and update.values are valid
               if (!update || !Array.isArray(update.values)) {
+                return;
+              }
+              
+              // Skip data that originated from Venus OS to prevent feedback loops
+              if (isVenusOSSource(update.source)) {
+                app.debug(`Skipping Venus OS source update from ${update.source?.label || update.source}`);
                 return;
               }
               
@@ -695,6 +709,27 @@ export default function(app) {
       app.setPluginStatus('Stopped');
     }
   };
+
+  // Helper function to check if data source is from Venus OS (to prevent feedback loops)
+  function isVenusOSSource(source) {
+    if (!source) return false;
+    
+    // Handle different source formats
+    if (typeof source === 'string') {
+      return source.startsWith('venus.com.');
+    }
+    
+    if (typeof source === 'object' && source.label) {
+      return source.label.startsWith('venus.com.');
+    }
+    
+    // Check for other possible Venus OS source identifiers
+    if (typeof source === 'object' && source.bus) {
+      return source.bus && source.bus.toString().includes('venus');
+    }
+    
+    return false;
+  }
 
   // Helper function to identify device type from Signal K path
   function identifyDeviceType(path) {
