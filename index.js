@@ -859,13 +859,8 @@ export default function(app) {
         deviceInfo.properties.add(path);
       }
       
-      // Update status with discovered paths count by device type
-      const deviceCountText = generateDeviceCountText();
-      
-      const statusMsg = plugin.venusConnected ? 
-        `Connected to Venus OS, injecting ${generateEnabledDeviceCountText(config)}` :
-        `Device Discovery: Found ${deviceCountText} (Venus OS: ${config.venusHost})`; 
-      app.setPluginStatus(statusMsg);
+      // Note: Status updates are handled by the client creation process
+      // to avoid overriding more specific connection status messages
       
     } catch (err) {
       app.error(`Error in addDiscoveredPath: ${err.message}`);
