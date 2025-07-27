@@ -656,6 +656,7 @@ export class VenusClient extends EventEmitter {
         this.emit('dataUpdated', 'Battery SoC', `${deviceName}: ${socPercent.toFixed(1)}%`);
         
         // Update battery dummy data (especially consumed Ah based on SOC)
+        console.log(`🔋 Calling _updateBatteryDummyData from SOC update for ${deviceName}`);
         await this._updateBatteryDummyData(deviceService, deviceName);
         
         // This is critical - trigger system service update when SOC changes for BMV
@@ -686,6 +687,7 @@ export class VenusClient extends EventEmitter {
         this.emit('dataUpdated', 'Battery Capacity', `${deviceName}: ${value.toFixed(1)}Ah`);
         
         // Update battery dummy data with new capacity
+        console.log(`🔋 Calling _updateBatteryDummyData from capacity update for ${deviceName}`);
         await this._updateBatteryDummyData(deviceService, deviceName);
       }
     } else if (path.includes('consumed')) {
@@ -811,6 +813,8 @@ export class VenusClient extends EventEmitter {
       return;
     }
     
+    console.log(`🔋 _updateBatteryDummyData called for ${deviceName}`);
+    
     // Update dummy data for values that might not be coming from Signal K
     
     // Check if device service is connected
@@ -874,6 +878,8 @@ export class VenusClient extends EventEmitter {
     if (typeof current === 'number' && !isNaN(current) && current !== 0 && 
         typeof capacity === 'number' && typeof currentSoc === 'number') {
       
+      console.log(`🔋 TTG Debug: ${deviceName} - current=${current}A, capacity=${capacity}Ah, SOC=${currentSoc}%`);
+      
       // Find the basePath for this deviceService to check Signal K timeRemaining
       let basePath = null;
       for (const [path, service] of this.deviceServices.entries()) {
@@ -883,40 +889,55 @@ export class VenusClient extends EventEmitter {
         }
       }
       
+      console.log(`🔋 TTG Debug: ${deviceName} - basePath=${basePath}`);
+      
       if (basePath) {
         // Check if Signal K has provided timeRemaining data for this battery
         const signalKTimeRemaining = this._getCurrentSignalKValue(`${basePath}.capacity.timeRemaining`);
         const hasSignalKTimeToGo = typeof signalKTimeRemaining === 'number' && !isNaN(signalKTimeRemaining) && signalKTimeRemaining !== null;
+        
+        console.log(`🔋 TTG Debug: ${deviceName} - signalKTimeRemaining=${signalKTimeRemaining}, hasSignalKTimeToGo=${hasSignalKTimeToGo}`);
         
         // For discharging: prefer Signal K timeRemaining over our calculation
         // For charging: always calculate since Signal K typically doesn't provide charge time
         // Calculate if Signal K hasn't provided timeRemaining
         const shouldCalculate = !hasSignalKTimeToGo;
         
+        console.log(`🔋 TTG Debug: ${deviceName} - shouldCalculate=${shouldCalculate}`);
+        
         let timeToGoSeconds;
         
         if (shouldCalculate) {
+          console.log(`🔋 TTG Debug: ${deviceName} - Calculating our own TTG`);
           // Calculate our own TTG when Signal K doesn't provide timeRemaining
           if (current < 0) {
+            console.log(`🔋 TTG Debug: ${deviceName} - Battery is DISCHARGING (current < 0)`);
             // Battery is discharging - calculate time until empty (fallback when Signal K doesn't provide timeRemaining)
             const remainingCapacity = capacity * (currentSoc / 100);
             const timeToGoHours = remainingCapacity / Math.abs(current);
             timeToGoSeconds = Math.round(timeToGoHours * 3600);
+            console.log(`🔋 TTG Debug: ${deviceName} - Discharge TTG: ${remainingCapacity}Ah remaining / ${Math.abs(current)}A = ${timeToGoHours.toFixed(2)}h = ${timeToGoSeconds}s`);
           } else {
+            console.log(`🔋 TTG Debug: ${deviceName} - Battery is CHARGING (current > 0)`);
             // Battery is charging - calculate time to 100% SoC
             // Use configured battery capacity if available, otherwise use Signal K capacity
             const totalCapacity = this.settings.batteryCapacity || capacity;
             const remainingCapacityToFull = totalCapacity * ((100 - currentSoc) / 100);
             const chargeTimeHours = remainingCapacityToFull / current;
             timeToGoSeconds = Math.round(chargeTimeHours * 3600);
+            console.log(`🔋 TTG Debug: ${deviceName} - Charge TTG: ${remainingCapacityToFull}Ah needed / ${current}A = ${chargeTimeHours.toFixed(2)}h = ${timeToGoSeconds}s`);
           }
         } else {
+          console.log(`🔋 TTG Debug: ${deviceName} - Using Signal K timeRemaining=${signalKTimeRemaining}s`);
           // Use Signal K provided timeRemaining value
           timeToGoSeconds = Math.round(signalKTimeRemaining);
         }
         
+        console.log(`🔋 TTG Debug: ${deviceName} - Final TTG=${timeToGoSeconds}s (${Math.floor(timeToGoSeconds/3600)}h ${Math.floor((timeToGoSeconds%3600)/60)}m)`);
+        
         try {
           await deviceService.updateProperty('/TimeToGo', timeToGoSeconds, 'i', `${deviceName} time to go`);
+          console.log(`🔋 TTG Debug: ${deviceName} - Successfully updated /TimeToGo to ${timeToGoSeconds}s`);
         } catch (err) {
           if (err.code === 'ECONNRESET' || err.code === 'ECONNREFUSED' || err.code === 'EPIPE') {
             this.logger.debug(`Connection lost while updating time to go for ${deviceName}`);
@@ -924,7 +945,11 @@ export class VenusClient extends EventEmitter {
             console.error(`Error updating time to go for ${deviceName}:`, err);
           }
         }
+      } else {
+        console.log(`🔋 TTG Debug: ${deviceName} - No basePath found, skipping TTG calculation`);
       }
+    } else {
+      console.log(`🔋 TTG Debug: ${deviceName} - Skipping TTG: current=${current}, capacity=${capacity}, SOC=${currentSoc}`);
     }
     // NOTE: We no longer calculate fake time to go values without real current data
     // This prevents generating misleading information for Venus OS
