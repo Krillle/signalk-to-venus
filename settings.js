@@ -1,6 +1,7 @@
 export default {
   venusHost: 'venus.local',
   interval: 1000,
+  batteryCapacity: 800, // Default battery capacity in Ah for time-to-charge calculation
   enabledDevices: {
     batteries: true,
     tanks: true,

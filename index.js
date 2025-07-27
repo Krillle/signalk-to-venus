@@ -36,6 +36,12 @@ export default function(app) {
             type: 'number',
             title: 'Update Interval (ms)',
             default: 1000
+          },
+          batteryCapacity: {
+            type: 'number',
+            title: 'Battery Capacity (Ah)',
+            description: 'Total battery capacity in Amp-hours for time-to-charge calculation',
+            default: 800
           }
         }
       };

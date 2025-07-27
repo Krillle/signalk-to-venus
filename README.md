@@ -93,6 +93,9 @@ The plugin features a dynamic configuration interface that automatically discove
 |----------------------|--------------------------------------------------|---------------------------|
 | `venusHost`          | Hostname or IP address of your Cerbo GX         | `venus.local`             |
 | `interval`           | Data update interval in milliseconds            | `1000`                    |
+| `batteryCapacity`    | Total battery capacity in Amp-hours             | `800`                     |
+
+**Battery Capacity Setting**: Used for calculating time-to-charge when the battery is charging. If your Signal K system provides `electrical.batteries.X.capacity.nominal`, that value will be used instead. The configured capacity serves as a fallback for charge time calculations.
 
 ### Device Selection
 
@@ -230,6 +233,23 @@ The plugin automatically detects and supports:
 - **Error Recovery**: Automatic retry logic with exponential backoff for connection failures
 - **Clean Disconnection**: Proper D-Bus service cleanup when the plugin stops
 
+## Smart Time To Go Calculation
+
+The plugin provides intelligent Time To Go (TTG) calculation that adapts based on battery charging/discharging state:
+
+**When Discharging** (positive current):
+- **Prefers Signal K data**: Uses `electrical.batteries.X.capacity.timeRemaining` if provided by Signal K
+- **Fallback calculation**: If Signal K doesn't provide timeRemaining, calculates: `(remaining_capacity_Ah / current_A) * 3600 seconds`
+- This ensures the most accurate discharge time from your battery management system
+
+**When Charging** (negative current):
+- **Always calculates**: Signal K typically doesn't provide charging time estimates
+- **Smart calculation**: Time until battery reaches 100% State of Charge
+- Uses configured `batteryCapacity` setting or Signal K `electrical.batteries.X.capacity.nominal`
+- Calculation: `((100% - current_SoC) * total_capacity_Ah / charge_current_A) * 3600 seconds`
+
+This provides the best of both worlds: precise discharge times from your BMS when available, and useful charging progress information that Venus OS normally doesn't show.
+
 ## Troubleshooting
 
 **"Venus OS not reachable"**: 
@@ -349,10 +369,6 @@ If you're using the signalk-venus plugin, virtual devices from Venus OS will loo
 
 - **Virtual devices missing after startup**  
 There is a remaining race condition that has not yet been fully identified. Although the plugin waits 15 seconds to allow the Signal K data tree to populate and Venus OS to initialize, not all virtual devices are always recognized by Venus OS on startup. A manual toggle (disabling and re-enabling the plugin) resolves the issue and all devices appear as expected.
-
-- **Battery Monitor shows Time To Go (TTG) while charging**  
-  Even though the plugin translates `electrical.batteries.0.capacity.timeRemaining == null` to `/TimeToGo = -1` when charging, Venus OS still displays a TTG value in the Battery Monitor.  
-  If you know how to correctly clear this value via D-Bus, your PR is very welcome!
 
 - **Switches in Venus OS beta**  
 Switches are not tested yet (and probably not working), as Venus OS does not yet support switches

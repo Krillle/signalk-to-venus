@@ -176,10 +176,24 @@ export class VenusClient extends EventEmitter {
                     await deviceService.updateProperty('/ConsumedAmphours', consumedAh, 'd', 'Consumed Ah');
                     await deviceService.updateProperty('/Capacity', realCapacity, 'd', 'Battery capacity');
                     
-                    // Calculate realistic time to go based on SOC and real capacity
-                    if (currentCurrent !== null && typeof currentCurrent === 'number' && currentCurrent > 0) {
-                      const remainingCapacity = realCapacity * (socPercent / 100);
-                      const timeToGoSeconds = Math.round((remainingCapacity / currentCurrent) * 3600);
+                    // Calculate realistic time to go based on SOC and capacity
+                    if (currentCurrent !== null && typeof currentCurrent === 'number' && currentCurrent !== 0) {
+                      let timeToGoSeconds;
+                      
+                      if (currentCurrent > 0) {
+                        // Battery is discharging - calculate time until empty
+                        const remainingCapacity = realCapacity * (socPercent / 100);
+                        const timeToGoHours = remainingCapacity / currentCurrent;
+                        timeToGoSeconds = Math.round(timeToGoHours * 3600);
+                      } else {
+                        // Battery is charging - calculate time to 100% SoC
+                        // Use configured battery capacity if available, otherwise use Signal K capacity
+                        const totalCapacity = this.settings.batteryCapacity || realCapacity;
+                        const remainingCapacityToFull = totalCapacity * ((100 - socPercent) / 100);
+                        const chargeTimeHours = remainingCapacityToFull / Math.abs(currentCurrent);
+                        timeToGoSeconds = Math.round(chargeTimeHours * 3600);
+                      }
+                      
                       await deviceService.updateProperty('/TimeToGo', timeToGoSeconds, 'i', 'Time to go');
                     }
                   }
@@ -855,21 +869,60 @@ export class VenusClient extends EventEmitter {
       }
     }
     
-    // Update time to go based on current consumption
-    if (typeof current === 'number' && !isNaN(current) && current > 0 && 
+    // Update time to go based on current consumption or charge time
+    // Only calculate if Signal K hasn't provided timeRemaining data
+    if (typeof current === 'number' && !isNaN(current) && current !== 0 && 
         typeof capacity === 'number' && typeof currentSoc === 'number') {
-      // Calculate time to go based on remaining capacity and current consumption
-      const remainingCapacity = capacity * (currentSoc / 100);
-      const timeToGoHours = remainingCapacity / current;
-      const timeToGoSeconds = Math.round(timeToGoHours * 3600);
       
-      try {
-        await deviceService.updateProperty('/TimeToGo', timeToGoSeconds, 'i', `${deviceName} time to go`);
-      } catch (err) {
-        if (err.code === 'ECONNRESET' || err.code === 'ECONNREFUSED' || err.code === 'EPIPE') {
-          this.logger.debug(`Connection lost while updating time to go for ${deviceName}`);
+      // Find the basePath for this deviceService to check Signal K timeRemaining
+      let basePath = null;
+      for (const [path, service] of this.deviceServices.entries()) {
+        if (service === deviceService) {
+          basePath = path;
+          break;
+        }
+      }
+      
+      if (basePath) {
+        // Check if Signal K has provided timeRemaining data for this battery
+        const signalKTimeRemaining = this._getCurrentSignalKValue(`${basePath}.capacity.timeRemaining`);
+        const hasSignalKTimeToGo = typeof signalKTimeRemaining === 'number' && !isNaN(signalKTimeRemaining) && signalKTimeRemaining !== null;
+        
+        // For discharging: prefer Signal K timeRemaining over our calculation
+        // For charging: always calculate since Signal K typically doesn't provide charge time
+        // Calculate if Signal K hasn't provided timeRemaining
+        const shouldCalculate = !hasSignalKTimeToGo;
+        
+        let timeToGoSeconds;
+        
+        if (shouldCalculate) {
+          // Calculate our own TTG when Signal K doesn't provide timeRemaining
+          if (current > 0) {
+            // Battery is discharging - calculate time until empty (fallback when Signal K doesn't provide timeRemaining)
+            const remainingCapacity = capacity * (currentSoc / 100);
+            const timeToGoHours = remainingCapacity / current;
+            timeToGoSeconds = Math.round(timeToGoHours * 3600);
+          } else {
+            // Battery is charging - calculate time to 100% SoC
+            // Use configured battery capacity if available, otherwise use Signal K capacity
+            const totalCapacity = this.settings.batteryCapacity || capacity;
+            const remainingCapacityToFull = totalCapacity * ((100 - currentSoc) / 100);
+            const chargeTimeHours = remainingCapacityToFull / Math.abs(current);
+            timeToGoSeconds = Math.round(chargeTimeHours * 3600);
+          }
         } else {
-          console.error(`Error updating time to go for ${deviceName}:`, err);
+          // Use Signal K provided timeRemaining value
+          timeToGoSeconds = Math.round(signalKTimeRemaining);
+        }
+        
+        try {
+          await deviceService.updateProperty('/TimeToGo', timeToGoSeconds, 'i', `${deviceName} time to go`);
+        } catch (err) {
+          if (err.code === 'ECONNRESET' || err.code === 'ECONNREFUSED' || err.code === 'EPIPE') {
+            this.logger.debug(`Connection lost while updating time to go for ${deviceName}`);
+          } else {
+            console.error(`Error updating time to go for ${deviceName}:`, err);
+          }
         }
       }
     }
