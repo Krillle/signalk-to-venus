@@ -19,7 +19,8 @@ describe('VenusClient - Battery', () => {
   beforeEach(() => {
     mockSettings = {
       venusHost: 'test.local',
-      productName: 'Test Battery Device'
+      productName: 'Test Battery Device',
+      batteryCapacity: 800 // Required for TTG calculation
     };
     client = new VenusClient(mockSettings, 'batteries');
   });

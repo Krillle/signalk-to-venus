@@ -206,6 +206,7 @@ describe('Signal K Plugin - Main Index', () => {
       expect(mockApp.debug).toHaveBeenCalledWith('Stopping Signal K to Venus OS bridge');
       expect(mockApp.setPluginStatus).toHaveBeenCalledWith('Stopped');
       expect(plugin.unsubscribe).toHaveBeenCalled();
+      expect(plugin.unsubscribe).toBe(null); // Should be set to null after calling
     });
 
     it('should handle missing options gracefully', () => {
