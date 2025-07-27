@@ -32,11 +32,6 @@ export default function(app) {
             title: 'Venus OS Host',
             default: 'venus.local'
           },
-          productName: {
-            type: 'string', 
-            title: 'Product Name',
-            default: 'SignalK Virtual Device'
-          },
           interval: {
             type: 'number',
             title: 'Update Interval (ms)',

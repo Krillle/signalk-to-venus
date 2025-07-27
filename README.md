@@ -92,7 +92,6 @@ The plugin features a dynamic configuration interface that automatically discove
 | Setting              | Description                                      | Default                   |
 |----------------------|--------------------------------------------------|---------------------------|
 | `venusHost`          | Hostname or IP address of your Cerbo GX         | `venus.local`             |
-| `productName`        | Product name shown in VRM and Venus OS          | `SignalK Virtual Device`  |
 | `interval`           | Data update interval in milliseconds            | `1000`                    |
 
 ### Device Selection

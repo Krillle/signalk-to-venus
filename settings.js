@@ -1,6 +1,5 @@
 export default {
   venusHost: 'venus.local',
-  productName: 'SignalK Virtual Device',
   interval: 1000,
   enabledDevices: {
     batteries: true,
