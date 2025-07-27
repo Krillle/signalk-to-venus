@@ -109,7 +109,6 @@ export default function(app) {
       plugin.clients = {};
       plugin.venusConnected = false; // Track Venus connection status
       const activeClientTypes = new Set();
-      let venusReachable = false; // Track Venus OS reachability (assume unreachable until proven otherwise)
       
       // Queue for paths that arrive before Venus OS is ready
       const pendingPaths = [];
@@ -234,17 +233,16 @@ export default function(app) {
             }
           });
           
-          venusReachable = true;
+          const wasReachable = plugin.venusConnected;
           plugin.venusConnected = true;
-          app.setPluginStatus(`Venus OS reachable at ${config.venusHost}, waiting for data to stabilize`);
           
-          // Wait 20 seconds after Venus becomes reachable to let Signal K data fully populate
-          await new Promise(resolve => setTimeout(resolve, 20000));
-          app.setPluginStatus(`Venus OS ready at ${config.venusHost}`);
+          // Only update status if Venus OS was previously unreachable
+          if (!wasReachable) {
+            app.setPluginStatus(`Venus OS ready at ${config.venusHost}`);
+          }
           
           return true;
         } catch (err) {
-          venusReachable = false;
           plugin.venusConnected = false;
           let errorMsg = `Venus OS not reachable at ${config.venusHost}`;
           
@@ -369,7 +367,7 @@ export default function(app) {
           deltaCount++;
           
           if (delta.updates) {
-            delta.updates.forEach((update, updateIndex) => {
+            delta.updates.forEach((update) => {
               // Check if update and update.values are valid
               if (!update || !Array.isArray(update.values)) {
                 return;
@@ -381,7 +379,7 @@ export default function(app) {
                 return;
               }
               
-              update.values.forEach(async (pathValue, valueIndex) => {
+              update.values.forEach(async (pathValue) => {
                 try {
                   // Check if pathValue exists and has required properties
                   if (!pathValue || typeof pathValue !== 'object') {
@@ -393,7 +391,7 @@ export default function(app) {
                   }
                   
                   // Skip null/undefined values
-                  if (pathValue.value === undefined || pathValue.value === null) {
+                  if (pathValue.value == null) {
                     return;
                   }
                 
@@ -445,7 +443,7 @@ export default function(app) {
               } else {
                 app.setPluginStatus(`Select devices, available ${deviceCountText}`);
               }
-            } else if (venusReachable === false) {
+            } else if (!plugin.venusConnected) {
               const deviceCountText = generateDeviceCountText();
               app.setPluginStatus(`Not connected to ${config.venusHost}, available ${deviceCountText}`);
             } else {
@@ -458,7 +456,7 @@ export default function(app) {
       // Test Venus OS connectivity initially and periodically
       async function runConnectivityTest() {
         try {
-          const wasReachable = venusReachable;
+          const wasReachable = plugin.venusConnected;
           const isReachable = await testVenusConnectivity();
           
           // If Venus just became reachable, process any queued paths after a longer delay
@@ -507,7 +505,7 @@ export default function(app) {
                   pathInfo.properties.forEach(async (fullPath) => {
                     try {
                       const currentValue = app.getSelfPath(fullPath);
-                      if (currentValue !== undefined && currentValue !== null) {
+                      if (currentValue != null) {
                         await client.handleSignalKUpdate(fullPath, currentValue);
                       }
                     } catch (err) {
@@ -534,7 +532,7 @@ export default function(app) {
         addDiscoveredPath(deviceType, path, value, config);
         
         // Only proceed with Venus OS operations if Venus is reachable and path is enabled
-        if (venusReachable !== true) {
+        if (!plugin.venusConnected) {
           // Venus OS not reachable, add to queue for later processing
           const existingIndex = pendingPaths.findIndex(p => p.path === path);
           if (existingIndex >= 0) {
@@ -580,7 +578,7 @@ export default function(app) {
                       for (const fullPath of pathInfo.properties) {
                         try {
                           const currentValue = app.getSelfPath(fullPath);
-                          if (currentValue !== undefined && currentValue !== null) {
+                          if (currentValue != null) {
                             await plugin.clients[deviceType].handleSignalKUpdate(fullPath, currentValue);
                             // Longer delay between updates to avoid overwhelming
                             await new Promise(resolve => setTimeout(resolve, 100));
@@ -613,11 +611,7 @@ export default function(app) {
             // Mark this client as failed to prevent retries
             plugin.clients[deviceType] = null;
             
-            // Only log the first connection error per device type to avoid spam
-            if (!plugin.clients[`${deviceType}_error_logged`]) {
-              app.error(`Cannot connect to Venus OS for ${deviceTypeNames[deviceType]}: ${cleanMessage}`);
-              plugin.clients[`${deviceType}_error_logged`] = true;
-            }
+            app.error(`Cannot connect to Venus OS for ${deviceTypeNames[deviceType]}: ${cleanMessage}`);
             return;
           }
         }
@@ -627,13 +621,11 @@ export default function(app) {
           try {
             await plugin.clients[deviceType].handleSignalKUpdate(path, value);
           } catch (err) {
-            // Only log detailed errors if it's not a connection issue
+            // Handle client update errors
             if (err.message && (err.message.includes('ENOTFOUND') || err.message.includes('ECONNREFUSED'))) {
-              // Suppress frequent connection errors when Venus OS is not available
-              // The main connection error is already logged during client creation
-              
-              // Mark client as failed
+              // Connection lost - mark client as failed and update connection status
               plugin.clients[deviceType] = null;
+              plugin.venusConnected = false;
               activeClientTypes.delete(deviceTypeNames[deviceType]);
             } else {
               app.error(`Error updating ${deviceType} client for ${path}: ${err.message}`);
@@ -679,22 +671,6 @@ export default function(app) {
     if (settings.tankRegex.test(path)) return 'tanks';
     if (settings.temperatureRegex.test(path) || settings.humidityRegex.test(path)) return 'environment';
     if (settings.switchRegex.test(path) || settings.dimmerRegex.test(path)) return 'switches';
-    return null;
-  }
-
-  // Helper function to map Venus D-Bus paths back to Signal K paths
-  function mapVenusToSignalKPath(venusPath) {
-    // This would need proper mapping logic based on your venus client implementations
-    // For switches/dimmers that support bidirectional updates
-    if (venusPath.includes('/Switches/')) {
-      const id = venusPath.match(/\/Switches\/([^\/]+)/)?.[1];
-      
-      if (venusPath.endsWith('/State')) {
-        return `electrical.switches.${id}.state`;
-      } else if (venusPath.endsWith('/DimLevel')) {
-        return `electrical.switches.${id}.dimmingLevel`;
-      }
-    }
     return null;
   }
 
