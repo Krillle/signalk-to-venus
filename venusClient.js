@@ -940,10 +940,30 @@ export class VenusClient extends EventEmitter {
         
         if (basePath) {
           // Check if Signal K has provided timeRemaining data for this battery
-          const signalKTimeRemaining = this._getCurrentSignalKValue(`${basePath}.capacity.timeRemaining`);
-          const hasSignalKTimeToGo = typeof signalKTimeRemaining === 'number' && !isNaN(signalKTimeRemaining) && signalKTimeRemaining !== null;
+          // Try both dot notation (standard internal format) and also test alternative formats
+          const timeRemainingPath = `${basePath}.capacity.timeRemaining`;
+          console.log(`🔋 TTG calculation - Checking Signal K path: ${timeRemainingPath}`);
           
-          console.log(`🔋 TTG calculation - Signal K timeRemaining: ${signalKTimeRemaining} (available: ${hasSignalKTimeToGo})`);
+          const signalKTimeRemaining = this._getCurrentSignalKValue(timeRemainingPath);
+          
+          // Extract numeric value from Signal K response (might be wrapped in object)
+          let timeRemainingValue = null;
+          if (signalKTimeRemaining !== null && signalKTimeRemaining !== undefined) {
+            if (typeof signalKTimeRemaining === 'number') {
+              timeRemainingValue = signalKTimeRemaining;
+            } else if (typeof signalKTimeRemaining === 'object' && signalKTimeRemaining.value !== undefined) {
+              timeRemainingValue = signalKTimeRemaining.value;
+            } else if (typeof signalKTimeRemaining === 'object' && typeof signalKTimeRemaining.valueOf === 'function') {
+              const extracted = signalKTimeRemaining.valueOf();
+              if (typeof extracted === 'number') {
+                timeRemainingValue = extracted;
+              }
+            }
+          }
+          
+          const hasSignalKTimeToGo = typeof timeRemainingValue === 'number' && !isNaN(timeRemainingValue) && timeRemainingValue !== null && timeRemainingValue > 0;
+          
+          console.log(`🔋 TTG calculation - Signal K timeRemaining: ${JSON.stringify(signalKTimeRemaining)} → extracted value: ${timeRemainingValue} (available: ${hasSignalKTimeToGo})`);
           
           // Calculate if Signal K hasn't provided timeRemaining
           const shouldCalculate = !hasSignalKTimeToGo;
@@ -971,9 +991,9 @@ export class VenusClient extends EventEmitter {
               console.log(`🔋 TTG calculation - Calculated charge TTG: ${chargeTimeHours.toFixed(2)} hours (${timeToGoSeconds} seconds)`);
             }
           } else {
-            console.log(`🔋 TTG calculation - Using Signal K timeRemaining: ${signalKTimeRemaining}s`);
+            console.log(`🔋 TTG calculation - Using Signal K timeRemaining: ${timeRemainingValue}s`);
             // Use Signal K provided timeRemaining value
-            timeToGoSeconds = Math.round(signalKTimeRemaining);
+            timeToGoSeconds = Math.round(timeRemainingValue);
           }
           
           console.log(`🔋 TTG calculation - Final TTG: ${timeToGoSeconds}s (${Math.floor(timeToGoSeconds/3600)}h ${Math.floor((timeToGoSeconds%3600)/60)}m)`);
