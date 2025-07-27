@@ -233,23 +233,6 @@ The plugin automatically detects and supports:
 - **Error Recovery**: Automatic retry logic with exponential backoff for connection failures
 - **Clean Disconnection**: Proper D-Bus service cleanup when the plugin stops
 
-## Smart Time To Go Calculation
-
-The plugin provides intelligent Time To Go (TTG) calculation that adapts based on battery charging/discharging state:
-
-**When Discharging** (positive current):
-- **Prefers Signal K data**: Uses `electrical.batteries.X.capacity.timeRemaining` if provided by Signal K
-- **Fallback calculation**: If Signal K doesn't provide timeRemaining, calculates: `(remaining_capacity_Ah / current_A) * 3600 seconds`
-- This ensures the most accurate discharge time from your battery management system
-
-**When Charging** (negative current):
-- **Always calculates**: Signal K typically doesn't provide charging time estimates
-- **Smart calculation**: Time until battery reaches 100% State of Charge
-- Uses configured `batteryCapacity` setting or Signal K `electrical.batteries.X.capacity.nominal`
-- Calculation: `((100% - current_SoC) * total_capacity_Ah / charge_current_A) * 3600 seconds`
-
-This provides the best of both worlds: precise discharge times from your BMS when available, and useful charging progress information that Venus OS normally doesn't show.
-
 ## Troubleshooting
 
 **"Venus OS not reachable"**: 
