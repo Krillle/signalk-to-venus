@@ -342,15 +342,15 @@ Sending real values on startup. (Before it has been default values for initialis
 First working version
 
 ## Known Issues
-- ~~**Loop prevention from signalk-venus not working yet**~~  
-  **RESOLVED**: The plugin now includes comprehensive Venus OS source filtering that prevents feedback loops by automatically detecting and excluding Venus OS originated data at both processing and discovery levels.
+- **Loop prevention from signalk-venus not working yet**  
+If you're using the signalk-venus plugin, virtual devices from Venus OS will loop back into Signal K. This can cause duplicate data. An update to signalk-venus is in progress to resolve this. (See Installation, Step X)
 
-- **Virtual devices missing after startup**
+- **Virtual devices missing after startup**  
 There is a remaining race condition that has not yet been fully identified. Although the plugin waits 15 seconds to allow the Signal K data tree to populate and Venus OS to initialize, not all virtual devices are always recognized by Venus OS on startup. A manual toggle (disabling and re-enabling the plugin) resolves the issue and all devices appear as expected.
 
 - **Battery Monitor shows Time To Go (TTG) while charging**  
   Even though the plugin translates `electrical.batteries.0.capacity.timeRemaining == null` to `/TimeToGo = -1` when charging, Venus OS still displays a TTG value in the Battery Monitor.  
   If you know how to correctly clear this value via D-Bus, your PR is very welcome!
 
-- **Switches in Venus OS beta**
+- **Switches in Venus OS beta**  
 Switches are not tested yet (and probably not working), as Venus OS does not yet support switches

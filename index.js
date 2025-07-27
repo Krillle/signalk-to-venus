@@ -307,121 +307,124 @@ export default function(app) {
       // Function to set up Signal K subscription
       function setupSignalKSubscription() {
         app.setPluginStatus('Setting up Signal K subscription');
-      let deltaCount = 0;
-      
-      // Try multiple subscription methods in order of compatibility
-      if (app.streambundle && app.streambundle.getSelfBus) {
-        // Method 1: Stream bundle getSelfBus (correct API usage)
-        try {
-          // Subscribe to all paths and filter in the callback
-          plugin.unsubscribe = app.streambundle.getSelfBus().onValue(data => {
-            // Validate the streambundle data before conversion
-            if (!data || typeof data !== 'object' || !data.path) {
-              return;
-            }
+        let deltaCount = 0;
+        let unsubscribes = [];
+        
+        // Use the proper subscriptionmanager API as documented
+        if (app.subscriptionmanager && app.subscriptionmanager.subscribe) {
+          try {
+            // Get our own MMSI for vessel context filtering
+            const selfMMSI = app.getSelfPath('mmsi');
+            const selfContext = selfMMSI ? `vessels.urn:mrn:imo:mmsi:${selfMMSI}` : 'vessels.self';
             
-            // Filter paths early - only process paths we care about
-            const deviceType = identifyDeviceType(data.path);
-            if (!deviceType) {
-              // Path doesn't match any enabled device types, skip silently
-              return;
-            }
+            app.debug(`Setting up subscription for context: ${selfContext} (MMSI: ${selfMMSI})`);
             
-            // Skip null/undefined values at the source - don't process them at all
-            if (data.value === null || data.value === undefined) {
-              return;
-            }
-            
-            // Convert the normalized delta format to standard delta format
-            const delta = {
-              context: data.context || 'vessels.self',
-              updates: [{
-                source: data.source || { label: 'streambundle' },
-                timestamp: data.timestamp || new Date().toISOString(),
-                values: [{
-                  path: data.path,
-                  value: data.value
-                }]
-              }]
+            const localSubscription = {
+              context: selfContext, // Subscribe only to our vessel's data
+              subscribe: [
+                {
+                  path: '*', // Get all paths
+                  period: config.interval || 1000 // Every 1000ms by default
+                }
+              ]
             };
             
-            processDelta(delta);
-          });
-        } catch (err) {
-          app.error('getSelfBus method failed:', err);
+            app.debug(`Subscription config:`, JSON.stringify(localSubscription, null, 2));
+            
+            app.subscriptionmanager.subscribe(
+              localSubscription,
+              unsubscribes,
+              (subscriptionError) => {
+                app.error('Subscription error: ' + subscriptionError);
+                app.setPluginError('Signal K subscription failed: ' + subscriptionError);
+              },
+              (delta) => {
+                app.debug(`Received delta with context: ${delta.context}, updates: ${delta.updates?.length || 0}`);
+                app.debug(delta)
+                processDelta(delta);
+              }
+            );
+            
+            app.debug(`Subscription setup completed, unsubscribe functions: ${unsubscribes.length}`);
+            
+            // Store unsubscribe functions for cleanup
+            plugin.unsubscribe = () => {
+              app.debug(`Unsubscribing from ${unsubscribes.length} subscriptions`);
+              unsubscribes.forEach((f) => f());
+              unsubscribes = [];
+            };
+            
+          } catch (err) {
+            app.error('subscriptionmanager.subscribe method failed:', err);
+            app.setPluginError('Signal K subscription setup failed: ' + err.message);
+            return;
+          }
+        } else {
+          app.setPluginError('Signal K subscriptionmanager not available');
+          return;
         }
-      } else if (app.signalk && app.signalk.subscribe) {
-        // Method 2: Direct signalk subscription (common method)
-        try {
-          const subscription = {
-            context: 'vessels.self',
-            subscribe: [
-              { path: '*', period: config.interval, format: 'delta', policy: 'ideal', minPeriod: 200 }
-            ]
-          };
-          plugin.unsubscribe = app.signalk.subscribe(subscription, delta => {
-            processDelta(delta);
-          });
-        } catch (err) {
-          app.error('signalk.subscribe method failed:', err);
-        }
-      } else if (app.registerDeltaInputHandler) {
-        // Method 3: Delta input handler (fallback)
-        try {
-          app.registerDeltaInputHandler((delta, next) => {
-            if (delta.context === 'vessels.self') {
-              processDelta(delta);
-            }
-            next(delta);
-          });
-        } catch (err) {
-          app.error('registerDeltaInputHandler method failed:', err);
-        }
-      } else {
-        app.setPluginError('No compatible subscription method found');
-        return;
-      }
       
       // Function to process delta messages
       function processDelta(delta) {
         try {
           deltaCount++;
+          app.debug(`Processing delta #${deltaCount}, context: ${delta.context}`);
           
           if (delta.updates) {
-            delta.updates.forEach(update => {
+            app.debug(`Delta has ${delta.updates.length} updates`);
+            delta.updates.forEach((update, updateIndex) => {
               // Check if update and update.values are valid
               if (!update || !Array.isArray(update.values)) {
+                app.debug(`Update ${updateIndex} invalid: missing values array`);
                 return;
               }
               
-              update.values.forEach(async pathValue => {
+              app.debug(`Update ${updateIndex} has ${update.values.length} values, source: ${update.source?.label || 'unknown'}`);
+              
+              update.values.forEach(async (pathValue, valueIndex) => {
                 try {
                   // Check if pathValue exists and has required properties
                   if (!pathValue || typeof pathValue !== 'object') {
+                    app.debug(`PathValue ${valueIndex} invalid: not an object`);
                     return;
                   }
                   
                   if (!pathValue.path) {
+                    app.debug(`PathValue ${valueIndex} invalid: missing path`);
                     return;
                   }
                   
                   // Skip null/undefined values - this should be rare if streambundle filtering works
                   if (pathValue.value === undefined || pathValue.value === null) {
+                    app.debug(`Skipping ${pathValue.path}: null/undefined value`);
                     return;
                   }
                 
-                // Process this path value using the unified processing function
-                await processPathValue(pathValue.path, pathValue.value, config);
-              } catch (err) {
-                // Only log unexpected errors, suppress common connection errors
-                if (!err.message || (!err.message.includes('ENOTFOUND') && !err.message.includes('ECONNREFUSED'))) {
-                  const pathInfo = pathValue?.path || 'unknown path';
-                  app.error(`Unexpected error processing ${pathInfo}: ${err.message}`);
+                  app.debug(`Processing path: ${pathValue.path} = ${pathValue.value}`);
+                  
+                  // Check if this is a device type we care about
+                  const deviceType = identifyDeviceType(pathValue.path);
+                  if (!deviceType) {
+                    app.debug(`Path ${pathValue.path} doesn't match any device type, skipping`);
+                    return;
+                  }
+                  
+                  app.debug(`Path ${pathValue.path} identified as device type: ${deviceType}`);
+                
+                  // Process this path value using the unified processing function
+                  await processPathValue(pathValue.path, pathValue.value, config);
+                } catch (err) {
+                  // Only log unexpected errors, suppress common connection errors
+                  if (!err.message || (!err.message.includes('ENOTFOUND') && !err.message.includes('ECONNREFUSED'))) {
+                    const pathInfo = pathValue?.path || 'unknown path';
+                    app.error(`Unexpected error processing ${pathInfo}: ${err.message}`);
+                  }
                 }
-              }
+              });
             });
-          });
-        }
+          } else {
+            app.debug(`Delta has no updates`);
+          }
         } catch (err) {
           app.error('Error processing delta:', err);
         }
@@ -538,10 +541,15 @@ export default function(app) {
       
       // Extract path processing logic into a separate function
       async function processPathValue(path, value, config) {
+        app.debug(`processPathValue called: ${path} = ${value}`);
+        
         const deviceType = identifyDeviceType(path);
         if (!deviceType) {
+          app.debug(`No device type identified for path: ${path}`);
           return;
         }
+        
+        app.debug(`Device type identified: ${deviceType} for path: ${path}`);
         
         // Always do discovery
         addDiscoveredPath(deviceType, path, value, config);
@@ -553,16 +561,21 @@ export default function(app) {
           if (existingIndex >= 0) {
             // Update existing queued path with new value
             pendingPaths[existingIndex].value = value;
+            app.debug(`Updated queued path: ${path} (queue size: ${pendingPaths.length})`);
           } else {
             // Add new path to queue
             pendingPaths.push({ path, value, timestamp: Date.now() });
+            app.debug(`Queued new path: ${path} (queue size: ${pendingPaths.length})`);
           }
-          app.debug(`Queued path for later processing: ${path} (queue size: ${pendingPaths.length})`);
           return;
         }
         
         // Check if this specific path is enabled
-        if (!isPathEnabled(deviceType, path, config)) {
+        const isEnabled = isPathEnabled(deviceType, path, config);
+        app.debug(`Path ${path} enabled check: ${isEnabled}`);
+        
+        if (!isEnabled) {
+          app.debug(`Skipping disabled path: ${path}`);
           return; // Skip disabled paths
         }
         
@@ -677,9 +690,12 @@ export default function(app) {
         clearInterval(plugin.connectivityInterval);
       }
       
+      // Use proper unsubscribe method
       if (plugin.unsubscribe) {
         plugin.unsubscribe();
+        plugin.unsubscribe = null;
       }
+      
       if (plugin.clients) {
         Object.values(plugin.clients).forEach(async client => {
           if (client && client.disconnect) {
