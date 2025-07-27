@@ -4,8 +4,9 @@ import settings from '../settings.js';
 describe('Settings Configuration', () => {
   it('should have correct default values', () => {
     expect(settings.venusHost).toBe('venus.local');
-    expect(settings.productName).toBe('SignalK Virtual Device');
     expect(settings.interval).toBe(1000);
+    expect(settings.batteryCapacity).toBe(800);
+    expect(settings.defaultBatteryCapacity).toBe(800.0);
   });
 
   it('should have correct enabled devices configuration', () => {
@@ -54,9 +55,10 @@ describe('Settings Configuration', () => {
   it('should have all required properties', () => {
     const requiredProperties = [
       'venusHost',
-      'productName', 
       'interval',
+      'batteryCapacity',
       'enabledDevices',
+      'defaultBatteryCapacity',
       'batteryRegex',
       'tankRegex',
       'temperatureRegex',
@@ -68,13 +70,12 @@ describe('Settings Configuration', () => {
     requiredProperties.forEach(prop => {
       expect(settings).toHaveProperty(prop);
     });
-  });
-
-  it('should have valid types for all properties', () => {
+  });  it('should have valid types for all properties', () => {
     expect(typeof settings.venusHost).toBe('string');
-    expect(typeof settings.productName).toBe('string');
     expect(typeof settings.interval).toBe('number');
+    expect(typeof settings.batteryCapacity).toBe('number');
     expect(typeof settings.enabledDevices).toBe('object');
+    expect(typeof settings.defaultBatteryCapacity).toBe('number');
     expect(settings.batteryRegex).toBeInstanceOf(RegExp);
     expect(settings.tankRegex).toBeInstanceOf(RegExp);
     expect(settings.temperatureRegex).toBeInstanceOf(RegExp);

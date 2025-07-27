@@ -254,7 +254,7 @@ describe('VenusClient - Battery', () => {
       expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Battery SoC', 'Battery House: 75.0%');
     });
 
-    it('should handle timeRemaining correctly - send TTG=null when null during charging', async () => {
+    it('should handle timeRemaining correctly - ignore null values', async () => {
       // Create a device with known state first
       await client.handleSignalKUpdate('electrical.batteries.main.voltage', 12.5);
       await client.handleSignalKUpdate('electrical.batteries.main.current', 5.0); // Discharging
@@ -273,41 +273,36 @@ describe('VenusClient - Battery', () => {
       // Clear spies to focus on the next calls
       updatePropertySpy.mockClear();
       
-      // Now simulate charging scenario: negative current, timeRemaining = null
-      await client.handleSignalKUpdate('electrical.batteries.main.current', -2.5); // Charging (negative)
+      // Now set timeRemaining to null - it should be ignored (no TTG update)
       await client.handleSignalKUpdate('electrical.batteries.main.capacity.timeRemaining', null);
       
-      // Verify TTG was set to -1 (Victron standard for "unavailable") when timeRemaining is null during charging
-      expect(updatePropertySpy).toHaveBeenCalledWith('/TimeToGo', -1, 'i', expect.any(String));
+      // Verify that TTG was NOT updated when timeRemaining is null
+      const ttgUpdateCalls = updatePropertySpy.mock.calls.filter(call => call[0] === '/TimeToGo');
+      expect(ttgUpdateCalls.length).toBe(0);
     });
 
-    it('should not override TTG when explicitly set to null', async () => {
-      // Create a device with known state first
-      await client.handleSignalKUpdate('electrical.batteries.main.voltage', 12.5);
-      await client.handleSignalKUpdate('electrical.batteries.main.current', -2.5); // Charging
-      await client.handleSignalKUpdate('electrical.batteries.main.stateOfCharge', 0.85);
+    it('should calculate TTG when Signal K timeRemaining is not available', async () => {
+      // Create a device with known state first - need voltage, current, and SoC for calculation
+      await client.handleSignalKUpdate('electrical.batteries.main.voltage', 12.0);
+      await client.handleSignalKUpdate('electrical.batteries.main.current', 5.0); // Discharging at 5A
+      await client.handleSignalKUpdate('electrical.batteries.main.stateOfCharge', 0.50); // 50% charged
       
       // Get the device service and set up spies
       const deviceService = Array.from(client.deviceServices.values())[0];
       const updatePropertySpy = vi.spyOn(deviceService, 'updateProperty');
       
-      // Set timeRemaining to null (should set TTG to -1)
-      await client.handleSignalKUpdate('electrical.batteries.main.capacity.timeRemaining', null);
-      
-      // Verify TTG was set to -1 (Victron standard for "unavailable")
-      expect(updatePropertySpy).toHaveBeenCalledWith('/TimeToGo', -1, 'i', expect.any(String));
-      
       // Clear spies and trigger SOC update (which calls _updateBatteryDummyData)
       updatePropertySpy.mockClear();
-      await client.handleSignalKUpdate('electrical.batteries.main.stateOfCharge', 0.87);
+      await client.handleSignalKUpdate('electrical.batteries.main.stateOfCharge', 0.49); // Slight discharge
       
-      // _updateBatteryDummyData should also set TTG to -1 when charging (current <= 0)
+      // Should calculate TTG based on current consumption and remaining capacity
       // Look for TTG update calls
       const ttgUpdateCalls = updatePropertySpy.mock.calls.filter(call => call[0] === '/TimeToGo');
       
-      // Should have one TTG update call setting it to -1 when charging
-      expect(ttgUpdateCalls.length).toBe(1);
-      expect(ttgUpdateCalls[0]).toEqual(['/TimeToGo', -1, 'i', expect.any(String)]);
+      // Should have calculated and set a TTG value
+      expect(ttgUpdateCalls.length).toBeGreaterThan(0);
+      expect(typeof ttgUpdateCalls[0][1]).toBe('number');
+      expect(ttgUpdateCalls[0][1]).toBeGreaterThan(0); // Should be positive time in seconds
     });
 
     it('should ignore invalid values', async () => {

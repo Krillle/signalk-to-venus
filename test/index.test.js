@@ -14,6 +14,9 @@ const mockApp = {
   getSelfPath: vi.fn(),
   putSelfPath: vi.fn(),
   handleMessage: vi.fn(),
+  subscriptionmanager: {
+    subscribe: vi.fn()
+  },
   signalk: {
     subscribe: vi.fn()
   },
@@ -106,15 +109,16 @@ describe('Signal K Plugin - Main Index', () => {
         title: 'Venus OS Host',
         default: 'venus.local'
       });
-      expect(schema.properties.productName).toEqual({
-        type: 'string',
-        title: 'Product Name',
-        default: 'SignalK Virtual Device'
-      });
       expect(schema.properties.interval).toEqual({
         type: 'number',
         title: 'Update Interval (ms)',
         default: 1000
+      });
+      expect(schema.properties.batteryCapacity).toEqual({
+        type: 'number',
+        title: 'Battery Capacity (Ah)',
+        description: 'Total battery capacity in Amp-hours for time-to-charge calculation',
+        default: 800
       });
     });
 
@@ -184,13 +188,14 @@ describe('Signal K Plugin - Main Index', () => {
       
       // Check that we've progressed past the initial startup
       // Look for status indicating Signal K readiness was checked
-      expect(mockApp.setPluginStatus).toHaveBeenCalledWith('Waiting for Signal K to populate data...');
+      expect(mockApp.setPluginStatus).toHaveBeenCalledWith('Waiting for Signal K to populate data');
     });
 
     it('should stop plugin and cleanup resources', async () => {
+      const mockDisconnectFn = vi.fn();
       plugin.clients = {
-        batteries: { disconnect: vi.fn() },
-        tanks: { disconnect: vi.fn() }
+        batteries: { disconnect: mockDisconnectFn },
+        tanks: { disconnect: mockDisconnectFn }
       };
       plugin.connectivityInterval = setInterval(() => {}, 1000);
       plugin.unsubscribe = vi.fn();
@@ -259,8 +264,8 @@ describe('Signal K Plugin - Main Index', () => {
       expect(schema.type).toBe('object');
       expect(schema.properties).toBeDefined();
       expect(schema.properties.venusHost).toBeDefined();
-      expect(schema.properties.productName).toBeDefined();
       expect(schema.properties.interval).toBeDefined();
+      expect(schema.properties.batteryCapacity).toBeDefined();
     });
 
     it('should track discovered paths correctly', () => {
