@@ -198,14 +198,15 @@ describe('Signal K Plugin - Main Index', () => {
         tanks: { disconnect: mockDisconnectFn }
       };
       plugin.connectivityInterval = setInterval(() => {}, 1000);
-      plugin.unsubscribe = vi.fn();
+      const unsubscribeSpy = vi.fn();
+      plugin.unsubscribe = unsubscribeSpy;
       
       await plugin.stop();
       
       expect(mockApp.setPluginStatus).toHaveBeenCalledWith('Stopping Signal K to Venus OS bridge');
       expect(mockApp.debug).toHaveBeenCalledWith('Stopping Signal K to Venus OS bridge');
       expect(mockApp.setPluginStatus).toHaveBeenCalledWith('Stopped');
-      expect(plugin.unsubscribe).toHaveBeenCalled();
+      expect(unsubscribeSpy).toHaveBeenCalled();
       expect(plugin.unsubscribe).toBe(null); // Should be set to null after calling
     });
 
