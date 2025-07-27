@@ -378,7 +378,6 @@ export default function(app) {
               // Check for Venus OS sources to prevent feedback loops
               const sourceLabel = update.source?.label || update.$source || 'unknown';
               if (sourceLabel.includes('venus.com.victronenergy')) {
-                app.debug(`Skipping Venus OS source: ${sourceLabel}`);
                 return;
               }
               
