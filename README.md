@@ -351,6 +351,10 @@ MIT © Christian Wegerhoff
 
 ## Change Log
 
+### v1.0.16 (2025/07/27 22:30)
+- Enhanced Time to Go (TTG) calculation: Implemented intelligent battery time-to-go calculation with Signal K `electrical.batteries.X.capacity.timeRemaining` priority
+- Implemented Time To Charge: Calculates time-to-full (100% SoC) during charging scenarios with positive current and sends to Venus as /TimeToGo. (Set your total battery capacity in Amp-hours in plugin settings.) 
+
 ### v1.0.15 (2025/07/27 16:15)
 - Improved Signal K subscription method: Updated to use the proper `subscriptionmanager.subscribe()` API according to Signal K documentation, replacing previous incorrect subscription methods
 - Added Venus OS source filtering: Implemented comprehensive feedback loop prevention that automatically detects and excludes data originating from Venus OS devices (`venus.com.victronenergy.*` sources) at both data processing and device discovery levels
