@@ -2,16 +2,6 @@
 
 This plugin for Signal K Server injects batteries, tanks, environment sensors, and switches as virtual devices and battery monitor into the Venus OS (D-Bus), enabling full integration with the Cerbo GX, GX Touch, and VRM.
 
-## Features
-
-- **Dynamic Device Discovery**: Automatically discovers all Signal K devices on your boat and presents them in an intuitive configuration UI
-- **Selective Device Control**: Enable/disable individual devices - only send the data you want to Venus OS
-- **Smart Device Naming**: Intelligent display names (e.g., "Freshwater", "Fuel", "Water Temperature")
-- **Registers as Proper D-Bus Services**: Creates valid devices and battery monitor on Victron D-Bus services for seamless VRM integration
-- **Bidirectional Sync**: (Not tested yet) Switches and dimmers sync both ways (Signal K ⇄ Cerbo GX)
-- **Loop Prevention**: Automatically excludes Cerbo GX internal relays and marks virtual devices to prevent feedback loops
-- **Robust Error Handling**: Automatic connection retry, timeout handling, and meaningful error messages
-
 ## Requirements
 
 - Signal K server running on a Raspberry Pi or similar device
@@ -63,7 +53,7 @@ tcp        0      0 0.0.0.0:78              0.0.0.0:*               LISTEN
 
 **X. Manually Update Victron Venus Plugin to Avoid Feedback Loops**
 
-The upcoming version of **Victron Venus Plugin** (`signalk-venus-plugin`) will ignore virtual devices injected by this plugin, avoiding feedback loops multiplicating devices. If the latest published version of **signalk-venus-plugin** is still **v1.43.1 (2025-02-04)**, the fix hasn’t been released yet. In this case, apply the patch manually:
+The upcoming version of **Victron Venus Plugin** (`signalk-venus-plugin`) will ignore virtual devices injected by this plugin, avoiding reading virtual devices back to Signal K. If the latest published version of **signalk-venus-plugin** is still **v1.43.1 (2025-02-04)**, the fix hasn’t been released yet. In this case, apply the patch manually:
 
 ```bash
 cd ~/.signalk/node_modules/signalk-venus-plugin
@@ -143,40 +133,7 @@ The plugin automatically detects and supports:
 - **Humidity**: `environment.*.humidity` or `environment.*.relativeHumidity`
 - **Switches/Dimmers**: `electrical.switches.*` (state, dimming level)
 
-**Note**: The plugin automatically excludes Cerbo GX internal relay switches (`venus-0`, `venus-1`) to prevent feedback loops.
-
-
-## Status Monitoring
-
-The plugin provides comprehensive real-time status updates in the Signal K dashboard:
-
-- **Starting**: `Starting Signal K to Venus OS bridge`
-- **Discovery**: `Device Discovery: Found 12 devices - configure in settings` when devices are discovered
-- **No Selection**: `Device Discovery: Found X devices (Venus OS: venus.local)` when no devices are enabled
-- **Connecting**: `Connecting to Venus OS at venus.local for Batteries`
-- **Connected**: `Connected to Venus OS, injecting Batteries, Environment, Tanks`
-- **Waiting**: `Waiting for Signal K data (venus.local)` if no compatible data is received
-- **Connection Issues**: `Venus OS not reachable: connection refused (check D-Bus TCP setting)`
-- **No Data**: `No Signal K data received - check server configuration`
-
-## How It Works
-
-1. **Device Discovery**: The plugin subscribes to all relevant Signal K paths and automatically discovers available devices
-2. **Dynamic Configuration**: Discovered devices appear in the plugin settings, grouped by type with intelligent display names
-3. **Selective Bridging**: Only enabled devices are sent to Venus OS - you have full control
-4. **D-Bus Integration**: Creates proper Victron D-Bus services that integrate seamlessly with VRM
-5. **Bidirectional Sync**: Switch and dimmer changes in VRM/Cerbo are reflected back to Signal K
-6. **Smart Naming**: Device names are automatically generated and can be changed in VRM/Cerbo UI. 
-
-## Device Naming Logic
-
-The plugin generates intelligent display names:
-
-- **Single devices**: "Battery", "Freshwater" (numbers omitted)
-- **Multiple devices**: "Battery 0", "Battery 1", "Fuel 0", "Fuel 1"  
-- **Functional names**: "Nav", "Anchor" (device type omitted for switches with descriptive names)
-- **Generic IDs**: "Switch 0", "Switch 1" (device type kept for numbered switches)
-- **CamelCase conversion**: "freshWater" → "Freshwater", "navLights" → "Navlights"
+**Note**: The plugin automatically excludes devices directly connected to the Cerbo GX and its internal relay switches to prevent feedback loops.
 
 ## Output (Venus OS D-Bus Paths)
 
@@ -268,20 +225,11 @@ The plugin generates intelligent display names:
 
 ## Loop Prevention & Safety
 
-- **Cerbo Relay Exclusion**: Automatically excludes `venus-0` and `venus-1` relay switches to prevent feedback loops
+- **Venus OS Source Filtering**: The plugin excludes data originating from Venus OS devices (`venus.com.victronenergy.*` sources) at both data processing and device discovery levels
 - **Virtual Device Marking**: All created D-Bus services are marked with `ProcessName: 'signalk-virtual-device'` for identification
 - **Connection Validation**: Tests Venus OS connectivity before attempting to send data
 - **Error Recovery**: Automatic retry logic with exponential backoff for connection failures
 - **Clean Disconnection**: Proper D-Bus service cleanup when the plugin stops
-
-## Testing Without Venus OS
-
-The plugin includes a testing mode for development and troubleshooting:
-
-- When Venus OS is not available, the plugin continues to discover Signal K devices
-- Status shows: `Discovered X Signal K devices (Venus OS not connected)`
-- All device discovery and configuration features work normally
-- Simply enable Venus OS connectivity when ready to bridge data
 
 ## Troubleshooting
 
@@ -384,6 +332,9 @@ MIT © Christian Wegerhoff
 
 ## Change Log
 
+### v1.0.15 (2025/07/26 12:00)
+Added Venus OS source filtering to prevent feedback loops. The plugin now automatically detects and excludes data originating from Venus OS devices (venus.com.victronenergy.* sources) at both data processing and device discovery levels, ensuring clean separation between Signal K and Venus OS data flows.
+
 ### v1.0.14 (2025/07/25 13:00)
 Sending real values on startup. (Before it has been default values for initialisation.)
 
@@ -391,8 +342,8 @@ Sending real values on startup. (Before it has been default values for initialis
 First working version
 
 ## Known Issues
-- **Loop prevention from signalk-venus not working yet**
-If you're using the signalk-venus plugin, virtual devices from Venus OS will loop back into Signal K. This can cause duplicate data. An update to signalk-venus is in progress to resolve this. (See Installation, Step X)
+- ~~**Loop prevention from signalk-venus not working yet**~~  
+  **RESOLVED**: The plugin now includes comprehensive Venus OS source filtering that prevents feedback loops by automatically detecting and excluding Venus OS originated data at both processing and discovery levels.
 
 - **Virtual devices missing after startup**
 There is a remaining race condition that has not yet been fully identified. Although the plugin waits 15 seconds to allow the Signal K data tree to populate and Venus OS to initialize, not all virtual devices are always recognized by Venus OS on startup. A manual toggle (disabling and re-enabling the plugin) resolves the issue and all devices appear as expected.
