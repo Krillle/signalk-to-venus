@@ -381,6 +381,11 @@ export default function(app) {
               
               app.debug(`Update ${updateIndex} has ${update.values.length} values, source: ${update.source?.label || 'unknown'}`);
               
+              // Skip updates from Venus OS sources to prevent feedback loops
+              if (update.source && update.source.label && update.source.label.includes('venus.com.victronenergy')) {
+                app.debug(`Skipping update from Venus OS source: ${update.source.label}`);
+                return;
+              }
               update.values.forEach(async (pathValue, valueIndex) => {
                 try {
                   // Check if pathValue exists and has required properties
@@ -657,8 +662,10 @@ export default function(app) {
         
         // Update the Venus client with the new data (whether client is new or existing)
         if (plugin.clients[deviceType] && plugin.clients[deviceType] !== null) {
+          app.debug(`Updating Venus client ${deviceType} with path: ${path} = ${value}`);
           try {
             await plugin.clients[deviceType].handleSignalKUpdate(path, value);
+            app.debug(`Successfully updated Venus client ${deviceType} for path: ${path}`);
           } catch (err) {
             // Only log detailed errors if it's not a connection issue
             if (err.message && (err.message.includes('ENOTFOUND') || err.message.includes('ECONNREFUSED'))) {
@@ -673,6 +680,8 @@ export default function(app) {
               app.error(`Error updating ${deviceType} client for ${path}: ${err.message}`);
             }
           }
+        } else {
+          app.debug(`No valid Venus client for ${deviceType}, skipping update for path: ${path}`);
         }
       }
 
@@ -709,11 +718,6 @@ export default function(app) {
 
   // Helper function to identify device type from Signal K path
   function identifyDeviceType(path) {
-    // Filter out Cerbo GX relays (venus-0, venus-1) to prevent feedback loops
-    if (path.match(/electrical\.switches\.venus-[01]\./)) {
-      return null;
-    }
-    
     if (settings.batteryRegex.test(path)) return 'batteries';
     if (settings.tankRegex.test(path)) return 'tanks';
     if (settings.temperatureRegex.test(path) || settings.humidityRegex.test(path)) return 'environment';
@@ -727,11 +731,6 @@ export default function(app) {
     // For switches/dimmers that support bidirectional updates
     if (venusPath.includes('/Switches/')) {
       const id = venusPath.match(/\/Switches\/([^\/]+)/)?.[1];
-      
-      // Filter out Cerbo GX relays to prevent feedback loops
-      if (id === 'venus-0' || id === 'venus-1') {
-        return null;
-      }
       
       if (venusPath.endsWith('/State')) {
         return `electrical.switches.${id}.state`;
