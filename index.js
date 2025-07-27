@@ -339,8 +339,6 @@ export default function(app) {
                 app.setPluginError('Signal K subscription failed: ' + subscriptionError);
               },
               (delta) => {
-                app.debug(`Received delta with context: ${delta.context}, updates: ${delta.updates?.length || 0}`);
-                app.debug(delta)
                 processDelta(delta);
               }
             );
@@ -368,57 +366,42 @@ export default function(app) {
       function processDelta(delta) {
         try {
           deltaCount++;
-          app.debug(`Processing delta #${deltaCount}, context: ${delta.context}`);
           
           if (delta.updates) {
-            app.debug(`Delta has ${delta.updates.length} updates`);
             delta.updates.forEach((update, updateIndex) => {
               // Check if update and update.values are valid
               if (!update || !Array.isArray(update.values)) {
-                app.debug(`Update ${updateIndex} invalid: missing values array`);
                 return;
               }
               
-              // Debug log showing both source formats
+              // Check for Venus OS sources to prevent feedback loops
               const sourceLabel = update.source?.label || update.$source || 'unknown';
-              app.debug(`Update ${updateIndex} has ${update.values.length} values, source: ${sourceLabel}`);
-              app.debug(`Raw source debug - update.source:`, update.source, 'update.$source:', update.$source);
-              
-              // Skip updates from Venus OS sources to prevent feedback loops
-              // Check both update.source.label and update.$source for Venus OS sources
               if (sourceLabel.includes('venus.com.victronenergy')) {
-                app.debug(`Skipping update from Venus OS source: ${sourceLabel}`);
+                app.debug(`Skipping Venus OS source: ${sourceLabel}`);
                 return;
               }
+              
               update.values.forEach(async (pathValue, valueIndex) => {
                 try {
                   // Check if pathValue exists and has required properties
                   if (!pathValue || typeof pathValue !== 'object') {
-                    app.debug(`PathValue ${valueIndex} invalid: not an object`);
                     return;
                   }
                   
                   if (!pathValue.path) {
-                    app.debug(`PathValue ${valueIndex} invalid: missing path`);
                     return;
                   }
                   
-                  // Skip null/undefined values - this should be rare if streambundle filtering works
+                  // Skip null/undefined values
                   if (pathValue.value === undefined || pathValue.value === null) {
-                    app.debug(`Skipping ${pathValue.path}: null/undefined value`);
                     return;
                   }
                 
-                  app.debug(`Processing path: ${pathValue.path} = ${pathValue.value}`);
-                  
                   // Check if this is a device type we care about
                   const deviceType = identifyDeviceType(pathValue.path);
                   if (!deviceType) {
-                    app.debug(`Path ${pathValue.path} doesn't match any device type, skipping`);
                     return;
                   }
-                  
-                  app.debug(`Path ${pathValue.path} identified as device type: ${deviceType}`);
                 
                   // Process this path value using the unified processing function
                   await processPathValue(pathValue.path, pathValue.value, config);
@@ -431,8 +414,6 @@ export default function(app) {
                 }
               });
             });
-          } else {
-            app.debug(`Delta has no updates`);
           }
         } catch (err) {
           app.error('Error processing delta:', err);
@@ -499,14 +480,12 @@ export default function(app) {
         }
         
         isProcessingQueue = true;
-        app.debug(`Processing ${pendingPaths.length} queued paths...`);
         
         const pathsToProcess = [...pendingPaths];
         pendingPaths.length = 0; // Clear the queue
         
         for (const queuedPath of pathsToProcess) {
           try {
-            app.debug(`Processing queued path: ${queuedPath.path}`);
             await processPathValue(queuedPath.path, queuedPath.value, config);
           } catch (err) {
             app.error(`Error processing queued path ${queuedPath.path}:`, err);
@@ -516,8 +495,6 @@ export default function(app) {
         // After processing all queued paths, give devices more time to initialize
         // then trigger a forced update to ensure VRM sees the devices
         setTimeout(async () => {
-          app.debug('Triggering forced device updates for VRM visibility...');
-          
           // Get the latest values for all enabled devices and send them
           Object.entries(plugin.clients).forEach(([deviceType, client]) => {
             if (client && client !== null && discoveredPaths[deviceType]) {
@@ -531,7 +508,6 @@ export default function(app) {
                     try {
                       const currentValue = app.getSelfPath(fullPath);
                       if (currentValue !== undefined && currentValue !== null) {
-                        app.debug(`Forcing update for ${fullPath} with value ${currentValue}`);
                         await client.handleSignalKUpdate(fullPath, currentValue);
                       }
                     } catch (err) {
@@ -545,20 +521,14 @@ export default function(app) {
         }, 5000); // Wait 5 seconds after device creation to force updates
         
         isProcessingQueue = false;
-        app.debug(`Finished processing queued paths`);
       }
       
       // Extract path processing logic into a separate function
       async function processPathValue(path, value, config) {
-        app.debug(`processPathValue called: ${path} = ${value}`);
-        
         const deviceType = identifyDeviceType(path);
         if (!deviceType) {
-          app.debug(`No device type identified for path: ${path}`);
           return;
         }
-        
-        app.debug(`Device type identified: ${deviceType} for path: ${path}`);
         
         // Always do discovery
         addDiscoveredPath(deviceType, path, value, config);
@@ -570,28 +540,23 @@ export default function(app) {
           if (existingIndex >= 0) {
             // Update existing queued path with new value
             pendingPaths[existingIndex].value = value;
-            app.debug(`Updated queued path: ${path} (queue size: ${pendingPaths.length})`);
           } else {
             // Add new path to queue
             pendingPaths.push({ path, value, timestamp: Date.now() });
-            app.debug(`Queued new path: ${path} (queue size: ${pendingPaths.length})`);
           }
           return;
         }
         
         // Check if this specific path is enabled
         const isEnabled = isPathEnabled(deviceType, path, config);
-        app.debug(`Path ${path} enabled check: ${isEnabled}`);
         
         if (!isEnabled) {
-          app.debug(`Skipping disabled path: ${path}`);
           return; // Skip disabled paths
         }
         
         // Create Venus client for this device type if it doesn't exist yet or has failed
         if (!plugin.clients[deviceType] || plugin.clients[deviceType] === null) {
           app.setPluginStatus(`Creating Venus OS service for ${deviceTypeNames[deviceType]}`);
-          app.debug(`Creating new Venus client for device type: ${deviceType}`);
           
           try {
             plugin.clients[deviceType] = VenusClientFactory(config, deviceType, app);
@@ -599,14 +564,11 @@ export default function(app) {
             
             const deviceCountText = generateEnabledDeviceCountText(config);
             app.setPluginStatus(`Connected to ${config.venusHost}, injecting ${deviceCountText}`);
-            app.debug(`Successfully created Venus client for ${deviceType}`);
             
             // After creating a new client, force immediate updates with ALL current data
             // for this device type to ensure the device appears in VRM with valid data
             setTimeout(async () => {
               try {
-                app.debug(`Sending initial data batch to new ${deviceType} client...`);
-                
                 // Send data for all discovered devices of this type that are enabled
                 if (discoveredPaths[deviceType]) {
                   const pathMap = discoveredPaths[deviceType];
@@ -619,7 +581,6 @@ export default function(app) {
                         try {
                           const currentValue = app.getSelfPath(fullPath);
                           if (currentValue !== undefined && currentValue !== null) {
-                            app.debug(`Initial data: ${fullPath} = ${currentValue}`);
                             await plugin.clients[deviceType].handleSignalKUpdate(fullPath, currentValue);
                             // Longer delay between updates to avoid overwhelming
                             await new Promise(resolve => setTimeout(resolve, 100));
@@ -631,8 +592,6 @@ export default function(app) {
                     }
                   }
                 }
-                
-                app.debug(`Completed initial data batch for ${deviceType} client`);
               } catch (err) {
                 app.debug(`Could not send initial data batch to new ${deviceType} client: ${err.message}`);
               }
@@ -650,7 +609,6 @@ export default function(app) {
             }
             
             app.setPluginError(`Venus OS not reachable: ${cleanMessage}`);
-            app.debug(`Failed to create Venus client for ${deviceType}: ${cleanMessage}`);
             
             // Mark this client as failed to prevent retries
             plugin.clients[deviceType] = null;
@@ -666,10 +624,8 @@ export default function(app) {
         
         // Update the Venus client with the new data (whether client is new or existing)
         if (plugin.clients[deviceType] && plugin.clients[deviceType] !== null) {
-          app.debug(`Updating Venus client ${deviceType} with path: ${path} = ${value}`);
           try {
             await plugin.clients[deviceType].handleSignalKUpdate(path, value);
-            app.debug(`Successfully updated Venus client ${deviceType} for path: ${path}`);
           } catch (err) {
             // Only log detailed errors if it's not a connection issue
             if (err.message && (err.message.includes('ENOTFOUND') || err.message.includes('ECONNREFUSED'))) {
@@ -679,13 +635,10 @@ export default function(app) {
               // Mark client as failed
               plugin.clients[deviceType] = null;
               activeClientTypes.delete(deviceTypeNames[deviceType]);
-              app.debug(`Marked Venus client ${deviceType} as failed due to connection error`);
             } else {
               app.error(`Error updating ${deviceType} client for ${path}: ${err.message}`);
             }
           }
-        } else {
-          app.debug(`No valid Venus client for ${deviceType}, skipping update for path: ${path}`);
         }
       }
 

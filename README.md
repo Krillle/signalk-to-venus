@@ -332,8 +332,11 @@ MIT © Christian Wegerhoff
 
 ## Change Log
 
-### v1.0.15 (2025/07/26 12:00)
-Added Venus OS source filtering to prevent feedback loops. The plugin now automatically detects and excludes data originating from Venus OS devices (venus.com.victronenergy.* sources) at both data processing and device discovery levels, ensuring clean separation between Signal K and Venus OS data flows.
+### v1.0.15 (2025/07/27 16:15)
+- Improved Signal K subscription method: Updated to use the proper `subscriptionmanager.subscribe()` API according to Signal K documentation, replacing previous incorrect subscription methods
+- Added Venus OS source filtering: Implemented comprehensive feedback loop prevention that automatically detects and excludes data originating from Venus OS devices (`venus.com.victronenergy.*` sources) at both data processing and device discovery levels
+- Enhanced MMSI-based vessel filtering: Plugin now correctly subscribes only to data from the vessel's own MMSI context, preventing interference from other boats
+- Reduced debug logging: Streamlined log output to essential information while maintaining visibility into source filtering and connection status
 
 ### v1.0.14 (2025/07/25 13:00)
 Sending real values on startup. (Before it has been default values for initialisation.)
