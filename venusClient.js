@@ -180,17 +180,17 @@ export class VenusClient extends EventEmitter {
                     if (currentCurrent !== null && typeof currentCurrent === 'number' && currentCurrent !== 0) {
                       let timeToGoSeconds;
                       
-                      if (currentCurrent > 0) {
+                      if (currentCurrent < 0) {
                         // Battery is discharging - calculate time until empty
                         const remainingCapacity = realCapacity * (socPercent / 100);
-                        const timeToGoHours = remainingCapacity / currentCurrent;
+                        const timeToGoHours = remainingCapacity / Math.abs(currentCurrent);
                         timeToGoSeconds = Math.round(timeToGoHours * 3600);
                       } else {
                         // Battery is charging - calculate time to 100% SoC
                         // Use configured battery capacity if available, otherwise use Signal K capacity
                         const totalCapacity = this.settings.batteryCapacity || realCapacity;
                         const remainingCapacityToFull = totalCapacity * ((100 - socPercent) / 100);
-                        const chargeTimeHours = remainingCapacityToFull / Math.abs(currentCurrent);
+                        const chargeTimeHours = remainingCapacityToFull / currentCurrent;
                         timeToGoSeconds = Math.round(chargeTimeHours * 3600);
                       }
                       
@@ -897,17 +897,17 @@ export class VenusClient extends EventEmitter {
         
         if (shouldCalculate) {
           // Calculate our own TTG when Signal K doesn't provide timeRemaining
-          if (current > 0) {
+          if (current < 0) {
             // Battery is discharging - calculate time until empty (fallback when Signal K doesn't provide timeRemaining)
             const remainingCapacity = capacity * (currentSoc / 100);
-            const timeToGoHours = remainingCapacity / current;
+            const timeToGoHours = remainingCapacity / Math.abs(current);
             timeToGoSeconds = Math.round(timeToGoHours * 3600);
           } else {
             // Battery is charging - calculate time to 100% SoC
             // Use configured battery capacity if available, otherwise use Signal K capacity
             const totalCapacity = this.settings.batteryCapacity || capacity;
             const remainingCapacityToFull = totalCapacity * ((100 - currentSoc) / 100);
-            const chargeTimeHours = remainingCapacityToFull / Math.abs(current);
+            const chargeTimeHours = remainingCapacityToFull / current;
             timeToGoSeconds = Math.round(chargeTimeHours * 3600);
           }
         } else {
