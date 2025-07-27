@@ -379,11 +379,15 @@ export default function(app) {
                 return;
               }
               
-              app.debug(`Update ${updateIndex} has ${update.values.length} values, source: ${update.source?.label || 'unknown'}`);
+              // Debug log showing both source formats
+              const sourceLabel = update.source?.label || update.$source || 'unknown';
+              app.debug(`Update ${updateIndex} has ${update.values.length} values, source: ${sourceLabel}`);
+              app.debug(`Raw source debug - update.source:`, update.source, 'update.$source:', update.$source);
               
               // Skip updates from Venus OS sources to prevent feedback loops
-              if (update.source && update.source.label && update.source.label.includes('venus.com.victronenergy')) {
-                app.debug(`Skipping update from Venus OS source: ${update.source.label}`);
+              // Check both update.source.label and update.$source for Venus OS sources
+              if (sourceLabel.includes('venus.com.victronenergy')) {
+                app.debug(`Skipping update from Venus OS source: ${sourceLabel}`);
                 return;
               }
               update.values.forEach(async (pathValue, valueIndex) => {
