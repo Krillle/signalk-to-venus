@@ -546,9 +546,6 @@ export default function(app) {
         // Always do discovery
         addDiscoveredPath(deviceType, path, value, config);
         
-        // Debug logging for device creation flow
-        app.debug(`Processing ${deviceType} path: ${path}, Venus reachable: ${venusReachable}, Enabled: ${isPathEnabled(deviceType, path, config)}`);
-        
         // Only proceed with Venus OS operations if Venus is reachable and path is enabled
         if (venusReachable !== true) {
           // Venus OS not reachable, add to queue for later processing
@@ -566,7 +563,6 @@ export default function(app) {
         
         // Check if this specific path is enabled
         if (!isPathEnabled(deviceType, path, config)) {
-          app.debug(`Skipping ${path} - not enabled in configuration`);
           return; // Skip disabled paths
         }
         
@@ -648,7 +644,6 @@ export default function(app) {
         
         // Update the Venus client with the new data (whether client is new or existing)
         if (plugin.clients[deviceType] && plugin.clients[deviceType] !== null) {
-          app.debug(`Updating Venus client ${deviceType} with path: ${path}`);
           try {
             await plugin.clients[deviceType].handleSignalKUpdate(path, value);
           } catch (err) {
