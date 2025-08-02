@@ -344,6 +344,49 @@ export default function(app) {
             
             app.debug(`Subscription setup completed, unsubscribe functions: ${unsubscribes.length}`);
             
+            // After subscription is set up, get current values for all paths
+            // This ensures we discover devices that aren't actively changing
+            setTimeout(() => {
+              try {
+                app.debug('Fetching initial Signal K values for device discovery');
+                
+                // Get all current vessel data
+                const vesselData = app.getSelfPath('');
+                if (vesselData && typeof vesselData === 'object') {
+                  
+                  // Recursively process all paths in the vessel data
+                  function processVesselData(obj, currentPath = '') {
+                    if (!obj || typeof obj !== 'object') return;
+                    
+                    Object.keys(obj).forEach(key => {
+                      const fullPath = currentPath ? `${currentPath}.${key}` : key;
+                      const value = obj[key];
+                      
+                      if (value && typeof value === 'object') {
+                        // Check if this looks like a Signal K value object
+                        if (value.value !== undefined) {
+                          // This is a Signal K value - process it
+                          const deviceType = identifyDeviceType(fullPath);
+                          if (deviceType) {
+                            app.debug(`Found initial value: ${fullPath} = ${value.value}`);
+                            processPathValue(fullPath, value.value, config);
+                          }
+                        } else {
+                          // Recurse deeper into the object
+                          processVesselData(value, fullPath);
+                        }
+                      }
+                    });
+                  }
+                  
+                  processVesselData(vesselData);
+                  app.debug('Initial Signal K value processing completed');
+                }
+              } catch (err) {
+                app.debug('Error fetching initial Signal K values:', err.message);
+              }
+            }, 3000); // Wait 3 seconds for subscription to stabilize
+            
             // Store unsubscribe functions for cleanup
             plugin.unsubscribe = () => {
               app.debug(`Unsubscribing from ${unsubscribes.length} subscriptions`);
@@ -528,6 +571,11 @@ export default function(app) {
           return;
         }
         
+        // Debug: log the device type identification
+        if (path.includes('propulsion')) {
+          app.debug(`Processing path: ${path}, identified as deviceType: ${deviceType}`);
+        }
+        
         // Always do discovery
         addDiscoveredPath(deviceType, path, value, config);
         
@@ -548,12 +596,23 @@ export default function(app) {
         // Check if this specific path is enabled
         const isEnabled = isPathEnabled(deviceType, path, config);
         
+        // Debug logging for environment paths
+        if (deviceType === 'environment') {
+          app.debug(`Environment path ${path}: enabled=${isEnabled}, venusConnected=${plugin.venusConnected}`);
+        }
+        
+        // Debug: also log for propulsion paths regardless of device type
+        if (path.includes('propulsion')) {
+          app.debug(`Propulsion path ${path}: deviceType=${deviceType}, enabled=${isEnabled}, venusConnected=${plugin.venusConnected}`);
+        }
+        
         if (!isEnabled) {
           return; // Skip disabled paths
         }
         
         // Create Venus client for this device type if it doesn't exist yet or has failed
         if (!plugin.clients[deviceType] || plugin.clients[deviceType] === null) {
+          app.debug(`Creating new ${deviceType} client for path: ${path}`);
           app.setPluginStatus(`Creating Venus OS service for ${deviceTypeNames[deviceType]}`);
           
           try {
@@ -562,6 +621,8 @@ export default function(app) {
             
             const deviceCountText = generateEnabledDeviceCountText(config);
             app.setPluginStatus(`Connected to ${config.venusHost}, injecting ${deviceCountText}`);
+            
+            app.debug(`Successfully created ${deviceType} client, proceeding with device creation`);
             
             // After creating a new client, force immediate updates with ALL current data
             // for this device type to ensure the device appears in VRM with valid data
@@ -619,7 +680,9 @@ export default function(app) {
         // Update the Venus client with the new data (whether client is new or existing)
         if (plugin.clients[deviceType] && plugin.clients[deviceType] !== null) {
           try {
+            app.debug(`Sending data to ${deviceType} client: ${path} = ${value}`);
             await plugin.clients[deviceType].handleSignalKUpdate(path, value);
+            app.debug(`Successfully sent data to ${deviceType} client for ${path}`);
           } catch (err) {
             // Handle client update errors
             if (err.message && (err.message.includes('ENOTFOUND') || err.message.includes('ECONNREFUSED'))) {
@@ -631,6 +694,8 @@ export default function(app) {
               app.error(`Error updating ${deviceType} client for ${path}: ${err.message}`);
             }
           }
+        } else {
+          app.debug(`No valid ${deviceType} client available for ${path}`);
         }
       }
 
@@ -667,10 +732,27 @@ export default function(app) {
 
   // Helper function to identify device type from Signal K path
   function identifyDeviceType(path) {
+    // Debug logging for propulsion paths
+    if (path.includes('propulsion')) {
+      app.debug(`identifyDeviceType for ${path}:`);
+      app.debug(`  temperatureRegex test: ${settings.temperatureRegex.test(path)}`);
+      app.debug(`  humidityRegex test: ${settings.humidityRegex.test(path)}`);
+      app.debug(`  temperatureRegex pattern: ${settings.temperatureRegex}`);
+    }
+    
     if (settings.batteryRegex.test(path)) return 'batteries';
     if (settings.tankRegex.test(path)) return 'tanks';
-    if (settings.temperatureRegex.test(path) || settings.humidityRegex.test(path)) return 'environment';
+    if (settings.temperatureRegex.test(path) || settings.humidityRegex.test(path)) {
+      if (path.includes('propulsion')) {
+        app.debug(`identifyDeviceType returning 'environment' for ${path}`);
+      }
+      return 'environment';
+    }
     if (settings.switchRegex.test(path) || settings.dimmerRegex.test(path)) return 'switches';
+    
+    if (path.includes('propulsion')) {
+      app.debug(`identifyDeviceType returning null for ${path}`);
+    }
     return null;
   }
 
