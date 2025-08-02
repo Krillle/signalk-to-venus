@@ -400,11 +400,6 @@ export default function(app) {
                   if (!deviceType) {
                     return;
                   }
-                  
-                  // Debug logging for environment devices to track propulsion.port.temperature issue
-                  if (deviceType === 'environment' && pathValue.path.includes('propulsion')) {
-                    app.debug(`Processing propulsion environment path: ${pathValue.path} = ${pathValue.value}`);
-                  }
                 
                   // Process this path value using the unified processing function
                   await processPathValue(pathValue.path, pathValue.value, config);
@@ -800,11 +795,6 @@ export default function(app) {
         }
         
         app.debug(`Discovered new ${deviceType} device: ${displayName} (${devicePath})`);
-        
-        // Extra debug for propulsion temperature issues
-        if (deviceType === 'environment' && devicePath.includes('propulsion')) {
-          app.debug(`Discovered propulsion environment device: ${displayName} with path ${devicePath}`);
-        }
       } else {
         // Update last seen value and add this property to the set
         const deviceInfo = pathMap.get(devicePath);
@@ -967,7 +957,14 @@ export default function(app) {
     // Check if this specific device is enabled in the new configuration structure
     if (config[deviceType]) {
       const safePathKey = devicePath.replace(/[^a-zA-Z0-9]/g, '_');
-      return config[deviceType][safePathKey] === true;
+      const isEnabled = config[deviceType][safePathKey] === true;
+      
+      // Debug: log all propulsion path processing
+      if (fullPath.includes('propulsion')) {
+        app.debug(`Path check: ${fullPath} -> device:${devicePath} -> key:${safePathKey} -> enabled:${isEnabled}`);
+      }
+      
+      return isEnabled;
     }
 
     // Default to disabled for newly discovered devices
