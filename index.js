@@ -344,49 +344,6 @@ export default function(app) {
             
             app.debug(`Subscription setup completed, unsubscribe functions: ${unsubscribes.length}`);
             
-            // After subscription is set up, get current values for all paths
-            // This ensures we discover devices that aren't actively changing
-            setTimeout(() => {
-              try {
-                app.debug('Fetching initial Signal K values for device discovery');
-                
-                // Get all current vessel data
-                const vesselData = app.getSelfPath('');
-                if (vesselData && typeof vesselData === 'object') {
-                  
-                  // Recursively process all paths in the vessel data
-                  function processVesselData(obj, currentPath = '') {
-                    if (!obj || typeof obj !== 'object') return;
-                    
-                    Object.keys(obj).forEach(key => {
-                      const fullPath = currentPath ? `${currentPath}.${key}` : key;
-                      const value = obj[key];
-                      
-                      if (value && typeof value === 'object') {
-                        // Check if this looks like a Signal K value object
-                        if (value.value !== undefined) {
-                          // This is a Signal K value - process it
-                          const deviceType = identifyDeviceType(fullPath);
-                          if (deviceType) {
-                            app.debug(`Found initial value: ${fullPath} = ${value.value}`);
-                            processPathValue(fullPath, value.value, config);
-                          }
-                        } else {
-                          // Recurse deeper into the object
-                          processVesselData(value, fullPath);
-                        }
-                      }
-                    });
-                  }
-                  
-                  processVesselData(vesselData);
-                  app.debug('Initial Signal K value processing completed');
-                }
-              } catch (err) {
-                app.debug('Error fetching initial Signal K values:', err.message);
-              }
-            }, 3000); // Wait 3 seconds for subscription to stabilize
-            
             // Store unsubscribe functions for cleanup
             plugin.unsubscribe = () => {
               app.debug(`Unsubscribing from ${unsubscribes.length} subscriptions`);
@@ -441,6 +398,10 @@ export default function(app) {
                   // Check if this is a device type we care about
                   const deviceType = identifyDeviceType(pathValue.path);
                   if (!deviceType) {
+                    // Log propulsion paths even if they don't match our device types
+                    if (pathValue.path.includes('propulsion')) {
+                      app.debug(`Propulsion delta (no device type): ${pathValue.path} = ${pathValue.value}`);
+                    }
                     return;
                   }
                 
@@ -525,8 +486,14 @@ export default function(app) {
         const pathsToProcess = [...pendingPaths];
         pendingPaths.length = 0; // Clear the queue
         
+        app.debug(`Processing ${pathsToProcess.length} queued paths`);
+        
         for (const queuedPath of pathsToProcess) {
           try {
+            // Add debug for propulsion paths in queue processing
+            if (queuedPath.path.includes('propulsion')) {
+              app.debug(`Processing queued propulsion path: ${queuedPath.path} = ${queuedPath.value}`);
+            }
             await processPathValue(queuedPath.path, queuedPath.value, config);
           } catch (err) {
             app.error(`Error processing queued path ${queuedPath.path}:`, err);
@@ -579,6 +546,11 @@ export default function(app) {
         // Always do discovery
         addDiscoveredPath(deviceType, path, value, config);
         
+        // Debug: log after discovery for propulsion paths
+        if (path.includes('propulsion')) {
+          app.debug(`After discovery for ${path}: venusConnected=${plugin.venusConnected}`);
+        }
+        
         // Only proceed with Venus OS operations if Venus is reachable and path is enabled
         if (!plugin.venusConnected) {
           // Venus OS not reachable, add to queue for later processing
@@ -589,6 +561,11 @@ export default function(app) {
           } else {
             // Add new path to queue
             pendingPaths.push({ path, value, timestamp: Date.now() });
+          }
+          
+          // Debug for propulsion paths being queued
+          if (path.includes('propulsion')) {
+            app.debug(`Queued propulsion path: ${path} (Venus not connected)`);
           }
           return;
         }
@@ -607,6 +584,10 @@ export default function(app) {
         }
         
         if (!isEnabled) {
+          // Debug when propulsion paths are skipped due to being disabled
+          if (path.includes('propulsion')) {
+            app.debug(`Skipping propulsion path ${path}: not enabled in config`);
+          }
           return; // Skip disabled paths
         }
         
@@ -1044,6 +1025,7 @@ export default function(app) {
       // Debug: log all propulsion path processing
       if (fullPath.includes('propulsion')) {
         app.debug(`Path check: ${fullPath} -> device:${devicePath} -> key:${safePathKey} -> enabled:${isEnabled}`);
+        app.debug(`Config for ${deviceType}:`, JSON.stringify(config[deviceType], null, 2));
       }
       
       return isEnabled;
