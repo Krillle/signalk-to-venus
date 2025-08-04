@@ -334,6 +334,10 @@ MIT © Christian Wegerhoff
 
 ## Change Log
 
+### v1.0.17 (2025/08/04 14:30)
+- Improved environment sensor display naming
+- Simplified 20-second startup delay for system readiness (Still at first start devices might be missing. Restart plugin.)
+
 ### v1.0.16 (2025/07/27 22:30)
 - Enhanced Time to Go (TTG) calculation: Implemented intelligent battery time-to-go calculation with Signal K `electrical.batteries.X.capacity.timeRemaining` priority
 - Implemented Time To Charge: Calculates time-to-full (100% SoC) during charging scenarios with positive current and sends to Venus as /TimeToGo. (Set your total battery capacity in Amp-hours in plugin settings.) 
@@ -355,7 +359,7 @@ First working version
 If you're using the signalk-venus plugin, virtual devices from Venus OS will loop back into Signal K. This can cause duplicate data. An update to signalk-venus is in progress to resolve this. (See Installation, Step X)
 
 - **Virtual devices missing after startup**  
-There is a remaining race condition that has not yet been fully identified. Although the plugin waits 15 seconds to allow the Signal K data tree to populate and Venus OS to initialize, not all virtual devices are always recognized by Venus OS on startup. A manual toggle (disabling and re-enabling the plugin) resolves the issue and all devices appear as expected.
+There is a remaining race condition that has not yet been fully identified. Although the plugin waits 20 seconds to allow the Signal K data tree to populate and Venus OS to initialize, not all virtual devices are always recognized by Venus OS on startup. A manual toggle (disabling and re-enabling the plugin) resolves the issue and all devices appear as expected.
 
 - **Switches in Venus OS beta**  
 Switches are not tested yet (and probably not working), as Venus OS does not yet support switches

@@ -104,7 +104,7 @@ export default function(app) {
 
     start: function(options) {
       app.setPluginStatus('Waiting 20 seconds for system readiness');
-      app.debug('Starting Signal K to Venus OS bridge - waiting 20 seconds for system readiness');
+      app.debug('Signal K to Venus OS bridge waiting 20 seconds for system readiness');
       
       // Simple 20-second delay to ensure Signal K and Venus OS are fully ready
       setTimeout(() => {
