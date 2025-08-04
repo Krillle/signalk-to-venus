@@ -109,7 +109,7 @@ export default function(app) {
       // Simple 20-second delay to ensure Signal K and Venus OS are fully ready
       setTimeout(() => {
         plugin.actualStart(options);
-      }, 20000);
+      }, 1);
     },
 
     actualStart: function(options) {
