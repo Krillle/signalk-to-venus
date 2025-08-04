@@ -493,20 +493,14 @@ export class VenusClient extends EventEmitter {
   _getEnvironmentName(path) {
     const parts = path.split('.');
     if (parts.length >= 3) {
-      const environmentType = parts[1]; // e.g., 'water', 'air', 'inside'
-      const sensorType = parts[2]; // e.g., 'temperature', 'humidity'
+      const environmentType = parts[1]; // e.g., 'water', 'air', 'inside', 'outside'
       
       // Remove camel case and capitalize first letter
       let sensor = environmentType.replace(/([A-Z])/g, ' $1').trim();
       sensor = sensor.charAt(0).toUpperCase() + sensor.slice(1).toLowerCase();
       
-      if (sensorType === 'temperature') {
-        return `${sensor} Temperature`;
-      } else if (sensorType === 'humidity' || sensorType === 'relativeHumidity') {
-        return `${sensor} Humidity`;
-      } else {
-        return `${sensor} ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)}`;
-      }
+      // Return just the location name - Venus OS will show the measurement types separately
+      return sensor;
     }
     return 'Environment sensor';
   }

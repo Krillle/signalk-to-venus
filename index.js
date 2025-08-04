@@ -901,16 +901,16 @@ export default function(app) {
         break;
         
       case 'environment':
-        // environment.water -> Water sensor
-        // propulsion.main -> Main sensor  
-        // environment.outside -> Outside sensor
+        // environment.water -> Water
+        // propulsion.main -> Main  
+        // environment.outside -> Outside
         const envMatch = devicePath.match(/environment\.([^.]+)|propulsion\.([^.]+)/);
         if (envMatch) {
           let sensor = envMatch[1] || envMatch[2];
           // Remove camel case and capitalize first letter
           sensor = sensor.replace(/([A-Z])/g, ' $1').trim();
           sensor = sensor.charAt(0).toUpperCase() + sensor.slice(1).toLowerCase();
-          return `${sensor} sensor`;
+          return sensor;
         }
         break;
         
