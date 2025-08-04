@@ -1341,14 +1341,9 @@ export class VenusClient extends EventEmitter {
       
       // Check if we have actual voltage tracking happening (not just initial values)
       // We consider voltage data "real" if:
-      // 1. We have actual min/max voltage values (not null)
-      // 2. We have some energy or current data (indicating real battery activity)
-      // 3. Or min/max have diverged from each other (indicating real voltage changes)
-      const hasRealVoltageData = (minVoltage !== null && maxVoltage !== null) &&
-                                ((history.dischargedEnergy > 0) || 
-                                (history.chargedEnergy > 0) || 
-                                (history.totalAhDrawn > 0.001) ||
-                                (Math.abs(minVoltage - maxVoltage) > 0.1)); // 0.1V difference indicates real data
+      // 1. We have actual min/max voltage values (not null) - this means real voltage data was received
+      // 2. AND the values are in reasonable battery voltage range (5V-50V)
+      const hasRealVoltageData = (minVoltage !== null && maxVoltage !== null);
       
       // Only set voltage history if we have real voltage data and values are reasonable
       if (hasRealVoltageData) {
