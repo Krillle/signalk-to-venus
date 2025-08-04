@@ -165,8 +165,10 @@ export class VenusClient extends EventEmitter {
     
     const now = Date.now();
     
-    // Validate initial voltage
-    const validInitialVoltage = (typeof initialVoltage === 'number' && !isNaN(initialVoltage)) ? initialVoltage : 12.0;
+    // Only use initial voltage if it's a real measured value
+    // Don't initialize min/max with fallback values
+    const hasRealInitialVoltage = (typeof initialVoltage === 'number' && !isNaN(initialVoltage) && initialVoltage !== 12.0);
+    const validInitialVoltage = hasRealInitialVoltage ? initialVoltage : 12.0; // 12.0 only for accumulator
     
     // Check if we have existing history data for this device (may have been loaded from disk)
     if (!this.historyData.has(devicePath)) {
@@ -198,12 +200,15 @@ export class VenusClient extends EventEmitter {
       if (isNaN(existing.chargedEnergy)) existing.chargedEnergy = 0;
       if (isNaN(existing.totalAhDrawn)) existing.totalAhDrawn = 0;
       
-      // Update min/max voltage with valid initial voltage
-      if (validInitialVoltage < existing.minimumVoltage || existing.minimumVoltage === null) {
-        existing.minimumVoltage = validInitialVoltage;
-      }
-      if (validInitialVoltage > existing.maximumVoltage || existing.maximumVoltage === null) {
-        existing.maximumVoltage = validInitialVoltage;
+      // Update min/max voltage with valid initial voltage ONLY if it's a real voltage value
+      // Don't initialize with fallback values (12.0) - only use actual measured voltages
+      if (hasRealInitialVoltage) {
+        if (initialVoltage < existing.minimumVoltage || existing.minimumVoltage === null) {
+          existing.minimumVoltage = initialVoltage;
+        }
+        if (initialVoltage > existing.maximumVoltage || existing.maximumVoltage === null) {
+          existing.maximumVoltage = initialVoltage;
+        }
       }
       
       this.logger.debug(`Restored existing history tracking for ${devicePath}`);
@@ -220,7 +225,8 @@ export class VenusClient extends EventEmitter {
     
     if (!this.historyData.has(devicePath)) {
       // Initialize synchronously with basic values if not loaded yet
-      const validInitialVoltage = (typeof voltage === 'number' && !isNaN(voltage)) ? voltage : 12.0;
+      // Don't use fallback voltage - only use real voltage values
+      const validInitialVoltage = (typeof voltage === 'number' && !isNaN(voltage)) ? voltage : null;
       
       this.historyData.set(devicePath, {
         minimumVoltage: null, // Will be set to first real voltage value
@@ -234,14 +240,16 @@ export class VenusClient extends EventEmitter {
       
       this.energyAccumulators.set(devicePath, {
         lastCurrent: 0,
-        lastVoltage: validInitialVoltage,
+        lastVoltage: validInitialVoltage || 12.0, // Only for accumulator calculation, not for min/max
         lastTimestamp: Date.now()
       });
       
-      // Trigger async loading in background (non-blocking)
-      this.initializeHistoryTracking(devicePath, validInitialVoltage).catch(err => {
-        this.logger.error(`Failed to load history data for ${devicePath}: ${err.message}`);
-      });
+      // Trigger async loading in background (non-blocking) - only pass real voltage
+      if (validInitialVoltage !== null) {
+        this.initializeHistoryTracking(devicePath, validInitialVoltage).catch(err => {
+          this.logger.error(`Failed to load history data for ${devicePath}: ${err.message}`);
+        });
+      }
     }
     
     const history = this.historyData.get(devicePath);

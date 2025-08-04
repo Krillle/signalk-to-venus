@@ -10,10 +10,13 @@ export const DEVICE_CONFIGS = {
     productName: 'SignalK Virtual Tank',
     serviceDescription: 'SignalK Virtual Tank Service',
     additionalProperties: {
-      // NOTE: No default values for tank data properties - they will only be set when real Signal K data arrives
-      // This prevents fake data from polluting Venus OS history
+      // Tank specific properties
       "/Status": { type: "i", value: 0, text: "Tank status" },
       "/FluidType": { type: "i", value: 0, text: "Fluid Type" },
+      "/Level": { type: "d", value: 0.0, text: "Tank level" },
+      "/Volume": { type: "d", value: 0.0, text: "Tank volume" },
+      "/Capacity": { type: "d", value: 0.0, text: "Tank capacity" },
+      "/Remaining": { type: "d", value: 0.0, text: "Tank remaining" },
     },
     pathMappings: {
       '/Level': 'Tank level',
@@ -28,7 +31,6 @@ export const DEVICE_CONFIGS = {
       '/RawValueFull': 'Tank raw value'
     },
     pathTypes: {
-      '/Serial': 's',
       '/Level': 'd',
       '/Capacity': 'd',
       '/FluidType': 'i',
@@ -61,11 +63,22 @@ export const DEVICE_CONFIGS = {
     productName: 'SignalK Virtual Battery Monitor',
     serviceDescription: 'SignalK Virtual Battery Monitor Service',
     additionalProperties: {
-      // NOTE: No default values for battery data properties - they will only be set when real Signal K data arrives
-      // This prevents fake data from polluting Venus OS history
+      // Battery specific properties
+      "/Dc/0/Voltage": { type: "d", value: 24.0, text: "Battery voltage" },
+      "/Dc/0/Current": { type: "d", value: 0.0, text: "Battery current" },
+      "/Dc/0/Power": { type: "d", value: 0.0, text: "Battery power" },
+      "/Dc/0/Temperature": { type: "d", value: 20.0, text: "Battery temperature" },
+      "/Dc/0/MidVoltage": { type: "d", value: 24.0, text: "Mid voltage" },
+      "/Dc/0/MidVoltageDeviation": { type: "d", value: 0.0, text: "Mid voltage deviation" },
+      "/Soc": { type: "d", value: 50.0, text: "State of charge" },
+      "/TimeToGo": { type: "i", value: 28800, text: "Time to go" },
+      "/ConsumedAmphours": { type: "d", value: 400.0, text: "Consumed Ah" },
+      "/Capacity": { type: "d", value: 800.0, text: "Battery capacity" },
       "/System/HasBatteryMonitor": { type: "i", value: 1, text: "Has battery monitor" },
       "/System/BatteryService": { type: "i", value: 1, text: "Battery service" },
       "/System/NrOfBatteries": { type: "i", value: 1, text: "Number of batteries" },
+      "/System/MinCellVoltage": { type: "d", value: 24.0, text: "Minimum cell voltage" },
+      "/System/MaxCellVoltage": { type: "d", value: 28.8, text: "Maximum cell voltage" },
       "/Relay/0/State": { type: "i", value: 0, text: "Relay state" },
       "/State": { type: "i", value: 0, text: "Battery state" },
       "/ErrorCode": { type: "i", value: 0, text: "Error code" },
@@ -81,17 +94,15 @@ export const DEVICE_CONFIGS = {
       "/Info/MaxChargeCurrent": { type: "i", value: 100, text: "Max charge current" },
       "/Info/MaxDischargeCurrent": { type: "i", value: 100, text: "Max discharge current" },
       "/Info/MaxChargeVoltage": { type: "d", value: 14.4, text: "Max charge voltage" },
+      "/History/DischargedEnergy": { type: "d", value: 0.0, text: "Discharged energy" },
+      "/History/ChargedEnergy": { type: "d", value: 0.0, text: "Charged energy" },
+      "/History/TotalAhDrawn": { type: "d", value: 0.0, text: "Total Ah drawn" },
+      "/History/MinimumVoltage": { type: "d", value: 24.0, text: "Minimum voltage" },
+      "/History/MaximumVoltage": { type: "d", value: 28.8, text: "Maximum voltage" },
       "/Balancer": { type: "i", value: 0, text: "Balancer active" },
       "/Io/AllowToCharge": { type: "i", value: 1, text: "Allow to charge" },
       "/Io/AllowToDischarge": { type: "i", value: 1, text: "Allow to discharge" },
       "/Io/ExternalRelay": { type: "i", value: 0, text: "External relay" },
-      
-      // History properties for VRM consumption calculations - will be set when real data is available
-      "/History/DischargedEnergy": { type: "d", value: 0, text: "Discharged energy" },
-      "/History/ChargedEnergy": { type: "d", value: 0, text: "Charged energy" },
-      "/History/TotalAhDrawn": { type: "d", value: 0, text: "Total Ah drawn" }
-      // Note: MinimumVoltage and MaximumVoltage are not initialized here
-      // They will only be set when real voltage data is available
     },
     pathMappings: {
       '/Dc/0/Voltage': 'Battery voltage',
@@ -135,7 +146,6 @@ export const DEVICE_CONFIGS = {
       '/Io/ExternalRelay': 'External relay'
     },
     pathTypes: {
-      '/Serial': 's',
       '/Dc/0/Voltage': 'd',
       '/Dc/0/Current': 'd',
       '/Dc/0/Power': 'd',
@@ -199,7 +209,6 @@ export const DEVICE_CONFIGS = {
       '/DimmingLevel': 'Dimming level'
     },
     pathTypes: {
-      '/Serial': 's',
       '/Relay/0/State': 'i',
       '/Switches/0/State': 'i',
       '/Switches/0/Position': 'i',
@@ -214,8 +223,9 @@ export const DEVICE_CONFIGS = {
     productName: 'SignalK Virtual Environment Sensor',
     serviceDescription: 'SignalK Virtual Environment Service',
     additionalProperties: {
-      // NOTE: No default values for environment data properties - they will only be set when real Signal K data arrives
-      // This prevents fake data from polluting Venus OS history
+      // Environment specific properties
+      "/Temperature": { type: "d", value: 0.0, text: "Temperature" },
+      "/Humidity": { type: "d", value: 0.0, text: "Humidity" },
       "/Status": { type: "i", value: 0, text: "Status" },
     },
     pathMappings: {
@@ -224,7 +234,6 @@ export const DEVICE_CONFIGS = {
       '/Status': 'Status'
     },
     pathTypes: {
-      '/Serial': 's',
       '/Temperature': 'd',
       '/Humidity': 'd',
       '/Status': 'i'
