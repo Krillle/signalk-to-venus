@@ -126,8 +126,8 @@ export class VenusClient extends EventEmitter {
       const hasRealData = (value.dischargedEnergy > 0) || 
                          (value.chargedEnergy > 0) || 
                          (value.totalAhDrawn > 0.001) ||
-                         (value.minVoltage !== null && value.minVoltage > 5.0 && value.minVoltage < 50.0) ||
-                         (value.maxVoltage !== null && value.maxVoltage > 5.0 && value.maxVoltage < 50.0);
+                         (value.minimumVoltage !== null && value.minimumVoltage > 5.0 && value.minimumVoltage < 50.0) ||
+                         (value.maximumVoltage !== null && value.maximumVoltage > 5.0 && value.maximumVoltage < 50.0);
       
       if (!hasRealData) {
         keysToRemove.push(key);
@@ -171,8 +171,8 @@ export class VenusClient extends EventEmitter {
     // Check if we have existing history data for this device (may have been loaded from disk)
     if (!this.historyData.has(devicePath)) {
       this.historyData.set(devicePath, {
-        minVoltage: null, // Will be set to first real voltage value
-        maxVoltage: null, // Will be set to first real voltage value
+        minimumVoltage: null, // Will be set to first real voltage value
+        maximumVoltage: null, // Will be set to first real voltage value
         dischargedEnergy: 0, // kWh
         chargedEnergy: 0,    // kWh
         totalAhDrawn: 0      // Ah
@@ -192,18 +192,18 @@ export class VenusClient extends EventEmitter {
       const existing = this.historyData.get(devicePath);
       
       // Validate and fix any NaN values in existing data
-      if (isNaN(existing.minVoltage)) existing.minVoltage = null;
-      if (isNaN(existing.maxVoltage)) existing.maxVoltage = null;
+      if (isNaN(existing.minimumVoltage)) existing.minimumVoltage = null;
+      if (isNaN(existing.maximumVoltage)) existing.maximumVoltage = null;
       if (isNaN(existing.dischargedEnergy)) existing.dischargedEnergy = 0;
       if (isNaN(existing.chargedEnergy)) existing.chargedEnergy = 0;
       if (isNaN(existing.totalAhDrawn)) existing.totalAhDrawn = 0;
       
       // Update min/max voltage with valid initial voltage
-      if (validInitialVoltage < existing.minVoltage || existing.minVoltage === null) {
-        existing.minVoltage = validInitialVoltage;
+      if (validInitialVoltage < existing.minimumVoltage || existing.minimumVoltage === null) {
+        existing.minimumVoltage = validInitialVoltage;
       }
-      if (validInitialVoltage > existing.maxVoltage || existing.maxVoltage === null) {
-        existing.maxVoltage = validInitialVoltage;
+      if (validInitialVoltage > existing.maximumVoltage || existing.maximumVoltage === null) {
+        existing.maximumVoltage = validInitialVoltage;
       }
       
       this.logger.debug(`Restored existing history tracking for ${devicePath}`);
@@ -223,8 +223,8 @@ export class VenusClient extends EventEmitter {
       const validInitialVoltage = (typeof voltage === 'number' && !isNaN(voltage)) ? voltage : 12.0;
       
       this.historyData.set(devicePath, {
-        minVoltage: null, // Will be set to first real voltage value
-        maxVoltage: null, // Will be set to first real voltage value
+        minimumVoltage: null, // Will be set to first real voltage value
+        maximumVoltage: null, // Will be set to first real voltage value
         dischargedEnergy: 0, // kWh
         chargedEnergy: 0,    // kWh
         totalAhDrawn: 0      // Ah
@@ -263,11 +263,11 @@ export class VenusClient extends EventEmitter {
     
     // Update min/max voltage only with valid values
     if (validVoltage !== null) {
-      if (history.minVoltage === null || validVoltage < history.minVoltage) {
-        history.minVoltage = validVoltage;
+      if (history.minimumVoltage === null || validVoltage < history.minimumVoltage) {
+        history.minimumVoltage = validVoltage;
       }
-      if (history.maxVoltage === null || validVoltage > history.maxVoltage) {
-        history.maxVoltage = validVoltage;
+      if (history.maximumVoltage === null || validVoltage > history.maximumVoltage) {
+        history.maximumVoltage = validVoltage;
       }
     }
     
@@ -329,7 +329,7 @@ export class VenusClient extends EventEmitter {
     if (isNaN(history.dischargedEnergy)) history.dischargedEnergy = 0;
     if (isNaN(history.chargedEnergy)) history.chargedEnergy = 0;
     if (isNaN(history.totalAhDrawn)) history.totalAhDrawn = 0;
-    // Note: minVoltage and maxVoltage can be null until first real voltage is received
+    // Note: minimumVoltage and maximumVoltage can be null until first real voltage is received
     
     this.lastUpdateTime.set(devicePath, now);
     return history;
@@ -1336,25 +1336,25 @@ export class VenusClient extends EventEmitter {
       
       // Only update voltage history if we have meaningful values
       // Skip initial default values that haven't been updated with real data
-      const minVoltage = history.minVoltage;
-      const maxVoltage = history.maxVoltage;
+      const minimumVoltage = history.minimumVoltage;
+      const maximumVoltage = history.maximumVoltage;
       
       // Check if we have actual voltage tracking happening (not just initial values)
       // We consider voltage data "real" if:
       // 1. We have actual min/max voltage values (not null) - this means real voltage data was received
       // 2. AND the values are in reasonable battery voltage range (5V-50V)
-      const hasRealVoltageData = (minVoltage !== null && maxVoltage !== null);
+      const hasRealVoltageData = (minimumVoltage !== null && maximumVoltage !== null);
       
       // Only set voltage history if we have real voltage data and values are reasonable
       if (hasRealVoltageData) {
-        if (minVoltage > 5.0 && minVoltage < 50.0) {
+        if (minimumVoltage > 5.0 && minimumVoltage < 50.0) {
           await deviceService.updateProperty('/History/MinimumVoltage', 
-            minVoltage, 'd', 'Minimum voltage');
+            minimumVoltage, 'd', 'Minimum voltage');
         }
         
-        if (maxVoltage > 5.0 && maxVoltage < 50.0) {
+        if (maximumVoltage > 5.0 && maximumVoltage < 50.0) {
           await deviceService.updateProperty('/History/MaximumVoltage', 
-            maxVoltage, 'd', 'Maximum voltage');
+            maximumVoltage, 'd', 'Maximum voltage');
         }
       }
         
