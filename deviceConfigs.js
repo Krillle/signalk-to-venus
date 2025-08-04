@@ -86,10 +86,12 @@ export const DEVICE_CONFIGS = {
       "/Io/AllowToDischarge": { type: "i", value: 1, text: "Allow to discharge" },
       "/Io/ExternalRelay": { type: "i", value: 0, text: "External relay" },
       
-      // NOTE: These properties no longer have fake default values to prevent false data:
-      // "/History/DischargedEnergy", "/History/ChargedEnergy", "/History/TotalAhDrawn",
-      // "/History/MinimumVoltage", "/History/MaximumVoltage"
-      // They will only be set when real Signal K data is available
+      // History properties for VRM consumption calculations - initialized to 0
+      "/History/DischargedEnergy": { type: "d", value: 0, text: "Discharged energy" },
+      "/History/ChargedEnergy": { type: "d", value: 0, text: "Charged energy" },
+      "/History/TotalAhDrawn": { type: "d", value: 0, text: "Total Ah drawn" },
+      "/History/MinimumVoltage": { type: "d", value: 0, text: "Minimum voltage" },
+      "/History/MaximumVoltage": { type: "d", value: 0, text: "Maximum voltage" }
     },
     pathMappings: {
       '/Dc/0/Voltage': 'Battery voltage',

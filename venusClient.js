@@ -1,5 +1,6 @@
 import { VEDBusService } from './vedbus.js';
 import { DEVICE_CONFIGS } from './deviceConfigs.js';
+import { HistoryPersistence } from './historyPersistence.js';
 import EventEmitter from 'events';
 
 /**
@@ -42,11 +43,157 @@ export class VenusClient extends EventEmitter {
     // Throttle mechanism for reducing noisy "Processing data update" logs
     this._lastDataUpdateLog = new Map(); // Map of deviceInstance.basePath -> last log timestamp
     this._dataUpdateLogInterval = 10000; // Log every 10 seconds per device
+    
+    // History tracking for VRM consumption calculations
+    this.historyData = new Map(); // Map of devicePath -> history tracking object
+    this.lastUpdateTime = new Map(); // Map of devicePath -> last update timestamp
+    this.energyAccumulators = new Map(); // Map of devicePath -> energy accumulation data
+    
+    // History persistence
+    this.historyPersistence = new HistoryPersistence('./signalk-battery-history.json', this.logger);
+    this._historyLoaded = false;
   }
 
   // Set Signal K app reference for getting current values
   setSignalKApp(app) {
     this.signalKApp = app;
+  }
+
+  // Load history data from persistent storage
+  async loadHistoryData() {
+    if (this._historyLoaded) {
+      return; // Already loaded
+    }
+    
+    try {
+      const loaded = await this.historyPersistence.loadHistoryData();
+      this.historyData = loaded.historyData;
+      this.lastUpdateTime = loaded.lastUpdateTime;
+      this.energyAccumulators = loaded.energyAccumulators;
+      
+      this._historyLoaded = true;
+      this.logger.debug(`Loaded persistent history data for ${this.historyData.size} devices`);
+      
+      // Start periodic saving
+      this.historyPersistence.startPeriodicSaving(
+        this.historyData, 
+        this.energyAccumulators, 
+        this.lastUpdateTime
+      );
+      
+    } catch (error) {
+      this.logger.error(`Failed to load history data: ${error.message}`);
+      this._historyLoaded = true; // Mark as loaded even if failed to prevent retries
+    }
+  }
+
+  // Save history data to persistent storage
+  async saveHistoryData() {
+    if (!this._historyLoaded) {
+      return; // Not loaded yet, nothing to save
+    }
+    
+    try {
+      await this.historyPersistence.saveHistoryData(
+        this.historyData,
+        this.energyAccumulators,
+        this.lastUpdateTime
+      );
+    } catch (error) {
+      this.logger.error(`Failed to save history data: ${error.message}`);
+    }
+  }
+
+  // Initialize history tracking for a battery device
+  async initializeHistoryTracking(devicePath, initialVoltage) {
+    // Load history data if not already loaded
+    await this.loadHistoryData();
+    
+    const now = Date.now();
+    
+    // Check if we have existing history data for this device
+    if (!this.historyData.has(devicePath)) {
+      this.historyData.set(devicePath, {
+        minVoltage: initialVoltage,
+        maxVoltage: initialVoltage,
+        dischargedEnergy: 0, // kWh
+        chargedEnergy: 0,    // kWh
+        totalAhDrawn: 0      // Ah
+      });
+      
+      this.lastUpdateTime.set(devicePath, now);
+      
+      this.energyAccumulators.set(devicePath, {
+        lastCurrent: 0,
+        lastVoltage: initialVoltage,
+        lastTimestamp: now
+      });
+      
+      this.logger.debug(`Initialized new history tracking for ${devicePath}`);
+    } else {
+      // Update existing data with current voltage if needed
+      const existing = this.historyData.get(devicePath);
+      if (initialVoltage < existing.minVoltage) {
+        existing.minVoltage = initialVoltage;
+      }
+      if (initialVoltage > existing.maxVoltage) {
+        existing.maxVoltage = initialVoltage;
+      }
+      
+      this.logger.debug(`Restored existing history tracking for ${devicePath}`);
+    }
+  }
+
+  // Update history data based on current battery values
+  updateHistoryData(devicePath, voltage, current, power) {
+    if (!this.historyData.has(devicePath)) {
+      // Initialize synchronously if not loaded yet
+      this.initializeHistoryTracking(devicePath, voltage || 12.0);
+    }
+    
+    const history = this.historyData.get(devicePath);
+    const accumulator = this.energyAccumulators.get(devicePath);
+    const now = Date.now();
+    const lastTime = this.lastUpdateTime.get(devicePath) || now;
+    
+    // Update min/max voltage
+    if (voltage) {
+      if (voltage < history.minVoltage) {
+        history.minVoltage = voltage;
+      }
+      if (voltage > history.maxVoltage) {
+        history.maxVoltage = voltage;
+      }
+    }
+    
+    // Calculate energy accumulation if we have previous data
+    if (accumulator && current !== undefined && voltage !== undefined) {
+      const deltaTimeHours = (now - lastTime) / (1000 * 3600); // Convert to hours
+      
+      if (deltaTimeHours > 0 && deltaTimeHours < 1) { // Sanity check: less than 1 hour
+        // Use power if available, otherwise calculate from V*I
+        const actualPower = power !== undefined ? power : (voltage * current);
+        const energyDelta = Math.abs(actualPower) * deltaTimeHours / 1000; // Convert W to kWh
+        const ahDelta = Math.abs(current) * deltaTimeHours;
+        
+        if (current < 0) {
+          // Discharging
+          history.dischargedEnergy += energyDelta;
+          history.totalAhDrawn += ahDelta;
+        } else if (current > 0) {
+          // Charging
+          history.chargedEnergy += energyDelta;
+        }
+        
+        // Update accumulator
+        accumulator.lastCurrent = current;
+        accumulator.lastVoltage = voltage;
+        accumulator.lastTimestamp = now;
+      }
+    }
+    
+    this.lastUpdateTime.set(devicePath, now);
+    return history;
   }
 
   // Helper function to get current Signal K value
@@ -214,6 +361,9 @@ export class VenusClient extends EventEmitter {
                     }
                   }
                 }
+                
+                // Initialize history tracking for this battery
+                await this.initializeHistoryTracking(basePath, currentVoltage || 12.0);
                 
               } catch (err) {
                 this.logger.debug(`Could not get initial Signal K values for battery initialization: ${err.message}`);
@@ -631,11 +781,20 @@ export class VenusClient extends EventEmitter {
   }
 
   async _handleBatteryUpdate(path, value, deviceService, deviceName) {
+    const devicePath = deviceService.basePath;
+    
     if (path.includes('voltage')) {
       if (typeof value === 'number' && !isNaN(value)) {
         await deviceService.updateProperty('/Dc/0/Voltage', value, 'd', `${deviceName} voltage`);
         this.emit('dataUpdated', 'Battery Voltage', `${deviceName}: ${value.toFixed(2)}V`);
         
+        // Update history with current values
+        const current = this._getCurrentSignalKValue(`${devicePath}.current`);
+        const power = this._getCurrentSignalKValue(`${devicePath}.power`);
+        const history = this.updateHistoryData(devicePath, value, current, power);
+        
+        // Update history properties on Venus OS
+        await this._updateHistoryProperties(deviceService, history);
         // Calculate power if we have both voltage and current
         await this._calculateAndUpdatePower(deviceService, deviceName);
         
@@ -649,6 +808,14 @@ export class VenusClient extends EventEmitter {
       if (typeof value === 'number' && !isNaN(value)) {
         await deviceService.updateProperty('/Dc/0/Current', value, 'd', `${deviceName} current`);
         this.emit('dataUpdated', 'Battery Current', `${deviceName}: ${value.toFixed(1)}A`);
+        
+        // Update history with current values
+        const voltage = this._getCurrentSignalKValue(`${devicePath}.voltage`);
+        const power = this._getCurrentSignalKValue(`${devicePath}.power`);
+        const history = this.updateHistoryData(devicePath, voltage, value, power);
+        
+        // Update history properties on Venus OS
+        await this._updateHistoryProperties(deviceService, history);
         
         // Calculate power if we have both voltage and current
         await this._calculateAndUpdatePower(deviceService, deviceName);
@@ -789,6 +956,18 @@ export class VenusClient extends EventEmitter {
   }
 
   async disconnect() {
+    // Save history data before disconnecting
+    await this.saveHistoryData();
+    
+    // Stop periodic saving
+    if (this.historyPersistence) {
+      await this.historyPersistence.stopPeriodicSaving(
+        this.historyData,
+        this.energyAccumulators,
+        this.lastUpdateTime
+      );
+    }
+    
     // Disconnect individual device services
     for (const deviceService of this.deviceServices.values()) {
       if (deviceService && typeof deviceService.disconnect === 'function') {
@@ -813,6 +992,44 @@ export class VenusClient extends EventEmitter {
     this.deviceInstances.clear();
     this.deviceServices.clear();
     this.exportedInterfaces.clear();
+  }
+
+  /**
+   * Update history properties on Venus OS D-Bus
+   */
+  async _updateHistoryProperties(deviceService, history) {
+    try {
+      // Update energy history properties (in kWh)
+      await deviceService.updateProperty('/History/DischargedEnergy', 
+        history.discharged / 1000, 'd', 'Total discharged energy');
+      await deviceService.updateProperty('/History/ChargedEnergy', 
+        history.charged / 1000, 'd', 'Total charged energy');
+      
+      // Update current history in Ah
+      await deviceService.updateProperty('/History/TotalAhDrawn', 
+        history.totalAh, 'd', 'Total Ah drawn');
+      
+      // Update voltage history in V
+      await deviceService.updateProperty('/History/MinimumVoltage', 
+        history.minVoltage, 'd', 'Minimum voltage');
+      await deviceService.updateProperty('/History/MaximumVoltage', 
+        history.maxVoltage, 'd', 'Maximum voltage');
+        
+    } catch (error) {
+      this.emit('error', `Failed to update history properties: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get current Signal K value for a path
+   */
+  _getCurrentSignalKValue(path) {
+    try {
+      return this.signalkClient?.get(path)?.value || 0;
+    } catch (error) {
+      this.emit('debug', `Could not get Signal K value for ${path}: ${error.message}`);
+      return 0;
+    }
   }
 
   async _calculateAndUpdatePower(deviceService, deviceName) {
