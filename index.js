@@ -416,12 +416,10 @@ export default function(app) {
         }
       }
 
-      // Monitor subscription health
-      setTimeout(() => {
-        if (deltaCount === 0) {
-          app.setPluginStatus(`No Signal K data received - check server configuration`);
-        }
-      }, 5000);
+      // Monitor subscription health - check immediately
+      if (deltaCount === 0) {
+        app.setPluginStatus(`No Signal K data received - check server configuration`);
+      }
 
       // Handle venus client value changes by setting values back to Signal K
       Object.values(plugin.clients).forEach(client => {
@@ -439,32 +437,30 @@ export default function(app) {
         });
       });
       
-      // Set initial status if no data comes in
-      setTimeout(() => {
-        if (activeClientTypes.size === 0) {
-          // Check if any devices are enabled
-          const hasEnabledDevices = ['batteries', 'tanks', 'environment', 'switches'].some(deviceType => {
-            if (config[deviceType]) {
-              return Object.values(config[deviceType]).some(enabled => enabled === true);
-            }
-            return false;
-          });
-          
-          if (!hasEnabledDevices) {
-            const deviceCountText = generateDeviceCountText();
-            if (deviceCountText.includes('0 devices')) {
-              app.setPluginStatus('Discovering Signal K devices');
-            } else {
-              app.setPluginStatus(`Device Discovery: Found ${deviceCountText} - configure in settings`);
-            }
-          } else if (venusReachable === false) {
-            const deviceCountText = generateDeviceCountText();
-            app.setPluginStatus(`Discovery: ${deviceCountText} found - Venus OS not connected at ${config.venusHost}`);
-          } else {
-            app.setPluginStatus(`Waiting for Signal K data (${config.venusHost})`);
+      // Set initial status immediately if no data comes in
+      if (activeClientTypes.size === 0) {
+        // Check if any devices are enabled
+        const hasEnabledDevices = ['batteries', 'tanks', 'environment', 'switches'].some(deviceType => {
+          if (config[deviceType]) {
+            return Object.values(config[deviceType]).some(enabled => enabled === true);
           }
+          return false;
+        });
+        
+        if (!hasEnabledDevices) {
+          const deviceCountText = generateDeviceCountText();
+          if (deviceCountText.includes('0 devices')) {
+            app.setPluginStatus('Discovering Signal K devices');
+          } else {
+            app.setPluginStatus(`Device Discovery: Found ${deviceCountText} - configure in settings`);
+          }
+        } else if (venusReachable === false) {
+          const deviceCountText = generateDeviceCountText();
+          app.setPluginStatus(`Discovery: ${deviceCountText} found - Venus OS not connected at ${config.venusHost}`);
+        } else {
+          app.setPluginStatus(`Waiting for Signal K data (${config.venusHost})`);
         }
-      }, 2000);
+      }
     },
 
     stop: function() {
