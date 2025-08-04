@@ -691,9 +691,7 @@ export class VenusClient extends EventEmitter {
             // Add critical system integration properties that Venus OS system service needs
             // These are essential for proper VRM integration and BMV recognition
             await deviceService.updateProperty('/Info/BatteryLowVoltage', 0, 'i', 'Battery low voltage info');
-            await deviceService.updateProperty('/Info/MaxChargeCurrent', 100, 'i', 'Max charge current');
-            await deviceService.updateProperty('/Info/MaxDischargeCurrent', 100, 'i', 'Max discharge current');
-            await deviceService.updateProperty('/Info/MaxChargeVoltage', 14.4, 'd', 'Max charge voltage');
+            // NOTE: Removed default MaxChargeCurrent, MaxDischargeCurrent, MaxChargeVoltage - only set with real data
             
             // NOTE: History properties no longer have fake defaults - they'll be set with real data only
             // NOTE: Min/Max voltage tracking removed - will be implemented with real data only  
@@ -1455,8 +1453,7 @@ export class VenusClient extends EventEmitter {
         // Update mid voltage (can be same as main voltage for single battery systems)
         await deviceService.updateProperty('/Dc/0/MidVoltage', voltage, 'd', `${deviceName} mid voltage`);
         
-        // Calculate mid voltage deviation (for single battery, this is typically 0)
-        await deviceService.updateProperty('/Dc/0/MidVoltageDeviation', 0.0, 'd', `${deviceName} mid voltage deviation`);
+        // NOTE: Mid voltage deviation removed - only set if we have real multi-cell data
       } catch (err) {
         if (err.code === 'ECONNRESET' || err.code === 'ECONNREFUSED' || err.code === 'EPIPE') {
           this.logger.debug(`Connection lost while updating voltage tracking for ${deviceName}`);
