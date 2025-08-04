@@ -401,15 +401,12 @@ export class VenusClient extends EventEmitter {
                     // Signal K capacity is in Joules, convert to Ah: Joules / (Voltage * 3600)
                     if (currentVoltage && typeof currentVoltage === 'number' && currentVoltage > 0) {
                       workingCapacity = signalKCapacity / (currentVoltage * 3600);
-                      console.log(`🔋 Initialization: Converted Signal K capacity: ${signalKCapacity}J ÷ (${currentVoltage}V × 3600) = ${workingCapacity.toFixed(1)}Ah`);
                     } else {
                       // Fallback: use typical 12V if voltage not available
                       workingCapacity = signalKCapacity / (12 * 3600);
-                      console.log(`🔋 Initialization: Converted Signal K capacity (12V fallback): ${signalKCapacity}J ÷ (12V × 3600) = ${workingCapacity.toFixed(1)}Ah`);
                     }
                   } else if (this.settings.batteryCapacity) {
                     workingCapacity = this.settings.batteryCapacity;
-                    console.log(`🔋 Initialization: Using settings capacity: ${workingCapacity}Ah (Signal K capacity not available)`);
                   }
                   
                   if (workingCapacity && typeof workingCapacity === 'number' && workingCapacity > 0) {
@@ -507,8 +504,8 @@ export class VenusClient extends EventEmitter {
         this.logger.debug(`Successfully created device instance for ${basePath} as ${this._internalDeviceType} with VRM instance ${deviceInstance.index}`);
         return deviceInstance;
       } catch (error) {
-        console.error(`❌ Error creating device instance for ${basePath} (from path: ${path}):`, error);
-        console.error(`❌ Error stack:`, error.stack);
+        this.logger.error(`❌ Error creating device instance for ${basePath} (from path: ${path}):`, error);
+        this.logger.error(`❌ Error stack:`, error.stack);
         // Remove the entry to allow retry on next call
         this.deviceInstances.delete(basePath);
         return null;
@@ -535,7 +532,7 @@ export class VenusClient extends EventEmitter {
         }
         
         // Timeout waiting for creation
-        console.warn(`⚠️ Timeout waiting for device creation: ${basePath}`);
+        this.logger.warn(`⚠️ Timeout waiting for device creation: ${basePath}`);
         return null;
       }
       
@@ -746,20 +743,20 @@ export class VenusClient extends EventEmitter {
       // Initialize if not already done
       const deviceInstance = await this._getOrCreateDeviceInstance(path);
       if (!deviceInstance) {
-        console.error(`Failed to create device instance for ${path}`);
+        this.logger.error(`Failed to create device instance for ${path}`);
         return;
       }
 
       // Get the device service
       const deviceService = this.deviceServices.get(deviceInstance.basePath);
       if (!deviceService) {
-        console.error(`No device service found for ${deviceInstance.basePath}`);
+        this.logger.error(`No device service found for ${deviceInstance.basePath}`);
         return;
       }
       
       // Check if device service is connected and ready for data updates
       if (!deviceService.isConnected) {
-        console.warn(`⚠️ RACE CONDITION: Device service ${deviceInstance.basePath} not connected yet - data update ${path} = ${value} will be dropped`);
+        this.logger.warn(`⚠️ RACE CONDITION: Device service ${deviceInstance.basePath} not connected yet - data update ${path} = ${value} will be dropped`);
         return;
       }
       
@@ -780,8 +777,8 @@ export class VenusClient extends EventEmitter {
         this.logger.debug(`Connection lost while updating ${path} - Venus OS may be restarting`);
         // Don't throw the error, just log it
       } else {
-        console.error(`❌ Error in handleSignalKUpdate for ${path}:`, err);
-        console.error(`❌ Error stack:`, err.stack);
+        this.logger.error(`❌ Error in handleSignalKUpdate for ${path}:`, err);
+        this.logger.error(`❌ Error stack:`, err.stack);
         // Don't throw the error, just log it to prevent higher-level catching
       }
     }
@@ -944,11 +941,11 @@ export class VenusClient extends EventEmitter {
         
         if (currentVoltage && typeof currentVoltage === 'number' && currentVoltage > 0) {
           capacityAh = value / (currentVoltage * 3600);
-          console.log(`🔋 Capacity conversion: ${value}J ÷ (${currentVoltage}V × 3600) = ${capacityAh.toFixed(1)}Ah`);
+          this.logger.debug(`🔋 Capacity conversion: ${value}J ÷ (${currentVoltage}V × 3600) = ${capacityAh.toFixed(1)}Ah`);
         } else {
           // Fallback: use typical 12V if voltage not available
           capacityAh = value / (12 * 3600);
-          console.log(`🔋 Capacity conversion (12V fallback): ${value}J ÷ (12V × 3600) = ${capacityAh.toFixed(1)}Ah`);
+          this.logger.debug(`🔋 Capacity conversion (12V fallback): ${value}J ÷ (12V × 3600) = ${capacityAh.toFixed(1)}Ah`);
         }
         
         await deviceService.updateProperty('/Capacity', capacityAh, 'd', `${deviceName} capacity`);
@@ -986,7 +983,7 @@ export class VenusClient extends EventEmitter {
         
         // Sanity check for reasonable battery temperatures
         if (tempCelsius < -50 || tempCelsius > 100) {
-          console.warn(`⚠️ Battery temperature seems unreasonable: ${tempCelsius.toFixed(1)}°C (from ${value})`);
+          this.logger.warn(`⚠️ Battery temperature seems unreasonable: ${tempCelsius.toFixed(1)}°C (from ${value})`);
         }
         
         await deviceService.updateProperty('/Dc/0/Temperature', tempCelsius, 'd', `${deviceName} temperature`);
@@ -1147,7 +1144,7 @@ export class VenusClient extends EventEmitter {
     
     // Check if device service is connected
     if (!deviceService.isConnected) {
-      console.warn(`Device service for ${deviceName} is not connected - skipping dummy data update`);
+      this.logger.warn(`Device service for ${deviceName} is not connected - skipping dummy data update`);
       return;
     }
     
@@ -1174,7 +1171,7 @@ export class VenusClient extends EventEmitter {
           if (err.code === 'ECONNRESET' || err.code === 'ECONNREFUSED' || err.code === 'EPIPE') {
             this.logger.debug(`Connection lost while updating consumed Ah for ${deviceName}`);
           } else {
-            console.error(`Error updating consumed Ah for ${deviceName}:`, err);
+            this.logger.error(`Error updating consumed Ah for ${deviceName}:`, err);
           }
         }
       }
@@ -1203,7 +1200,7 @@ export class VenusClient extends EventEmitter {
         if (err.code === 'ECONNRESET' || err.code === 'ECONNREFUSED' || err.code === 'EPIPE') {
           this.logger.debug(`Connection lost while updating voltage tracking for ${deviceName}`);
         } else {
-          console.error(`Error updating voltage tracking for ${deviceName}:`, err);
+          this.logger.error(`Error updating voltage tracking for ${deviceName}:`, err);
         }
       }
     }
@@ -1289,7 +1286,7 @@ export class VenusClient extends EventEmitter {
             if (err.code === 'ECONNRESET' || err.code === 'ECONNREFUSED' || err.code === 'EPIPE') {
               this.logger.debug(`Connection lost while updating time to go for ${deviceName}`);
             } else {
-              console.error(`🔋 TTG calculation - Error updating /TimeToGo:`, err);
+              this.logger.error(`🔋 TTG calculation - Error updating /TimeToGo:`, err);
             }
           }
         }
@@ -1320,7 +1317,7 @@ export class VenusClient extends EventEmitter {
       if (err.code === 'ECONNRESET' || err.code === 'ECONNREFUSED' || err.code === 'EPIPE') {
         this.logger.debug(`Connection lost while notifying system service for ${deviceName}`);
       } else {
-        console.error(`Error notifying system service for ${deviceName}:`, err);
+        this.logger.error(`Error notifying system service for ${deviceName}:`, err);
       }
     }
   }
@@ -1361,7 +1358,7 @@ export class VenusClient extends EventEmitter {
       }
       
     } catch (err) {
-      console.error(`Error in system service refresh for ${deviceName}:`, err);
+      this.logger.error(`Error in system service refresh for ${deviceName}:`, err);
     }
   }
 }
