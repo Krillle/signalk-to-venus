@@ -824,9 +824,11 @@ export default function(app) {
         return tankMatch ? tankMatch[1] : null;
         
       case 'environment':
-        // environment.water.temperature -> environment.water.temperature (keep specific for single properties)
-        // propulsion.main.temperature -> propulsion.main.temperature
-        return fullPath;
+        // environment.water.temperature -> environment.water
+        // propulsion.main.temperature -> propulsion.main
+        // Group by sensor location, not individual property
+        const envMatch = fullPath.match(/^(environment\.[^.]+|propulsion\.[^.]+)/);
+        return envMatch ? envMatch[1] : null;
         
       case 'switches':
         // electrical.switches.nav.state -> electrical.switches.nav
@@ -899,26 +901,16 @@ export default function(app) {
         break;
         
       case 'environment':
-        // environment.water.temperature -> Water temperature
-        // propulsion.main.temperature -> Main temperature
-        if (devicePath.includes('temperature')) {
-          const tempMatch = devicePath.match(/environment\.([^.]+)\.temperature|propulsion\.([^.]+)\.temperature/);
-          if (tempMatch) {
-            let sensor = tempMatch[1] || tempMatch[2];
-            // Remove camel case and capitalize first letter
-            sensor = sensor.replace(/([A-Z])/g, ' $1').trim();
-            sensor = sensor.charAt(0).toUpperCase() + sensor.slice(1).toLowerCase();
-            return `${sensor} temperature`;
-          }
-        } else if (devicePath.includes('humidity') || devicePath.includes('relativeHumidity')) {
-          const humMatch = devicePath.match(/environment\.([^.]+)\.(humidity|relativeHumidity)/);
-          if (humMatch) {
-            let sensor = humMatch[1];
-            // Remove camel case and capitalize first letter
-            sensor = sensor.replace(/([A-Z])/g, ' $1').trim();
-            sensor = sensor.charAt(0).toUpperCase() + sensor.slice(1).toLowerCase();
-            return `${sensor} humidity`;
-          }
+        // environment.water -> Water sensor
+        // propulsion.main -> Main sensor  
+        // environment.outside -> Outside sensor
+        const envMatch = devicePath.match(/environment\.([^.]+)|propulsion\.([^.]+)/);
+        if (envMatch) {
+          let sensor = envMatch[1] || envMatch[2];
+          // Remove camel case and capitalize first letter
+          sensor = sensor.replace(/([A-Z])/g, ' $1').trim();
+          sensor = sensor.charAt(0).toUpperCase() + sensor.slice(1).toLowerCase();
+          return `${sensor} sensor`;
         }
         break;
         
