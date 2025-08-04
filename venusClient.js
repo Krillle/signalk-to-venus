@@ -524,6 +524,16 @@ export class VenusClient extends EventEmitter {
         );
 
         await deviceService.init(); // Initialize the device service
+        
+        // Store the basePath on the deviceService for easy access
+        deviceService.basePath = basePath;
+        
+        // Debug: Verify basePath is correctly set
+        if (!deviceService.basePath) {
+          this.logger.error(`Failed to set basePath on deviceService: ${basePath}`);
+        } else {
+          this.logger.debug(`Successfully set basePath on deviceService: ${deviceService.basePath}`);
+        }
 
         // we should really have a vedbus-tank, vedbus-battery, etc to get rid of this.
         switch (this._internalDeviceType) {
@@ -1070,11 +1080,17 @@ export class VenusClient extends EventEmitter {
   }
 
   async _handleBatteryUpdate(path, value, deviceService, deviceName) {
-    const devicePath = deviceService.basePath;
+    // Try multiple ways to get the devicePath
+    const devicePath = deviceService.basePath || 
+                      deviceService.deviceInstance?.basePath || 
+                      null;
     
     // Validate devicePath to prevent undefined history tracking
     if (!devicePath || devicePath === 'undefined' || devicePath === 'null') {
       this.logger.error(`Invalid devicePath in battery update for ${deviceName}: ${devicePath}`);
+      this.logger.error(`DeviceService basePath: ${deviceService.basePath}`);
+      this.logger.error(`DeviceInstance basePath: ${deviceService.deviceInstance?.basePath}`);
+      this.logger.error(`DeviceInstance object: ${JSON.stringify(deviceService.deviceInstance)}`);
       return;
     }
     
