@@ -106,6 +106,11 @@ export class VenusClient extends EventEmitter {
 
   // Initialize history tracking for a battery device
   async initializeHistoryTracking(devicePath, initialVoltage) {
+    // Don't reinitialize if already exists (prevents conflicts)
+    if (this.historyData.has(devicePath)) {
+      return;
+    }
+    
     // Load history data if not already loaded
     await this.loadHistoryData();
     
@@ -114,7 +119,7 @@ export class VenusClient extends EventEmitter {
     // Validate initial voltage
     const validInitialVoltage = (typeof initialVoltage === 'number' && !isNaN(initialVoltage)) ? initialVoltage : 12.0;
     
-    // Check if we have existing history data for this device
+    // Check if we have existing history data for this device (may have been loaded from disk)
     if (!this.historyData.has(devicePath)) {
       this.historyData.set(devicePath, {
         minVoltage: validInitialVoltage,
@@ -159,12 +164,40 @@ export class VenusClient extends EventEmitter {
   // Update history data based on current battery values
   updateHistoryData(devicePath, voltage, current, power) {
     if (!this.historyData.has(devicePath)) {
-      // Initialize synchronously if not loaded yet
-      this.initializeHistoryTracking(devicePath, voltage || 12.0);
+      // Initialize synchronously with basic values if not loaded yet
+      const validInitialVoltage = (typeof voltage === 'number' && !isNaN(voltage)) ? voltage : 12.0;
+      
+      this.historyData.set(devicePath, {
+        minVoltage: validInitialVoltage,
+        maxVoltage: validInitialVoltage,
+        dischargedEnergy: 0, // kWh
+        chargedEnergy: 0,    // kWh
+        totalAhDrawn: 0      // Ah
+      });
+      
+      this.lastUpdateTime.set(devicePath, Date.now());
+      
+      this.energyAccumulators.set(devicePath, {
+        lastCurrent: 0,
+        lastVoltage: validInitialVoltage,
+        lastTimestamp: Date.now()
+      });
+      
+      // Trigger async loading in background (non-blocking)
+      this.initializeHistoryTracking(devicePath, validInitialVoltage).catch(err => {
+        this.logger.error(`Failed to load history data for ${devicePath}: ${err.message}`);
+      });
     }
     
     const history = this.historyData.get(devicePath);
     const accumulator = this.energyAccumulators.get(devicePath);
+    
+    // Safety check - should not happen anymore but just in case
+    if (!history) {
+      this.logger.error(`History data not available for ${devicePath} - this should not happen`);
+      return null;
+    }
+    
     const now = Date.now();
     const lastTime = this.lastUpdateTime.get(devicePath) || now;
     
@@ -836,8 +869,10 @@ export class VenusClient extends EventEmitter {
         const power = this._getCurrentSignalKValue(`${devicePath}.power`);
         const history = this.updateHistoryData(devicePath, value, current, power);
         
-        // Update history properties on Venus OS
-        await this._updateHistoryProperties(deviceService, history);
+        // Update history properties on Venus OS (only if history data is available)
+        if (history) {
+          await this._updateHistoryProperties(deviceService, history);
+        }
         // Calculate power if we have both voltage and current
         await this._calculateAndUpdatePower(deviceService, deviceName);
         
@@ -857,8 +892,10 @@ export class VenusClient extends EventEmitter {
         const power = this._getCurrentSignalKValue(`${devicePath}.power`);
         const history = this.updateHistoryData(devicePath, voltage, value, power);
         
-        // Update history properties on Venus OS
-        await this._updateHistoryProperties(deviceService, history);
+        // Update history properties on Venus OS (only if history data is available)
+        if (history) {
+          await this._updateHistoryProperties(deviceService, history);
+        }
         
         // Calculate power if we have both voltage and current
         await this._calculateAndUpdatePower(deviceService, deviceName);
@@ -1041,11 +1078,17 @@ export class VenusClient extends EventEmitter {
    * Update history properties on Venus OS D-Bus
    */
   async _updateHistoryProperties(deviceService, history) {
+    // Safety check
+    if (!history || typeof history !== 'object') {
+      this.logger.debug('No history data available for updating Venus OS properties');
+      return;
+    }
+    
     try {
       // Validate all values before sending to prevent NaN errors
       const dischargedEnergy = isNaN(history.dischargedEnergy) ? 0 : (history.dischargedEnergy / 1000);
       const chargedEnergy = isNaN(history.chargedEnergy) ? 0 : (history.chargedEnergy / 1000);
-      const totalAh = isNaN(history.totalAh) ? 0 : history.totalAh;
+      const totalAh = isNaN(history.totalAhDrawn) ? 0 : history.totalAhDrawn;
       const minVoltage = isNaN(history.minVoltage) ? 12.0 : history.minVoltage;
       const maxVoltage = isNaN(history.maxVoltage) ? 12.0 : history.maxVoltage;
       
