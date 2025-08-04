@@ -86,12 +86,12 @@ export const DEVICE_CONFIGS = {
       "/Io/AllowToDischarge": { type: "i", value: 1, text: "Allow to discharge" },
       "/Io/ExternalRelay": { type: "i", value: 0, text: "External relay" },
       
-      // History properties for VRM consumption calculations - initialized to 0
+      // History properties for VRM consumption calculations - will be set when real data is available
       "/History/DischargedEnergy": { type: "d", value: 0, text: "Discharged energy" },
       "/History/ChargedEnergy": { type: "d", value: 0, text: "Charged energy" },
-      "/History/TotalAhDrawn": { type: "d", value: 0, text: "Total Ah drawn" },
-      "/History/MinimumVoltage": { type: "d", value: 0, text: "Minimum voltage" },
-      "/History/MaximumVoltage": { type: "d", value: 0, text: "Maximum voltage" }
+      "/History/TotalAhDrawn": { type: "d", value: 0, text: "Total Ah drawn" }
+      // Note: MinimumVoltage and MaximumVoltage are not initialized here
+      // They will only be set when real voltage data is available
     },
     pathMappings: {
       '/Dc/0/Voltage': 'Battery voltage',
@@ -127,8 +127,6 @@ export const DEVICE_CONFIGS = {
       '/History/DischargedEnergy': 'Discharged energy',
       '/History/ChargedEnergy': 'Charged energy',
       '/History/TotalAhDrawn': 'Total Ah drawn',
-      '/History/MinimumVoltage': 'Minimum voltage',
-      '/History/MaximumVoltage': 'Maximum voltage',
       '/Balancer': 'Balancer active',
       '/Io/AllowToCharge': 'Allow to charge',
       '/Io/AllowToDischarge': 'Allow to discharge',
@@ -169,8 +167,6 @@ export const DEVICE_CONFIGS = {
       '/History/DischargedEnergy': 'd',
       '/History/ChargedEnergy': 'd',
       '/History/TotalAhDrawn': 'd',
-      '/History/MinimumVoltage': 'd',
-      '/History/MaximumVoltage': 'd',
       '/Balancer': 'i',
       '/Io/AllowToCharge': 'i',
       '/Io/AllowToDischarge': 'i',

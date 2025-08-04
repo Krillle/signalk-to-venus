@@ -1324,8 +1324,6 @@ export class VenusClient extends EventEmitter {
       const dischargedEnergy = isNaN(history.dischargedEnergy) ? 0 : (history.dischargedEnergy / 1000);
       const chargedEnergy = isNaN(history.chargedEnergy) ? 0 : (history.chargedEnergy / 1000);
       const totalAh = isNaN(history.totalAhDrawn) ? 0 : history.totalAhDrawn;
-      const minVoltage = isNaN(history.minVoltage) ? 12.0 : history.minVoltage;
-      const maxVoltage = isNaN(history.maxVoltage) ? 12.0 : history.maxVoltage;
       
       // Update energy history properties (in kWh)
       await deviceService.updateProperty('/History/DischargedEnergy', 
@@ -1337,11 +1335,24 @@ export class VenusClient extends EventEmitter {
       await deviceService.updateProperty('/History/TotalAhDrawn', 
         totalAh, 'd', 'Total Ah drawn');
       
-      // Update voltage history in V
-      await deviceService.updateProperty('/History/MinimumVoltage', 
-        minVoltage, 'd', 'Minimum voltage');
-      await deviceService.updateProperty('/History/MaximumVoltage', 
-        maxVoltage, 'd', 'Maximum voltage');
+      // Only update voltage history if we have meaningful values
+      // Skip initial default values that haven't been updated with real data
+      const minVoltage = history.minVoltage;
+      const maxVoltage = history.maxVoltage;
+      
+      // Only set minimum voltage if it's a reasonable battery voltage (between 5V and 50V)
+      // and not the initial default value
+      if (!isNaN(minVoltage) && minVoltage > 5.0 && minVoltage < 50.0) {
+        await deviceService.updateProperty('/History/MinimumVoltage', 
+          minVoltage, 'd', 'Minimum voltage');
+      }
+      
+      // Only set maximum voltage if it's a reasonable battery voltage (between 5V and 50V)
+      // and not the initial default value
+      if (!isNaN(maxVoltage) && maxVoltage > 5.0 && maxVoltage < 50.0) {
+        await deviceService.updateProperty('/History/MaximumVoltage', 
+          maxVoltage, 'd', 'Maximum voltage');
+      }
         
     } catch (error) {
       this.emit('error', `Failed to update history properties: ${error.message}`);
