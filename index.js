@@ -32,15 +32,16 @@ export default function(app) {
             title: 'Venus OS Host',
             default: 'venus.local'
           },
-          productName: {
-            type: 'string', 
-            title: 'Product Name',
-            default: 'SignalK Virtual Device'
-          },
           interval: {
             type: 'number',
             title: 'Update Interval (ms)',
             default: 1000
+          },
+          batteryCapacity: {
+            type: 'number',
+            title: 'Battery Capacity (Ah)',
+            description: 'Total battery capacity in Amp-hours for time-to-charge calculation',
+            default: 800
           }
         }
       };
@@ -353,8 +354,8 @@ export default function(app) {
                       await plugin.clients[deviceType].handleSignalKUpdate(pathValue.path, pathValue.value);
                       
                       activeClientTypes.add(deviceTypeNames[deviceType]);
-                      const deviceCountText = generateDeviceCountText();
-                      app.setPluginStatus(`Connected to Venus OS, injecting ${deviceCountText}`);
+                      const enabledDeviceCountText = generateEnabledDeviceCountText(config);
+                      app.setPluginStatus(`Connected to Venus OS, injecting ${enabledDeviceCountText}`);
 
                     } catch (err) {
                       // Clean up connection error messages for better user experience
@@ -387,6 +388,13 @@ export default function(app) {
                     
                     try {
                       await plugin.clients[deviceType].handleSignalKUpdate(pathValue.path, pathValue.value);
+                      
+                      // Periodically update status to reflect current enabled device count
+                      // (in case configuration changed or new devices were enabled)
+                      if (Math.random() < 0.01) { // Update status roughly 1% of the time to avoid spam
+                        const enabledDeviceCountText = generateEnabledDeviceCountText(config);
+                        app.setPluginStatus(`Connected to Venus OS, injecting ${enabledDeviceCountText}`);
+                      }
                     } catch (err) {
                       // Only log detailed errors if it's not a connection issue
                       if (err.message && (err.message.includes('ENOTFOUND') || err.message.includes('ECONNREFUSED'))) {
@@ -521,7 +529,7 @@ export default function(app) {
     return null;
   }
 
-  // Helper function to generate device count text by type
+  // Helper function to generate device count text by type (all discovered devices)
   function generateDeviceCountText() {
     const deviceCounts = {
       batteries: discoveredPaths.batteries.size,
@@ -549,6 +557,44 @@ export default function(app) {
     } else {
       const totalPaths = Object.values(discoveredPaths).reduce((sum, map) => sum + map.size, 0);
       return `${totalPaths} devices`;
+    }
+  }
+
+  // Helper function to generate device count text for enabled devices only
+  function generateEnabledDeviceCountText(config) {
+    const enabledCounts = {
+      batteries: 0,
+      tanks: 0,
+      environment: 0,
+      switches: 0
+    };
+    
+    // Count enabled devices for each type
+    Object.keys(enabledCounts).forEach(deviceType => {
+      if (config[deviceType]) {
+        // Count how many devices of this type are enabled
+        enabledCounts[deviceType] = Object.values(config[deviceType]).filter(enabled => enabled === true).length;
+      }
+    });
+    
+    const deviceCountParts = [];
+    if (enabledCounts.batteries > 0) {
+      deviceCountParts.push(`${enabledCounts.batteries} ${enabledCounts.batteries === 1 ? 'battery' : 'batteries'}`);
+    }
+    if (enabledCounts.tanks > 0) {
+      deviceCountParts.push(`${enabledCounts.tanks} ${enabledCounts.tanks === 1 ? 'tank' : 'tanks'}`);
+    }
+    if (enabledCounts.environment > 0) {
+      deviceCountParts.push(`${enabledCounts.environment} environment ${enabledCounts.environment === 1 ? 'sensor' : 'sensors'}`);
+    }
+    if (enabledCounts.switches > 0) {
+      deviceCountParts.push(`${enabledCounts.switches} ${enabledCounts.switches === 1 ? 'switch' : 'switches'}`);
+    }
+    
+    if (deviceCountParts.length > 0) {
+      return deviceCountParts.join(', ');
+    } else {
+      return '0 devices';
     }
   }
 
@@ -597,13 +643,7 @@ export default function(app) {
           }
         }
         
-        // Update status with discovered paths count by device type
-        const deviceCountText = generateDeviceCountText();
-        
-        const statusMsg = plugin.venusConnected ? 
-          `Connected to Venus OS, injecting ${deviceCountText}` :
-          `Device Discovery: Found ${deviceCountText} (Venus OS: ${config.venusHost})`; 
-        app.setPluginStatus(statusMsg);
+        // Note: Status message is updated in processDelta when devices are actually enabled and injected
       } else {
         // Update last seen value and add this property to the set
         const deviceInfo = pathMap.get(devicePath);
@@ -629,9 +669,11 @@ export default function(app) {
         return tankMatch ? tankMatch[1] : null;
         
       case 'environment':
-        // environment.water.temperature -> environment.water.temperature (keep specific for single properties)
-        // propulsion.main.temperature -> propulsion.main.temperature
-        return fullPath;
+        // environment.water.temperature -> environment.water
+        // propulsion.main.temperature -> propulsion.main
+        // Group by sensor location, not individual property
+        const envMatch = fullPath.match(/^(environment\.[^.]+|propulsion\.[^.]+)/);
+        return envMatch ? envMatch[1] : null;
         
       case 'switches':
         // electrical.switches.nav.state -> electrical.switches.nav
@@ -704,26 +746,16 @@ export default function(app) {
         break;
         
       case 'environment':
-        // environment.water.temperature -> Water temperature
-        // propulsion.main.temperature -> Main temperature
-        if (devicePath.includes('temperature')) {
-          const tempMatch = devicePath.match(/environment\.([^.]+)\.temperature|propulsion\.([^.]+)\.temperature/);
-          if (tempMatch) {
-            let sensor = tempMatch[1] || tempMatch[2];
-            // Remove camel case and capitalize first letter
-            sensor = sensor.replace(/([A-Z])/g, ' $1').trim();
-            sensor = sensor.charAt(0).toUpperCase() + sensor.slice(1).toLowerCase();
-            return `${sensor} temperature`;
-          }
-        } else if (devicePath.includes('humidity') || devicePath.includes('relativeHumidity')) {
-          const humMatch = devicePath.match(/environment\.([^.]+)\.(humidity|relativeHumidity)/);
-          if (humMatch) {
-            let sensor = humMatch[1];
-            // Remove camel case and capitalize first letter
-            sensor = sensor.replace(/([A-Z])/g, ' $1').trim();
-            sensor = sensor.charAt(0).toUpperCase() + sensor.slice(1).toLowerCase();
-            return `${sensor} humidity`;
-          }
+        // environment.water -> Water
+        // propulsion.main -> Main  
+        // environment.outside -> Outside
+        const envMatch = devicePath.match(/environment\.([^.]+)|propulsion\.([^.]+)/);
+        if (envMatch) {
+          let sensor = envMatch[1] || envMatch[2];
+          // Remove camel case and capitalize first letter
+          sensor = sensor.replace(/([A-Z])/g, ' $1').trim();
+          sensor = sensor.charAt(0).toUpperCase() + sensor.slice(1).toLowerCase();
+          return sensor;
         }
         break;
         
