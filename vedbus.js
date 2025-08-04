@@ -970,18 +970,22 @@ export class VEDBusService extends EventEmitter {
   }
 
   _exportProperty(path, config) {
-    // Set/update the value in deviceData for both mutable and immutable properties
-    this.deviceData[path] = config.value;
+    // Only set/update the value in deviceData if it has a defined value
+    if (config.value !== undefined) {
+      this.deviceData[path] = config.value;
+    }
 
-    // If already exported, done.
+    // If already exported, update only if we have a value
     if (path in this.exportedInterfaces) {
-      const changes = [];
-      changes.push([path, [
-        ["Value", this._wrapValue(config.type, config.value)],
-        ["Text", this._wrapValue('s', config.text)],
-      ]]);
+      if (config.value !== undefined) {
+        const changes = [];
+        changes.push([path, [
+          ["Value", this._wrapValue(config.type, config.value)],
+          ["Text", this._wrapValue('s', config.text)],
+        ]]);
 
-      this.exportedInterfaces[path].emit('ItemsChanged', changes);
+        this.exportedInterfaces[path].emit('ItemsChanged', changes);
+      }
       return;
     }
 
@@ -1004,8 +1008,12 @@ export class VEDBusService extends EventEmitter {
         if (currentValue !== undefined) {
           return this._wrapValue(config.type, currentValue);
         }
-        // Fallback to config value if not in deviceData
-        return this._wrapValue(config.type, config.value);
+        // If no value set yet and config has a value, use that
+        if (config.value !== undefined) {
+          return this._wrapValue(config.type, config.value);
+        }
+        // Return null for properties that haven't been set yet
+        return this._wrapValue(config.type, null);
       },
       SetValue: (val) => {
         if (this.managementProperties[path]?.immutable) {
