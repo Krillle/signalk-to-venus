@@ -11,6 +11,8 @@ export class HistoryPersistence {
     this.logger = logger || { debug: () => {}, error: () => {} };
     this.periodicSaveInterval = null;
     this.saveIntervalMs = 60000; // Save every minute
+    this.saveInProgress = false; // Prevent concurrent saves
+    this.pendingSaveData = null; // Queue data if save is in progress
   }
 
   /**
@@ -20,6 +22,12 @@ export class HistoryPersistence {
   async loadHistoryData() {
     try {
       const data = await fs.readFile(this.filePath, 'utf8');
+      
+      // Validate JSON before parsing to detect corruption
+      if (!data.trim().startsWith('{') || !data.trim().endsWith('}')) {
+        throw new Error('History file appears to be corrupted (invalid JSON structure)');
+      }
+      
       const parsed = JSON.parse(data);
       
       // Convert plain objects back to Maps
@@ -91,6 +99,34 @@ export class HistoryPersistence {
    * @param {Map} lastUpdateTime - Last update timestamps
    */
   async saveHistoryData(historyData, energyAccumulators, lastUpdateTime) {
+    // Prevent concurrent saves to avoid file corruption
+    if (this.saveInProgress) {
+      this.logger.debug('Save already in progress, queuing latest data');
+      this.pendingSaveData = { historyData, energyAccumulators, lastUpdateTime };
+      return;
+    }
+
+    this.saveInProgress = true;
+    
+    try {
+      await this._performSave(historyData, energyAccumulators, lastUpdateTime);
+      
+      // If there's pending data, save it too
+      if (this.pendingSaveData) {
+        const pendingData = this.pendingSaveData;
+        this.pendingSaveData = null;
+        await this._performSave(pendingData.historyData, pendingData.energyAccumulators, pendingData.lastUpdateTime);
+      }
+      
+    } finally {
+      this.saveInProgress = false;
+    }
+  }
+
+  /**
+   * Internal method to perform the actual save operation
+   */
+  async _performSave(historyData, energyAccumulators, lastUpdateTime) {
     try {
       // Ensure directory exists
       const dir = path.dirname(this.filePath);
@@ -108,15 +144,35 @@ export class HistoryPersistence {
         lastSaved: new Date().toISOString()
       };
       
+      // Validate data before saving to prevent corruption
+      const jsonString = JSON.stringify(data, null, 2);
+      if (!jsonString || jsonString.length < 10) {
+        throw new Error('Generated JSON string is invalid or too short');
+      }
+      
       // Atomic write: write to temporary file first, then rename
       const tempFilePath = `${this.filePath}.tmp`;
-      await fs.writeFile(tempFilePath, JSON.stringify(data, null, 2), 'utf8');
+      await fs.writeFile(tempFilePath, jsonString, 'utf8');
+      
+      // Verify the temporary file was written correctly
+      const verification = await fs.readFile(tempFilePath, 'utf8');
+      const parsed = JSON.parse(verification); // This will throw if JSON is invalid
+      
+      // If verification passes, rename to final location
       await fs.rename(tempFilePath, this.filePath);
       
       this.logger.debug(`Saved history data for ${historyData.size} devices to ${this.filePath}`);
       
     } catch (error) {
       this.logger.error(`Error saving history data: ${error.message}`);
+      
+      // Clean up temporary file if it exists
+      try {
+        await fs.unlink(`${this.filePath}.tmp`);
+      } catch (cleanupError) {
+        // Ignore cleanup errors
+      }
+      
       throw error;
     }
   }
