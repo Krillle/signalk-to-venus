@@ -74,6 +74,9 @@ export class VenusClient extends EventEmitter {
       this._historyLoaded = true;
       this.logger.debug(`Loaded persistent history data for ${this.historyData.size} devices`);
       
+      // Clean up any invalid entries that may have been loaded
+      this.cleanupHistoryData();
+      
       // Start periodic saving
       this.historyPersistence.startPeriodicSaving(
         this.historyData, 
@@ -93,6 +96,9 @@ export class VenusClient extends EventEmitter {
       return; // Not loaded yet, nothing to save
     }
     
+    // Clean up invalid entries before saving
+    this.cleanupHistoryData();
+    
     try {
       await this.historyPersistence.saveHistoryData(
         this.historyData,
@@ -104,8 +110,51 @@ export class VenusClient extends EventEmitter {
     }
   }
 
+  // Clean up invalid history data entries
+  cleanupHistoryData() {
+    const keysToRemove = [];
+    
+    // Find invalid keys
+    for (const [key, value] of this.historyData.entries()) {
+      // Remove undefined, null, or empty keys
+      if (!key || key === 'undefined' || key === 'null') {
+        keysToRemove.push(key);
+        continue;
+      }
+      
+      // Remove entries with all default values (no real data collected)
+      const hasRealData = (value.dischargedEnergy > 0) || 
+                         (value.chargedEnergy > 0) || 
+                         (value.totalAhDrawn > 0.001) ||
+                         (value.minVoltage !== 12.0 && value.minVoltage > 5.0 && value.minVoltage < 50.0) ||
+                         (value.maxVoltage !== 12.0 && value.maxVoltage > 5.0 && value.maxVoltage < 50.0);
+      
+      if (!hasRealData) {
+        keysToRemove.push(key);
+      }
+    }
+    
+    // Remove invalid entries from all maps
+    for (const key of keysToRemove) {
+      this.logger.debug(`Removing invalid history entry: ${key}`);
+      this.historyData.delete(key);
+      this.energyAccumulators.delete(key);
+      this.lastUpdateTime.delete(key);
+    }
+    
+    if (keysToRemove.length > 0) {
+      this.logger.debug(`Cleaned up ${keysToRemove.length} invalid history entries`);
+    }
+  }
+
   // Initialize history tracking for a battery device
   async initializeHistoryTracking(devicePath, initialVoltage) {
+    // Validate devicePath to prevent undefined keys
+    if (!devicePath || devicePath === 'undefined' || devicePath === 'null') {
+      this.logger.error(`Invalid devicePath for history initialization: ${devicePath}`);
+      return;
+    }
+    
     // Don't reinitialize if already exists (prevents conflicts)
     if (this.historyData.has(devicePath)) {
       return;
@@ -163,6 +212,12 @@ export class VenusClient extends EventEmitter {
 
   // Update history data based on current battery values
   updateHistoryData(devicePath, voltage, current, power) {
+    // Validate devicePath to prevent undefined keys
+    if (!devicePath || devicePath === 'undefined' || devicePath === 'null') {
+      this.logger.error(`Invalid devicePath for history update: ${devicePath}`);
+      return null;
+    }
+    
     if (!this.historyData.has(devicePath)) {
       // Initialize synchronously with basic values if not loaded yet
       const validInitialVoltage = (typeof voltage === 'number' && !isNaN(voltage)) ? voltage : 12.0;
@@ -221,13 +276,22 @@ export class VenusClient extends EventEmitter {
       const deltaTimeHours = (now - lastTime) / (1000 * 3600); // Convert to hours
       
       if (deltaTimeHours > 0 && deltaTimeHours < 1) { // Sanity check: less than 1 hour
-        // Use power if available, otherwise calculate from V*I
-        const actualPower = validPower !== null ? validPower : (validVoltage * validCurrent);
+        // Calculate total system consumption including all sources
+        const systemPowerData = this._calculateSystemPower(devicePath, validVoltage, validCurrent, validPower);
+        
+        // Use system power for energy calculations, fallback to battery power
+        const actualPower = systemPowerData.totalSystemPower || (validPower !== null ? validPower : (validVoltage * validCurrent));
+        const batteryPower = validPower !== null ? validPower : (validVoltage * validCurrent);
         
         // Validate calculations before adding to history
         if (!isNaN(actualPower) && !isNaN(deltaTimeHours)) {
           const energyDelta = Math.abs(actualPower) * deltaTimeHours / 1000; // Convert W to kWh
           const ahDelta = Math.abs(validCurrent) * deltaTimeHours;
+          
+          // Log system power calculation details for debugging
+          if (systemPowerData.hasAdditionalSources) {
+            this.logger.debug(`System power calculation for ${devicePath}: Battery=${batteryPower.toFixed(1)}W, Total=${actualPower.toFixed(1)}W (Solar=${systemPowerData.solarPower.toFixed(1)}W, Alt=${systemPowerData.alternatorPower.toFixed(1)}W, Shore=${systemPowerData.shorePower.toFixed(1)}W)`);
+          }
           
           if (!isNaN(energyDelta) && !isNaN(ahDelta)) {
             if (validCurrent < 0) {
@@ -272,6 +336,133 @@ export class VenusClient extends EventEmitter {
     return history;
   }
 
+  // Calculate total system power consumption including all energy sources
+  _calculateSystemPower(batteryDevicePath, batteryVoltage, batteryCurrent, batteryPower) {
+    // Start with battery power as baseline
+    const baseBatteryPower = batteryPower !== null ? batteryPower : (batteryVoltage * batteryCurrent);
+    
+    let totalSystemPower = baseBatteryPower;
+    let solarPower = 0;
+    let alternatorPower = 0;
+    let shorePower = 0;
+    let hasAdditionalSources = false;
+    
+    if (!this.signalKApp) {
+      return {
+        totalSystemPower: baseBatteryPower,
+        solarPower: 0,
+        alternatorPower: 0,
+        shorePower: 0,
+        hasAdditionalSources: false
+      };
+    }
+    
+    try {
+      // Get solar power from Signal K
+      // Common solar paths: electrical.solar.*, electrical.chargers.*, etc.
+      const solarPaths = [
+        'electrical.solar.current',
+        'electrical.solar.power',
+        'electrical.chargers.solar.current',
+        'electrical.chargers.solar.power'
+      ];
+      
+      for (const path of solarPaths) {
+        const value = this._getCurrentSignalKValue(path);
+        if (value !== null && typeof value === 'number' && !isNaN(value)) {
+          if (path.includes('power')) {
+            solarPower += Math.abs(value);
+          } else if (path.includes('current')) {
+            solarPower += Math.abs(value) * batteryVoltage; // I * V = P
+          }
+          hasAdditionalSources = true;
+        }
+      }
+      
+      // Get alternator power from Signal K
+      // Common alternator paths: electrical.alternators.*, propulsion.*.alternator.*
+      const alternatorPaths = [
+        'electrical.alternators.current',
+        'electrical.alternators.power',
+        'propulsion.main.alternator.current',
+        'propulsion.main.alternator.power',
+        'propulsion.port.alternator.current',
+        'propulsion.port.alternator.power',
+        'propulsion.starboard.alternator.current', 
+        'propulsion.starboard.alternator.power'
+      ];
+      
+      for (const path of alternatorPaths) {
+        const value = this._getCurrentSignalKValue(path);
+        if (value !== null && typeof value === 'number' && !isNaN(value)) {
+          if (path.includes('power')) {
+            alternatorPower += Math.abs(value);
+          } else if (path.includes('current')) {
+            alternatorPower += Math.abs(value) * batteryVoltage; // I * V = P
+          }
+          hasAdditionalSources = true;
+        }
+      }
+      
+      // Get shore power from Signal K
+      // Common shore power paths: electrical.shore.*, electrical.chargers.shore.*
+      const shorePaths = [
+        'electrical.shore.current',
+        'electrical.shore.power',
+        'electrical.chargers.shore.current',
+        'electrical.chargers.shore.power',
+        'electrical.chargers.mains.current',
+        'electrical.chargers.mains.power'
+      ];
+      
+      for (const path of shorePaths) {
+        const value = this._getCurrentSignalKValue(path);
+        if (value !== null && typeof value === 'number' && !isNaN(value)) {
+          if (path.includes('power')) {
+            shorePower += Math.abs(value);
+          } else if (path.includes('current')) {
+            shorePower += Math.abs(value) * batteryVoltage; // I * V = P
+          }
+          hasAdditionalSources = true;
+        }
+      }
+      
+      // Calculate total system consumption
+      // If battery is discharging (negative current), add other sources
+      // If battery is charging (positive current), account for excess generation
+      if (batteryCurrent < 0) {
+        // Battery discharging: Total consumption = Battery discharge + Direct consumption from other sources
+        totalSystemPower = Math.abs(baseBatteryPower) + solarPower + alternatorPower + shorePower;
+      } else if (batteryCurrent > 0) {
+        // Battery charging: Some generation goes to battery, some to direct consumption
+        // We can't easily determine the split without load monitoring, so we use a heuristic
+        const totalGeneration = solarPower + alternatorPower + shorePower;
+        const batteryChargePower = Math.abs(baseBatteryPower);
+        
+        if (totalGeneration > batteryChargePower) {
+          // Excess generation goes to direct consumption
+          totalSystemPower = totalGeneration - batteryChargePower;
+        } else {
+          // All generation goes to battery, no additional consumption tracked
+          totalSystemPower = 0; // No net consumption when charging from external sources
+        }
+      }
+      
+    } catch (error) {
+      this.logger.debug(`Error calculating system power: ${error.message}`);
+      // Fallback to battery power only
+      totalSystemPower = baseBatteryPower;
+    }
+    
+    return {
+      totalSystemPower: totalSystemPower,
+      solarPower: solarPower,
+      alternatorPower: alternatorPower,
+      shorePower: shorePower,
+      hasAdditionalSources: hasAdditionalSources
+    };
+  }
+
   // Helper function to get current Signal K value
   _getCurrentSignalKValue(path) {
     if (this.signalKApp && this.signalKApp.getSelfPath) {
@@ -302,6 +493,12 @@ export class VenusClient extends EventEmitter {
   async _getOrCreateDeviceInstance(path) {
     // Extract the base device path using device-specific logic
     const basePath = this._extractBasePath(path);
+    
+    // Validate basePath
+    if (!basePath) {
+      this.logger.error(`Failed to extract valid basePath from: ${path}`);
+      return null;
+    }
     
     if (!this.deviceInstances.has(basePath)) {
       // Mark that we're creating this device to prevent duplicate creation
@@ -541,20 +738,39 @@ export class VenusClient extends EventEmitter {
   }
 
   _extractBasePath(path) {
+    if (!path || typeof path !== 'string') {
+      this.logger.error(`Invalid path provided to _extractBasePath: ${path}`);
+      return null;
+    }
+    
+    let basePath;
     switch (this._internalDeviceType) {
       case 'tank':
         // Handle tank paths like 'tanks.freshWater.0.capacity' -> 'tanks.freshWater.0'
         // and also 'tanks.freshWater.0.currentLevel' -> 'tanks.freshWater.0'
-        return path.replace(/\.(currentLevel|capacity|name|currentVolume|voltage)$/, '');
+        basePath = path.replace(/\.(currentLevel|capacity|name|currentVolume|voltage)$/, '');
+        break;
       case 'battery':
-        return path.replace(/\.(voltage|current|stateOfCharge|consumed|timeRemaining|relay|temperature|name|capacity\..*|power)$/, '');
+        basePath = path.replace(/\.(voltage|current|stateOfCharge|consumed|timeRemaining|relay|temperature|name|capacity\..*|power)$/, '');
+        break;
       case 'switch':
-        return path.replace(/\.(state|dimmingLevel|position|name)$/, '');
+        basePath = path.replace(/\.(state|dimmingLevel|position|name)$/, '');
+        break;
       case 'environment':
-        return path.replace(/\.(temperature|humidity|relativeHumidity)$/, '');
+        basePath = path.replace(/\.(temperature|humidity|relativeHumidity)$/, '');
+        break;
       default:
-        return path;
+        basePath = path;
+        break;
     }
+    
+    // Ensure we never return empty string or invalid values
+    if (!basePath || basePath.trim() === '') {
+      this.logger.error(`Extracted basePath is empty from path: ${path}`);
+      return null;
+    }
+    
+    return basePath;
   }
 
   _generateStableIndex(basePath) {
@@ -855,6 +1071,12 @@ export class VenusClient extends EventEmitter {
 
   async _handleBatteryUpdate(path, value, deviceService, deviceName) {
     const devicePath = deviceService.basePath;
+    
+    // Validate devicePath to prevent undefined history tracking
+    if (!devicePath || devicePath === 'undefined' || devicePath === 'null') {
+      this.logger.error(`Invalid devicePath in battery update for ${deviceName}: ${devicePath}`);
+      return;
+    }
     
     if (path.includes('voltage')) {
       if (typeof value === 'number' && !isNaN(value)) {
