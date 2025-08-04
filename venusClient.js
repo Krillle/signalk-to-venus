@@ -111,11 +111,14 @@ export class VenusClient extends EventEmitter {
     
     const now = Date.now();
     
+    // Validate initial voltage
+    const validInitialVoltage = (typeof initialVoltage === 'number' && !isNaN(initialVoltage)) ? initialVoltage : 12.0;
+    
     // Check if we have existing history data for this device
     if (!this.historyData.has(devicePath)) {
       this.historyData.set(devicePath, {
-        minVoltage: initialVoltage,
-        maxVoltage: initialVoltage,
+        minVoltage: validInitialVoltage,
+        maxVoltage: validInitialVoltage,
         dischargedEnergy: 0, // kWh
         chargedEnergy: 0,    // kWh
         totalAhDrawn: 0      // Ah
@@ -125,19 +128,28 @@ export class VenusClient extends EventEmitter {
       
       this.energyAccumulators.set(devicePath, {
         lastCurrent: 0,
-        lastVoltage: initialVoltage,
+        lastVoltage: validInitialVoltage,
         lastTimestamp: now
       });
       
       this.logger.debug(`Initialized new history tracking for ${devicePath}`);
     } else {
-      // Update existing data with current voltage if needed
+      // Update existing data with current voltage if needed and validate existing values
       const existing = this.historyData.get(devicePath);
-      if (initialVoltage < existing.minVoltage) {
-        existing.minVoltage = initialVoltage;
+      
+      // Validate and fix any NaN values in existing data
+      if (isNaN(existing.minVoltage)) existing.minVoltage = validInitialVoltage;
+      if (isNaN(existing.maxVoltage)) existing.maxVoltage = validInitialVoltage;
+      if (isNaN(existing.dischargedEnergy)) existing.dischargedEnergy = 0;
+      if (isNaN(existing.chargedEnergy)) existing.chargedEnergy = 0;
+      if (isNaN(existing.totalAhDrawn)) existing.totalAhDrawn = 0;
+      
+      // Update min/max voltage with valid initial voltage
+      if (validInitialVoltage < existing.minVoltage) {
+        existing.minVoltage = validInitialVoltage;
       }
-      if (initialVoltage > existing.maxVoltage) {
-        existing.maxVoltage = initialVoltage;
+      if (validInitialVoltage > existing.maxVoltage) {
+        existing.maxVoltage = validInitialVoltage;
       }
       
       this.logger.debug(`Restored existing history tracking for ${devicePath}`);
@@ -156,41 +168,72 @@ export class VenusClient extends EventEmitter {
     const now = Date.now();
     const lastTime = this.lastUpdateTime.get(devicePath) || now;
     
-    // Update min/max voltage
-    if (voltage) {
-      if (voltage < history.minVoltage) {
-        history.minVoltage = voltage;
+    // Validate input values to prevent NaN propagation
+    const validVoltage = (typeof voltage === 'number' && !isNaN(voltage)) ? voltage : null;
+    const validCurrent = (typeof current === 'number' && !isNaN(current)) ? current : null;
+    const validPower = (typeof power === 'number' && !isNaN(power)) ? power : null;
+    
+    // Update min/max voltage only with valid values
+    if (validVoltage !== null) {
+      if (validVoltage < history.minVoltage || isNaN(history.minVoltage)) {
+        history.minVoltage = validVoltage;
       }
-      if (voltage > history.maxVoltage) {
-        history.maxVoltage = voltage;
+      if (validVoltage > history.maxVoltage || isNaN(history.maxVoltage)) {
+        history.maxVoltage = validVoltage;
       }
     }
     
-    // Calculate energy accumulation if we have previous data
-    if (accumulator && current !== undefined && voltage !== undefined) {
+    // Calculate energy accumulation if we have valid previous data
+    if (accumulator && validCurrent !== null && validVoltage !== null) {
       const deltaTimeHours = (now - lastTime) / (1000 * 3600); // Convert to hours
       
       if (deltaTimeHours > 0 && deltaTimeHours < 1) { // Sanity check: less than 1 hour
         // Use power if available, otherwise calculate from V*I
-        const actualPower = power !== undefined ? power : (voltage * current);
-        const energyDelta = Math.abs(actualPower) * deltaTimeHours / 1000; // Convert W to kWh
-        const ahDelta = Math.abs(current) * deltaTimeHours;
+        const actualPower = validPower !== null ? validPower : (validVoltage * validCurrent);
         
-        if (current < 0) {
-          // Discharging
-          history.dischargedEnergy += energyDelta;
-          history.totalAhDrawn += ahDelta;
-        } else if (current > 0) {
-          // Charging
-          history.chargedEnergy += energyDelta;
+        // Validate calculations before adding to history
+        if (!isNaN(actualPower) && !isNaN(deltaTimeHours)) {
+          const energyDelta = Math.abs(actualPower) * deltaTimeHours / 1000; // Convert W to kWh
+          const ahDelta = Math.abs(validCurrent) * deltaTimeHours;
+          
+          if (!isNaN(energyDelta) && !isNaN(ahDelta)) {
+            if (validCurrent < 0) {
+              // Discharging - validate before adding
+              if (!isNaN(history.dischargedEnergy)) {
+                history.dischargedEnergy += energyDelta;
+              } else {
+                history.dischargedEnergy = energyDelta;
+              }
+              
+              if (!isNaN(history.totalAhDrawn)) {
+                history.totalAhDrawn += ahDelta;
+              } else {
+                history.totalAhDrawn = ahDelta;
+              }
+            } else if (validCurrent > 0) {
+              // Charging - validate before adding
+              if (!isNaN(history.chargedEnergy)) {
+                history.chargedEnergy += energyDelta;
+              } else {
+                history.chargedEnergy = energyDelta;
+              }
+            }
+          }
         }
         
-        // Update accumulator
-        accumulator.lastCurrent = current;
-        accumulator.lastVoltage = voltage;
+        // Update accumulator with valid values
+        accumulator.lastCurrent = validCurrent;
+        accumulator.lastVoltage = validVoltage;
         accumulator.lastTimestamp = now;
       }
     }
+    
+    // Ensure all history values are valid numbers
+    if (isNaN(history.dischargedEnergy)) history.dischargedEnergy = 0;
+    if (isNaN(history.chargedEnergy)) history.chargedEnergy = 0;
+    if (isNaN(history.totalAhDrawn)) history.totalAhDrawn = 0;
+    if (isNaN(history.minVoltage)) history.minVoltage = 12.0;
+    if (isNaN(history.maxVoltage)) history.maxVoltage = 12.0;
     
     this.lastUpdateTime.set(devicePath, now);
     return history;
@@ -999,21 +1042,28 @@ export class VenusClient extends EventEmitter {
    */
   async _updateHistoryProperties(deviceService, history) {
     try {
+      // Validate all values before sending to prevent NaN errors
+      const dischargedEnergy = isNaN(history.dischargedEnergy) ? 0 : (history.dischargedEnergy / 1000);
+      const chargedEnergy = isNaN(history.chargedEnergy) ? 0 : (history.chargedEnergy / 1000);
+      const totalAh = isNaN(history.totalAh) ? 0 : history.totalAh;
+      const minVoltage = isNaN(history.minVoltage) ? 12.0 : history.minVoltage;
+      const maxVoltage = isNaN(history.maxVoltage) ? 12.0 : history.maxVoltage;
+      
       // Update energy history properties (in kWh)
       await deviceService.updateProperty('/History/DischargedEnergy', 
-        history.discharged / 1000, 'd', 'Total discharged energy');
+        dischargedEnergy, 'd', 'Total discharged energy');
       await deviceService.updateProperty('/History/ChargedEnergy', 
-        history.charged / 1000, 'd', 'Total charged energy');
+        chargedEnergy, 'd', 'Total charged energy');
       
       // Update current history in Ah
       await deviceService.updateProperty('/History/TotalAhDrawn', 
-        history.totalAh, 'd', 'Total Ah drawn');
+        totalAh, 'd', 'Total Ah drawn');
       
       // Update voltage history in V
       await deviceService.updateProperty('/History/MinimumVoltage', 
-        history.minVoltage, 'd', 'Minimum voltage');
+        minVoltage, 'd', 'Minimum voltage');
       await deviceService.updateProperty('/History/MaximumVoltage', 
-        history.maxVoltage, 'd', 'Maximum voltage');
+        maxVoltage, 'd', 'Maximum voltage');
         
     } catch (error) {
       this.emit('error', `Failed to update history properties: ${error.message}`);

@@ -18,26 +18,39 @@ export class HistoryPersistence {
       const data = await fs.readFile(this.dataPath, 'utf8');
       const parsed = JSON.parse(data);
       
-      // Convert back to Maps
+      // Convert back to Maps and validate values
       const historyData = new Map();
       const energyAccumulators = new Map();
       const lastUpdateTime = new Map();
       
       if (parsed.historyData) {
         for (const [key, value] of Object.entries(parsed.historyData)) {
-          historyData.set(key, value);
+          // Validate and sanitize history data
+          historyData.set(key, {
+            minVoltage: isNaN(value.minVoltage) ? 12.0 : value.minVoltage,
+            maxVoltage: isNaN(value.maxVoltage) ? 12.0 : value.maxVoltage,
+            dischargedEnergy: isNaN(value.dischargedEnergy) ? 0 : value.dischargedEnergy,
+            chargedEnergy: isNaN(value.chargedEnergy) ? 0 : value.chargedEnergy,
+            totalAhDrawn: isNaN(value.totalAhDrawn) ? 0 : value.totalAhDrawn
+          });
         }
       }
       
       if (parsed.energyAccumulators) {
         for (const [key, value] of Object.entries(parsed.energyAccumulators)) {
-          energyAccumulators.set(key, value);
+          // Validate and sanitize energy accumulator data
+          energyAccumulators.set(key, {
+            lastCurrent: isNaN(value.lastCurrent) ? 0 : value.lastCurrent,
+            lastVoltage: isNaN(value.lastVoltage) ? 12.0 : value.lastVoltage,
+            lastTimestamp: isNaN(value.lastTimestamp) ? Date.now() : value.lastTimestamp
+          });
         }
       }
       
       if (parsed.lastUpdateTime) {
         for (const [key, value] of Object.entries(parsed.lastUpdateTime)) {
-          lastUpdateTime.set(key, value);
+          // Validate and sanitize timestamp data
+          lastUpdateTime.set(key, isNaN(value) ? Date.now() : value);
         }
       }
       
@@ -76,11 +89,40 @@ export class HistoryPersistence {
     this.pendingSave = true;
     
     try {
-      // Convert Maps to plain objects for JSON serialization
+      // Convert Maps to plain objects for JSON serialization and validate values
+      const sanitizedHistoryData = {};
+      const sanitizedEnergyAccumulators = {};
+      const sanitizedLastUpdateTime = {};
+      
+      // Sanitize history data
+      for (const [key, value] of historyData.entries()) {
+        sanitizedHistoryData[key] = {
+          minVoltage: isNaN(value.minVoltage) ? 12.0 : value.minVoltage,
+          maxVoltage: isNaN(value.maxVoltage) ? 12.0 : value.maxVoltage,
+          dischargedEnergy: isNaN(value.dischargedEnergy) ? 0 : value.dischargedEnergy,
+          chargedEnergy: isNaN(value.chargedEnergy) ? 0 : value.chargedEnergy,
+          totalAhDrawn: isNaN(value.totalAhDrawn) ? 0 : value.totalAhDrawn
+        };
+      }
+      
+      // Sanitize energy accumulators
+      for (const [key, value] of energyAccumulators.entries()) {
+        sanitizedEnergyAccumulators[key] = {
+          lastCurrent: isNaN(value.lastCurrent) ? 0 : value.lastCurrent,
+          lastVoltage: isNaN(value.lastVoltage) ? 12.0 : value.lastVoltage,
+          lastTimestamp: isNaN(value.lastTimestamp) ? Date.now() : value.lastTimestamp
+        };
+      }
+      
+      // Sanitize last update time
+      for (const [key, value] of lastUpdateTime.entries()) {
+        sanitizedLastUpdateTime[key] = isNaN(value) ? Date.now() : value;
+      }
+      
       const dataToSave = {
-        historyData: Object.fromEntries(historyData),
-        energyAccumulators: Object.fromEntries(energyAccumulators),
-        lastUpdateTime: Object.fromEntries(lastUpdateTime),
+        historyData: sanitizedHistoryData,
+        energyAccumulators: sanitizedEnergyAccumulators,
+        lastUpdateTime: sanitizedLastUpdateTime,
         lastSaved: new Date().toISOString()
       };
       
