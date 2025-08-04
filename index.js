@@ -313,6 +313,12 @@ export default function(app) {
                 return;
               }
               
+              // Check for Venus OS sources to prevent feedback loops
+              const sourceLabel = update.source?.label || update.$source || 'unknown';
+              if (sourceLabel.includes('venus.com.victronenergy')) {
+                return;
+              }
+              
               update.values.forEach(async pathValue => {
                 try {
                   // Check if pathValue exists and has required properties
