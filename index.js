@@ -103,6 +103,16 @@ export default function(app) {
     },
 
     start: function(options) {
+      app.setPluginStatus('Waiting 20 seconds for system readiness');
+      app.debug('Starting Signal K to Venus OS bridge - waiting 20 seconds for system readiness');
+      
+      // Simple 20-second delay to ensure Signal K and Venus OS are fully ready
+      setTimeout(() => {
+        plugin.actualStart(options);
+      }, 20000);
+    },
+
+    actualStart: function(options) {
       app.setPluginStatus('Starting Signal K to Venus OS bridge');
       app.debug('Starting Signal K to Venus OS bridge');
       const config = { ...settings, ...options };
@@ -120,80 +130,6 @@ export default function(app) {
         'environment': 'Environment',
         'switches': 'Switches'
       };
-
-      // Function to check if Signal K has populated any device data
-      async function waitForSignalKReadiness() {
-        app.setPluginStatus('Waiting for Signal K to populate data');
-        
-        const maxWaitTime = 15000; // Reduced to 15 seconds - we just need Signal K to be generally ready
-        const checkInterval = 1000; // Check every 1 second
-        let waitTime = 0;
-        
-        return new Promise((resolve) => {
-          const checkReadiness = () => {
-            try {
-              // Check if Signal K has any data available at all (not specific device types)
-              let hasSignalKData = false;
-              
-              // Try to get the root vessel data to see if Signal K is populated
-              if (app.getSelfPath) {
-                try {
-                  const rootData = app.getSelfPath('');
-                  if (rootData && typeof rootData === 'object' && Object.keys(rootData).length > 0) {
-                    hasSignalKData = true;
-                  }
-                } catch (err) {
-                  // getSelfPath might fail if data isn't ready yet
-                }
-              }
-              
-              // Also check if we have a streambundle with any data
-              if (!hasSignalKData && app.streambundle && app.streambundle.getSelfStream) {
-                try {
-                  const stream = app.streambundle.getSelfStream('');
-                  if (stream && stream.value && typeof stream.value === 'object' && Object.keys(stream.value).length > 0) {
-                    hasSignalKData = true;
-                  }
-                } catch (err) {
-                  // Stream might not be ready
-                }
-              }
-              
-              // If we still don't have data, check if the app has basic vessel info
-              if (!hasSignalKData && app.getSelfPath) {
-                try {
-                  // Check for basic vessel information that should always be present
-                  const vesselInfo = app.getSelfPath('design') || app.getSelfPath('navigation') || app.getSelfPath('name');
-                  if (vesselInfo) {
-                    hasSignalKData = true;
-                  }
-                } catch (err) {
-                  // Ignore errors, we'll timeout if needed
-                }
-              }
-              
-              if (hasSignalKData || waitTime >= maxWaitTime) {
-                if (hasSignalKData) {
-                  app.setPluginStatus('Signal K data ready, starting device discovery');
-                } else {
-                  app.setPluginStatus('Signal K readiness timeout, starting discovery anyway');
-                }
-                resolve();
-              } else {
-                waitTime += checkInterval;
-                setTimeout(checkReadiness, checkInterval);
-              }
-            } catch (err) {
-              app.debug('Error checking Signal K readiness:', err);
-              // Continue anyway after a short delay
-              setTimeout(() => resolve(), 1000);
-            }
-          };
-          
-          // Start checking after a short initial delay to let Signal K initialize
-          setTimeout(checkReadiness, 1000);
-        });
-      }
 
       // Test Venus OS connectivity before processing any data
       async function testVenusConnectivity() {
@@ -282,16 +218,13 @@ export default function(app) {
         }
       }
 
-      // Main startup sequence - wait for Signal K to be ready
+      // Main startup sequence - systems should be ready after 20 second delay
       async function startBridge() {
         try {
-          // Wait for Signal K to populate device data
-          await waitForSignalKReadiness();
-          
-          // Test Venus OS connectivity initially
+          // Test Venus OS connectivity
           await runConnectivityTest();
           
-          // Set up Signal K subscription after Signal K is ready
+          // Set up Signal K subscription
           setupSignalKSubscription();
           
           // Start periodic Venus connectivity tests
@@ -635,7 +568,7 @@ export default function(app) {
       }
 
       
-      // Start the bridge with Signal K readiness check
+      // Start the bridge immediately since we've already waited
       startBridge();
     },
 
