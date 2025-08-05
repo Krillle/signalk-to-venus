@@ -690,5 +690,75 @@ describe('VenusClient - Battery', () => {
       expect(cleanHistory.chargedEnergy).toBe(0);
       expect(cleanHistory.totalAhDrawn).toBe(0);
     });
+
+    it('should calculate charged energy with high charging current (50A)', async () => {
+      // Create device with critical data first
+      await client.handleSignalKUpdate('electrical.batteries.main.voltage', 12.0);
+      await client.handleSignalKUpdate('electrical.batteries.main.current', 50.0);
+      
+      // Mock time to control delta calculation (simulate 10 minutes)
+      const mockNow = Date.now();
+      const tenMinutesLater = mockNow + 600000; // 10 minutes to stay well under 1 hour limit
+      
+      // Set initial timestamp manually
+      client.lastUpdateTime.set('electrical.batteries.main', mockNow);
+      
+      // Mock Date.now to return the later time for the calculation
+      const dateNowSpy = vi.spyOn(Date, 'now').mockReturnValue(tenMinutesLater);
+      
+      // Update with high charging current (+50A for 10 minutes = 1/6 hour)
+      const history = client.updateHistoryData('electrical.batteries.main', 12.0, 50.0, null);
+      
+      expect(history).toBeDefined();
+      // Calculate expected: 12V * 50A * (1/6)h / 1000 = 0.1 kWh
+      expect(history.chargedEnergy).toBeCloseTo(0.1, 3);
+      expect(history.dischargedEnergy).toBe(0);
+      
+      // Also check cumulative Ah calculation
+      // With Solar=5A, Alternator=10A, Battery=+50A (charging)
+      // Cumulative Ah = S + L - A = 5 + 10 - 50 = -35A for 1/6 hour = -5.83Ah
+      // Since this is negative, totalAhDrawn might not update
+      
+      dateNowSpy.mockRestore();
+    });
+
+    it('should handle real-world charging scenario with debug logging', async () => {
+      // Mock console.log to capture debug messages
+      const originalDebug = client.logger.debug;
+      const debugMessages = [];
+      client.logger.debug = (msg) => {
+        debugMessages.push(msg);
+        originalDebug.call(client.logger, msg);
+      };
+      
+      // Create device with critical data first
+      await client.handleSignalKUpdate('electrical.batteries.main.voltage', 12.0);
+      await client.handleSignalKUpdate('electrical.batteries.main.current', 50.0);
+      
+      // Mock realistic time (5 minutes)
+      const mockNow = Date.now();
+      const fiveMinutesLater = mockNow + 300000; // 5 minutes
+      
+      client.lastUpdateTime.set('electrical.batteries.main', mockNow);
+      const dateNowSpy = vi.spyOn(Date, 'now').mockReturnValue(fiveMinutesLater);
+      
+      // Update with charging current
+      const history = client.updateHistoryData('electrical.batteries.main', 12.0, 50.0, null);
+      
+      // Check if energy calculation happened
+      expect(history).toBeDefined();
+      expect(history.chargedEnergy).toBeGreaterThan(0);
+      
+      // Check debug messages for energy calculation
+      const energyMessages = debugMessages.filter(msg => msg.includes('Energy calculation'));
+      expect(energyMessages.length).toBeGreaterThan(0);
+      
+      const chargingMessages = debugMessages.filter(msg => msg.includes('Battery charging'));
+      expect(chargingMessages.length).toBeGreaterThan(0);
+      
+      // Restore
+      client.logger.debug = originalDebug;
+      dateNowSpy.mockRestore();
+    });
   });
 });
