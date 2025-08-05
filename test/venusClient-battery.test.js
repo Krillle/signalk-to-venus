@@ -217,10 +217,17 @@ describe('VenusClient - Battery', () => {
       
       // Verify the service was created
       expect(client.deviceServices.size).toBe(1);
+      console.log('After critical data setup:');
+      console.log('- deviceServices.size:', client.deviceServices.size);
+      console.log('- deviceInstances.size:', client.deviceInstances.size);
+      console.log('- Service keys:', Array.from(client.deviceServices.keys()));
+      console.log('- Instance keys:', Array.from(client.deviceInstances.keys()));
       
       // Now spy on emit and test power update
       const emitSpy = vi.spyOn(client, 'emit');
+      console.log('About to send power update...');
       await client.handleSignalKUpdate('electrical.batteries.main.power', 65);
+      console.log('Power update completed. Emit calls:', emitSpy.mock.calls);
       
       expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Battery Power', 'Battery: 65.0W');
     });
