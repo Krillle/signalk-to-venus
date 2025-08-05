@@ -534,7 +534,7 @@ describe('VenusClient - Battery', () => {
       
       expect(history).toBeDefined();
       expect(history.chargedEnergy).toBeCloseTo(0.03, 3); // 12V * 5A * 0.5h / 1000 = 0.03 kWh
-      expect(history.dischargedEnergy).toBe(0);
+      expect(history.dischargedEnergy).toBe(0); // Should be 0 when charging
       
       dateNowSpy.mockRestore();
     });
@@ -543,6 +543,10 @@ describe('VenusClient - Battery', () => {
       // Create device with critical data first
       await client.handleSignalKUpdate('electrical.batteries.main.voltage', 12.0);
       await client.handleSignalKUpdate('electrical.batteries.main.current', -5.0);
+      
+      // Get initial state and reset totalAhDrawn to ensure clean test
+      const initialHistory = client.historyData.get('electrical.batteries.main');
+      initialHistory.totalAhDrawn = 0; // Reset to 0 for clean test
       
       // Mock time to control delta calculation (simulate 30 minutes)
       const mockNow = Date.now();
