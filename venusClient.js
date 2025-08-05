@@ -971,8 +971,39 @@ export class VenusClient extends EventEmitter {
         return;
       }
 
-      // IMPORTANT: Only create device service when we receive meaningful data
-      // This prevents creating services with fake/placeholder values
+      // Extract base path to check if device already exists
+      const basePath = this._extractBasePath(path);
+      if (!basePath) {
+        this.logger.error(`Failed to extract valid basePath from: ${path}`);
+        return;
+      }
+
+      // Check if we already have a device service for this path
+      const existingDeviceService = this.deviceServices.get(basePath);
+      
+      if (existingDeviceService) {
+        // We have an existing device - update it with any valid data
+        this.logger.debug(`Updating existing device ${basePath} with ${path} = ${value}`);
+        
+        // Check if device service is connected and ready for data updates
+        if (!existingDeviceService.isConnected) {
+          this.logger.warn(`⚠️ RACE CONDITION: Device service ${basePath} not connected yet - data update ${path} = ${value} will be dropped`);
+          return;
+        }
+        
+        // Get the device instance for the device name
+        const deviceInstance = this.deviceInstances.get(basePath);
+        if (!deviceInstance) {
+          this.logger.error(`Device instance not found for ${basePath}`);
+          return;
+        }
+        
+        // Handle the update for existing device
+        await this._handleDeviceSpecificUpdate(path, value, existingDeviceService, deviceInstance);
+        return;
+      }
+
+      // No existing device - only create if we have critical data
       if (!this._shouldCreateDeviceForPath(path, value)) {
         // Store the path and value for later, but don't create the device yet
         this.logger.debug(`Deferring device creation for ${path} - waiting for critical data`);
