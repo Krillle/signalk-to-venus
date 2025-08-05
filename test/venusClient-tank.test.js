@@ -142,6 +142,8 @@ describe('VenusClient - Tank', () => {
     it('should handle tank volume updates correctly', async () => {
       const emitSpy = vi.spyOn(client, 'emit');
       
+      // Set critical data first (currentLevel)
+      await client.handleSignalKUpdate('tanks.fuel.main.currentLevel', 0.8);
       await client.handleSignalKUpdate('tanks.fuel.main.currentVolume', 150);
       
       expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Tank Volume', 'Fuel: 150.0L');
@@ -150,6 +152,8 @@ describe('VenusClient - Tank', () => {
     it('should handle tank name updates correctly', async () => {
       const emitSpy = vi.spyOn(client, 'emit');
       
+      // Set critical data first (currentLevel)
+      await client.handleSignalKUpdate('tanks.fuel.main.currentLevel', 0.6);
       await client.handleSignalKUpdate('tanks.fuel.main.name', 'Main Fuel Tank');
       
       expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Tank Name', 'Fuel: Main Fuel Tank');
@@ -158,6 +162,8 @@ describe('VenusClient - Tank', () => {
     it('should handle tank voltage updates correctly', async () => {
       const emitSpy = vi.spyOn(client, 'emit');
       
+      // Set critical data first (currentLevel)
+      await client.handleSignalKUpdate('tanks.fuel.main.currentLevel', 0.7);
       await client.handleSignalKUpdate('tanks.fuel.main.voltage', 12.5);
       
       expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Tank Voltage', 'Fuel: 12.50V');

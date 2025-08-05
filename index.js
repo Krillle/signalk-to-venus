@@ -488,6 +488,7 @@ export default function(app) {
       
       if (plugin.unsubscribe) {
         plugin.unsubscribe();
+        plugin.unsubscribe = null;
       }
       if (plugin.clients) {
         Object.values(plugin.clients).forEach(async client => {

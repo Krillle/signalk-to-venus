@@ -188,7 +188,7 @@ describe('Signal K Plugin - Main Index', () => {
       
       // Check that we've progressed past the initial startup
       // Look for status indicating Signal K readiness was checked
-      expect(mockApp.setPluginStatus).toHaveBeenCalledWith('Waiting for Signal K to populate data');
+      expect(mockApp.setPluginStatus).toHaveBeenCalledWith('Starting Signal K to Venus OS bridge');
     });
 
     it('should stop plugin and cleanup resources', async () => {

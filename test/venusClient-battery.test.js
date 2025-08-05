@@ -263,10 +263,12 @@ describe('VenusClient - Battery', () => {
     });
 
     it('should handle timeRemaining correctly - ignore null values', async () => {
-      // Create a device with known state first
+      // Create a device with critical data first
       await client.handleSignalKUpdate('electrical.batteries.main.voltage', 12.5);
-      await client.handleSignalKUpdate('electrical.batteries.main.current', 5.0); // Discharging
       await client.handleSignalKUpdate('electrical.batteries.main.stateOfCharge', 0.75);
+      
+      // Ensure device service is created
+      expect(client.deviceServices.size).toBe(1);
       
       // Get the device service and set up spies
       const deviceService = Array.from(client.deviceServices.values())[0];

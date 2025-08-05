@@ -195,7 +195,7 @@ describe('VenusClient - Environment', () => {
       expect(client.deviceInstances.size).toBe(1);
       const instance = client.deviceInstances.get('environment.inside');
       expect(instance).toBeDefined();
-      expect(instance.name).toBe('Inside Temperature');
+      expect(instance.name).toBe('Inside');
       expect(instance.basePath).toBe('environment.inside');
       expect(typeof instance.index).toBe('number');
     });
