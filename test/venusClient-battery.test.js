@@ -436,26 +436,26 @@ describe('VenusClient - Battery', () => {
   });
 
   describe('History Data Tracking', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
       // Mock the Signal K app to provide solar and alternator data
       client.signalKApp = {
-        getSelfPath: vi.fn()
+        getSelfPath: vi.fn((path) => {
+          if (path === 'electrical.solar.current') return 5.0; // 5A solar
+          if (path === 'electrical.alternators.current') return 10.0; // 10A alternator
+          return null;
+        })
       };
       
-      // Mock _getCurrentSignalKValue to return test data
-      client._getCurrentSignalKValue = vi.fn((path) => {
-        if (path === 'electrical.solar.current') return 5.0; // 5A solar
-        if (path === 'electrical.alternators.current') return 10.0; // 10A alternator
-        return null;
-      });
+      // Ensure history data is loaded
+      await client.loadHistoryData();
     });
 
     it('should track voltage min/max correctly', async () => {
-      // Create device with critical data
+      // Create device with critical data first
       await client.handleSignalKUpdate('electrical.batteries.main.voltage', 12.5);
       await client.handleSignalKUpdate('electrical.batteries.main.current', -5.0);
       
-      // Update history with different voltage values
+      // Update history with different voltage values (all above 5V threshold)
       client.updateHistoryData('electrical.batteries.main', 12.0, -5.0, null);
       client.updateHistoryData('electrical.batteries.main', 13.8, 5.0, null);
       client.updateHistoryData('electrical.batteries.main', 11.5, -2.0, null);
@@ -467,11 +467,16 @@ describe('VenusClient - Battery', () => {
     });
 
     it('should ignore invalid voltage values in min/max tracking', async () => {
-      // Create device with critical data
+      // Create device with critical data first
       await client.handleSignalKUpdate('electrical.batteries.main.voltage', 12.5);
       await client.handleSignalKUpdate('electrical.batteries.main.current', -5.0);
       
-      // Try to update with invalid voltage values (should be ignored)
+      // Get initial state
+      const initialHistory = client.historyData.get('electrical.batteries.main');
+      const initialMin = initialHistory.minimumVoltage;
+      const initialMax = initialHistory.maximumVoltage;
+      
+      // Try to update with invalid voltage values (should be ignored due to <5V threshold)
       client.updateHistoryData('electrical.batteries.main', 0, -5.0, null); // Too low
       client.updateHistoryData('electrical.batteries.main', 3.0, -5.0, null); // Too low
       client.updateHistoryData('electrical.batteries.main', null, -5.0, null); // Null
@@ -479,13 +484,13 @@ describe('VenusClient - Battery', () => {
       
       const history = client.historyData.get('electrical.batteries.main');
       expect(history).toBeDefined();
-      // Should still have the original 12.5V from device creation
-      expect(history.minimumVoltage).toBe(12.5);
-      expect(history.maximumVoltage).toBe(12.5);
+      // Should still have the original values from device creation (min/max should not change)
+      expect(history.minimumVoltage).toBe(initialMin);
+      expect(history.maximumVoltage).toBe(initialMax);
     });
 
     it('should calculate discharged energy correctly when battery discharging', async () => {
-      // Create device with critical data
+      // Create device with critical data first
       await client.handleSignalKUpdate('electrical.batteries.main.voltage', 12.0);
       await client.handleSignalKUpdate('electrical.batteries.main.current', -5.0);
       
@@ -493,10 +498,11 @@ describe('VenusClient - Battery', () => {
       const mockNow = Date.now();
       const oneHourLater = mockNow + 3600000;
       
-      vi.spyOn(Date, 'now').mockReturnValueOnce(mockNow).mockReturnValueOnce(oneHourLater);
-      
-      // Set initial timestamp
+      // Set initial timestamp manually
       client.lastUpdateTime.set('electrical.batteries.main', mockNow);
+      
+      // Mock Date.now to return the later time for the calculation
+      const dateNowSpy = vi.spyOn(Date, 'now').mockReturnValue(oneHourLater);
       
       // Update with discharging current (-5A for 1 hour)
       const history = client.updateHistoryData('electrical.batteries.main', 12.0, -5.0, null);
@@ -505,11 +511,11 @@ describe('VenusClient - Battery', () => {
       expect(history.dischargedEnergy).toBeCloseTo(0.06, 3); // 12V * 5A * 1h / 1000 = 0.06 kWh
       expect(history.chargedEnergy).toBe(0);
       
-      vi.restoreAllMocks();
+      dateNowSpy.mockRestore();
     });
 
     it('should calculate charged energy correctly when battery charging', async () => {
-      // Create device with critical data
+      // Create device with critical data first
       await client.handleSignalKUpdate('electrical.batteries.main.voltage', 12.0);
       await client.handleSignalKUpdate('electrical.batteries.main.current', 5.0);
       
@@ -517,10 +523,11 @@ describe('VenusClient - Battery', () => {
       const mockNow = Date.now();
       const oneHourLater = mockNow + 3600000;
       
-      vi.spyOn(Date, 'now').mockReturnValueOnce(mockNow).mockReturnValueOnce(oneHourLater);
-      
-      // Set initial timestamp
+      // Set initial timestamp manually
       client.lastUpdateTime.set('electrical.batteries.main', mockNow);
+      
+      // Mock Date.now to return the later time for the calculation
+      const dateNowSpy = vi.spyOn(Date, 'now').mockReturnValue(oneHourLater);
       
       // Update with charging current (+5A for 1 hour)
       const history = client.updateHistoryData('electrical.batteries.main', 12.0, 5.0, null);
@@ -529,11 +536,11 @@ describe('VenusClient - Battery', () => {
       expect(history.chargedEnergy).toBeCloseTo(0.06, 3); // 12V * 5A * 1h / 1000 = 0.06 kWh
       expect(history.dischargedEnergy).toBe(0);
       
-      vi.restoreAllMocks();
+      dateNowSpy.mockRestore();
     });
 
     it('should calculate cumulative Ah drawn using S + L - A formula', async () => {
-      // Create device with critical data
+      // Create device with critical data first
       await client.handleSignalKUpdate('electrical.batteries.main.voltage', 12.0);
       await client.handleSignalKUpdate('electrical.batteries.main.current', -5.0);
       
@@ -541,10 +548,11 @@ describe('VenusClient - Battery', () => {
       const mockNow = Date.now();
       const oneHourLater = mockNow + 3600000;
       
-      vi.spyOn(Date, 'now').mockReturnValueOnce(mockNow).mockReturnValueOnce(oneHourLater);
-      
-      // Set initial timestamp
+      // Set initial timestamp manually
       client.lastUpdateTime.set('electrical.batteries.main', mockNow);
+      
+      // Mock Date.now to return the later time for the calculation
+      const dateNowSpy = vi.spyOn(Date, 'now').mockReturnValue(oneHourLater);
       
       // Update with: Solar=5A, Alternator=10A, Battery=-5A (discharging)
       // Cumulative Ah = S + L - A = 5 + 10 - (-5) = 20A for 1 hour = 20Ah
@@ -553,11 +561,11 @@ describe('VenusClient - Battery', () => {
       expect(history).toBeDefined();
       expect(history.totalAhDrawn).toBeCloseTo(20.0, 3); // 5 + 10 - (-5) = 20Ah
       
-      vi.restoreAllMocks();
+      dateNowSpy.mockRestore();
     });
 
     it('should calculate cumulative Ah drawn when battery charging', async () => {
-      // Create device with critical data
+      // Create device with critical data first
       await client.handleSignalKUpdate('electrical.batteries.main.voltage', 12.0);
       await client.handleSignalKUpdate('electrical.batteries.main.current', 8.0);
       
@@ -565,10 +573,11 @@ describe('VenusClient - Battery', () => {
       const mockNow = Date.now();
       const oneHourLater = mockNow + 3600000;
       
-      vi.spyOn(Date, 'now').mockReturnValueOnce(mockNow).mockReturnValueOnce(oneHourLater);
-      
-      // Set initial timestamp
+      // Set initial timestamp manually
       client.lastUpdateTime.set('electrical.batteries.main', mockNow);
+      
+      // Mock Date.now to return the later time for the calculation
+      const dateNowSpy = vi.spyOn(Date, 'now').mockReturnValue(oneHourLater);
       
       // Update with: Solar=5A, Alternator=10A, Battery=+8A (charging)
       // Cumulative Ah = S + L - A = 5 + 10 - 8 = 7A for 1 hour = 7Ah
@@ -577,17 +586,17 @@ describe('VenusClient - Battery', () => {
       expect(history).toBeDefined();
       expect(history.totalAhDrawn).toBeCloseTo(7.0, 3); // 5 + 10 - 8 = 7Ah
       
-      vi.restoreAllMocks();
+      dateNowSpy.mockRestore();
     });
 
     it('should not accumulate energy with zero time delta', async () => {
-      // Create device with critical data
+      // Create device with critical data first
       await client.handleSignalKUpdate('electrical.batteries.main.voltage', 12.0);
       await client.handleSignalKUpdate('electrical.batteries.main.current', -5.0);
       
       // Mock time to return same time (zero delta)
       const mockNow = Date.now();
-      vi.spyOn(Date, 'now').mockReturnValue(mockNow);
+      const dateNowSpy = vi.spyOn(Date, 'now').mockReturnValue(mockNow);
       
       // Set same timestamp as current time
       client.lastUpdateTime.set('electrical.batteries.main', mockNow);
@@ -599,11 +608,11 @@ describe('VenusClient - Battery', () => {
       expect(history.chargedEnergy).toBe(0);
       expect(history.totalAhDrawn).toBe(0);
       
-      vi.restoreAllMocks();
+      dateNowSpy.mockRestore();
     });
 
     it('should handle accumulator voltage updates correctly', async () => {
-      // Create device with critical data
+      // Create device with critical data first
       await client.handleSignalKUpdate('electrical.batteries.main.voltage', 12.0);
       await client.handleSignalKUpdate('electrical.batteries.main.current', -5.0);
       
@@ -623,7 +632,7 @@ describe('VenusClient - Battery', () => {
     });
 
     it('should handle mixed charging and discharging cycles', async () => {
-      // Create device with critical data
+      // Create device with critical data first
       await client.handleSignalKUpdate('electrical.batteries.main.voltage', 12.0);
       await client.handleSignalKUpdate('electrical.batteries.main.current', -5.0);
       
@@ -631,29 +640,30 @@ describe('VenusClient - Battery', () => {
       const timeIncrement = 3600000; // 1 hour
       
       // First hour: discharging at 5A
-      vi.spyOn(Date, 'now').mockReturnValue(mockTime);
       client.lastUpdateTime.set('electrical.batteries.main', mockTime);
       
       mockTime += timeIncrement;
-      vi.spyOn(Date, 'now').mockReturnValue(mockTime);
+      let dateNowSpy = vi.spyOn(Date, 'now').mockReturnValue(mockTime);
       let history = client.updateHistoryData('electrical.batteries.main', 12.0, -5.0, null);
       
       expect(history.dischargedEnergy).toBeCloseTo(0.06, 3); // 12V * 5A * 1h / 1000
       expect(history.chargedEnergy).toBe(0);
       
+      dateNowSpy.mockRestore();
+      
       // Second hour: charging at 8A
       mockTime += timeIncrement;
-      vi.spyOn(Date, 'now').mockReturnValue(mockTime);
+      dateNowSpy = vi.spyOn(Date, 'now').mockReturnValue(mockTime);
       history = client.updateHistoryData('electrical.batteries.main', 12.0, 8.0, null);
       
       expect(history.dischargedEnergy).toBeCloseTo(0.06, 3); // Should remain the same
       expect(history.chargedEnergy).toBeCloseTo(0.096, 3); // 12V * 8A * 1h / 1000
       
-      vi.restoreAllMocks();
+      dateNowSpy.mockRestore();
     });
 
     it('should preserve history data integrity with NaN protection', async () => {
-      // Create device with critical data
+      // Create device with critical data first
       await client.handleSignalKUpdate('electrical.batteries.main.voltage', 12.0);
       await client.handleSignalKUpdate('electrical.batteries.main.current', -5.0);
       
