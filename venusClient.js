@@ -971,7 +971,15 @@ export class VenusClient extends EventEmitter {
         return;
       }
 
-      // Initialize if not already done
+      // IMPORTANT: Only create device service when we receive meaningful data
+      // This prevents creating services with fake/placeholder values
+      if (!this._shouldCreateDeviceForPath(path, value)) {
+        // Store the path and value for later, but don't create the device yet
+        this.logger.debug(`Deferring device creation for ${path} - waiting for critical data`);
+        return;
+      }
+
+      // Initialize if not already done - only when we have real data
       const deviceInstance = await this._getOrCreateDeviceInstance(path);
       if (!deviceInstance) {
         this.logger.error(`Failed to create device instance for ${path}`);
@@ -1027,6 +1035,59 @@ export class VenusClient extends EventEmitter {
         return path.startsWith('environment.');
       default:
         return false;
+    }
+  }
+
+  _shouldCreateDeviceForPath(path, value) {
+    // Determine if this path/value combination contains "critical data" worth creating a device for
+    // This prevents creating devices with fake/placeholder values
+    
+    switch (this._internalDeviceType) {
+      case 'battery':
+        // For batteries, create device only when we have meaningful electrical data
+        if (path.includes('stateOfCharge') && typeof value === 'number' && !isNaN(value)) {
+          return true; // SoC is the most critical battery metric
+        }
+        if (path.includes('voltage') && typeof value === 'number' && !isNaN(value) && value > 5.0) {
+          return true; // Voltage above 5V indicates real battery data
+        }
+        if (path.includes('current') && typeof value === 'number' && !isNaN(value)) {
+          return true; // Any real current measurement is meaningful
+        }
+        return false; // Don't create for capacity, temperature, etc. without core electrical data
+        
+      case 'tank':
+        // For tanks, create device when we have level or capacity data
+        if (path.includes('currentLevel') && typeof value === 'number' && !isNaN(value)) {
+          return true; // Tank level is the primary metric
+        }
+        if (path.includes('capacity') && typeof value === 'number' && !isNaN(value) && value > 0) {
+          return true; // Valid capacity indicates a real tank
+        }
+        return false; // Don't create for just voltage readings or names
+        
+      case 'switch':
+        // For switches, create device when we have state data
+        if (path.includes('state') && typeof value === 'boolean') {
+          return true; // Switch state is the primary metric
+        }
+        if (path.includes('dimmingLevel') && typeof value === 'number' && !isNaN(value)) {
+          return true; // Dimming level indicates a real controllable device
+        }
+        return false; // Don't create for position or name without state
+        
+      case 'environment':
+        // For environment sensors, create device when we have sensor readings
+        if (path.includes('temperature') && typeof value === 'number' && !isNaN(value)) {
+          return true; // Temperature reading indicates a real sensor
+        }
+        if ((path.includes('humidity') || path.includes('relativeHumidity')) && typeof value === 'number' && !isNaN(value)) {
+          return true; // Humidity reading indicates a real sensor
+        }
+        return false;
+        
+      default:
+        return true; // For unknown device types, use the old behavior
     }
   }
 
