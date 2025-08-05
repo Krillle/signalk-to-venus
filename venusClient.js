@@ -269,8 +269,8 @@ export class VenusClient extends EventEmitter {
     const validCurrent = (typeof current === 'number' && !isNaN(current)) ? current : null;
     const validPower = (typeof power === 'number' && !isNaN(power)) ? power : null;
     
-    // Update min/max voltage only with valid values
-    if (validVoltage !== null) {
+    // Update min/max voltage only with valid values and prevent 0 values
+    if (validVoltage !== null && validVoltage > 5.0) { // Only track voltage above 5V
       if (history.minimumVoltage === null || validVoltage < history.minimumVoltage) {
         history.minimumVoltage = validVoltage;
       }
@@ -284,46 +284,49 @@ export class VenusClient extends EventEmitter {
       const deltaTimeHours = (now - lastTime) / (1000 * 3600); // Convert to hours
       
       if (deltaTimeHours > 0 && deltaTimeHours < 1) { // Sanity check: less than 1 hour
-        // Calculate total system consumption including all sources
-        const systemPowerData = this._calculateSystemPower(devicePath, validVoltage, validCurrent, validPower);
+        // Get solar and alternator currents for the new calculation method
+        const solarCurrent = this._getSolarCurrent() || 0;
+        const alternatorCurrent = this._getAlternatorCurrent() || 0;
         
-        // Use system power for energy calculations, fallback to battery power
-        const actualPower = systemPowerData.totalSystemPower || (validPower !== null ? validPower : (validVoltage * validCurrent));
-        const batteryPower = validPower !== null ? validPower : (validVoltage * validCurrent);
+        // Your corrected specification: 
+        // Cumulative Ah drawn = S + L - A (Solar + Alternator - Battery Current)
+        // Discharged energy: If A < 0 then use A (battery current itself)
+        // Charged energy: If A > 0 then use A (battery current itself)
         
-        // Validate calculations before adding to history
-        if (!isNaN(actualPower) && !isNaN(deltaTimeHours)) {
-          const energyDelta = Math.abs(actualPower) * deltaTimeHours / 1000; // Convert W to kWh
-          const ahDelta = Math.abs(validCurrent) * deltaTimeHours;
+        this.logger.debug(`Energy calculation for ${devicePath}: Solar=${solarCurrent.toFixed(1)}A, Alt=${alternatorCurrent.toFixed(1)}A, Battery=${validCurrent.toFixed(1)}A`);
+        
+        // Cumulative Ah drawn calculation: S + L - A
+        const cumulativeAhDelta = (solarCurrent + alternatorCurrent - validCurrent) * deltaTimeHours;
+        
+        if (!isNaN(history.totalAhDrawn) && cumulativeAhDelta > 0) {
+          history.totalAhDrawn += cumulativeAhDelta;
+        } else if (isNaN(history.totalAhDrawn) && cumulativeAhDelta > 0) {
+          history.totalAhDrawn = cumulativeAhDelta;
+        }
+        
+        if (validCurrent < 0) {
+          // Battery is discharging - use battery current (A) for discharged energy
+          const dischargeEnergyDelta = (validVoltage * Math.abs(validCurrent) * deltaTimeHours) / 1000; // kWh
           
-          // Log system power calculation details for debugging
-          if (systemPowerData.hasAdditionalSources) {
-            this.logger.debug(`System power calculation for ${devicePath}: Battery=${batteryPower.toFixed(1)}W, Total=${actualPower.toFixed(1)}W (Solar=${systemPowerData.solarPower.toFixed(1)}W, Alt=${systemPowerData.alternatorPower.toFixed(1)}W, Shore=${systemPowerData.shorePower.toFixed(1)}W)`);
+          if (!isNaN(history.dischargedEnergy)) {
+            history.dischargedEnergy += dischargeEnergyDelta;
+          } else {
+            history.dischargedEnergy = dischargeEnergyDelta;
           }
           
-          if (!isNaN(energyDelta) && !isNaN(ahDelta)) {
-            if (validCurrent < 0) {
-              // Discharging - validate before adding
-              if (!isNaN(history.dischargedEnergy)) {
-                history.dischargedEnergy += energyDelta;
-              } else {
-                history.dischargedEnergy = energyDelta;
-              }
-              
-              if (!isNaN(history.totalAhDrawn)) {
-                history.totalAhDrawn += ahDelta;
-              } else {
-                history.totalAhDrawn = ahDelta;
-              }
-            } else if (validCurrent > 0) {
-              // Charging - validate before adding
-              if (!isNaN(history.chargedEnergy)) {
-                history.chargedEnergy += energyDelta;
-              } else {
-                history.chargedEnergy = energyDelta;
-              }
-            }
+          this.logger.debug(`Battery discharging: ${validCurrent.toFixed(1)}A → +${dischargeEnergyDelta.toFixed(4)}kWh discharged, cumulative Ah: +${cumulativeAhDelta.toFixed(4)}Ah`);
+          
+        } else if (validCurrent > 0) {
+          // Battery is charging - use battery current (A) for charged energy  
+          const chargeEnergyDelta = (validVoltage * validCurrent * deltaTimeHours) / 1000; // kWh
+          
+          if (!isNaN(history.chargedEnergy)) {
+            history.chargedEnergy += chargeEnergyDelta;
+          } else {
+            history.chargedEnergy = chargeEnergyDelta;
           }
+          
+          this.logger.debug(`Battery charging: ${validCurrent.toFixed(1)}A → +${chargeEnergyDelta.toFixed(4)}kWh charged, cumulative Ah: +${cumulativeAhDelta.toFixed(4)}Ah`);
         }
         
         // Update accumulator with valid values
@@ -341,6 +344,63 @@ export class VenusClient extends EventEmitter {
     
     this.lastUpdateTime.set(devicePath, now);
     return history;
+  }
+
+  // Helper methods to get solar and alternator current for energy calculations
+  _getSolarCurrent() {
+    if (!this.signalKApp) return 0;
+    
+    try {
+      // Check common solar current paths
+      const solarPaths = [
+        'electrical.solar.current',
+        'electrical.chargers.solar.current',
+        'electrical.solar.0.current',
+        'electrical.solar.1.current'
+      ];
+      
+      let totalSolarCurrent = 0;
+      for (const path of solarPaths) {
+        const value = this._getCurrentSignalKValue(path);
+        if (value !== null && typeof value === 'number' && !isNaN(value) && value > 0) {
+          totalSolarCurrent += value;
+        }
+      }
+      
+      return totalSolarCurrent;
+    } catch (err) {
+      this.logger.debug(`Error getting solar current: ${err.message}`);
+      return 0;
+    }
+  }
+  
+  _getAlternatorCurrent() {
+    if (!this.signalKApp) return 0;
+    
+    try {
+      // Check common alternator current paths
+      const alternatorPaths = [
+        'electrical.alternators.current',
+        'electrical.alternators.0.current',
+        'electrical.alternators.1.current',
+        'propulsion.main.alternator.current',
+        'propulsion.port.alternator.current',
+        'propulsion.starboard.alternator.current'
+      ];
+      
+      let totalAlternatorCurrent = 0;
+      for (const path of alternatorPaths) {
+        const value = this._getCurrentSignalKValue(path);
+        if (value !== null && typeof value === 'number' && !isNaN(value) && value > 0) {
+          totalAlternatorCurrent += value;
+        }
+      }
+      
+      return totalAlternatorCurrent;
+    } catch (err) {
+      this.logger.debug(`Error getting alternator current: ${err.message}`);
+      return 0;
+    }
   }
 
   // Calculate total system power consumption including all energy sources
