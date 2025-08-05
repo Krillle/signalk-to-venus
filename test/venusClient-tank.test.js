@@ -143,6 +143,9 @@ describe('VenusClient - Tank', () => {
       // Set critical data first (currentLevel)
       await client.handleSignalKUpdate('tanks.fuel.main.currentLevel', 0.8);
       
+      // Verify the service was created
+      expect(client.deviceServices.size).toBe(1);
+      
       // Now spy on emit and test volume update
       const emitSpy = vi.spyOn(client, 'emit');
       await client.handleSignalKUpdate('tanks.fuel.main.currentVolume', 150);
@@ -154,6 +157,9 @@ describe('VenusClient - Tank', () => {
       // Set critical data first (currentLevel)
       await client.handleSignalKUpdate('tanks.fuel.main.currentLevel', 0.6);
       
+      // Verify the service was created
+      expect(client.deviceServices.size).toBe(1);
+      
       // Now spy on emit and test name update
       const emitSpy = vi.spyOn(client, 'emit');
       await client.handleSignalKUpdate('tanks.fuel.main.name', 'Main Fuel Tank');
@@ -164,6 +170,9 @@ describe('VenusClient - Tank', () => {
     it('should handle tank voltage updates correctly', async () => {
       // Set critical data first (currentLevel)
       await client.handleSignalKUpdate('tanks.fuel.main.currentLevel', 0.7);
+      
+      // Verify the service was created
+      expect(client.deviceServices.size).toBe(1);
       
       // Now spy on emit and test voltage update
       const emitSpy = vi.spyOn(client, 'emit');
