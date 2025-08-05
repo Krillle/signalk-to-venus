@@ -5,10 +5,11 @@ import { EventEmitter } from 'events';
 // Mock the vedbus module to avoid D-Bus dependency in tests
 vi.mock('../vedbus.js', () => ({
   VEDBusService: vi.fn().mockImplementation(() => ({
-    init: vi.fn(),
-    updateProperty: vi.fn(),
-    disconnect: vi.fn(),
-    isConnected: true
+    init: vi.fn().mockResolvedValue(true), // Make init async and successful
+    updateProperty: vi.fn().mockResolvedValue(true),
+    disconnect: vi.fn().mockResolvedValue(true),
+    isConnected: true,
+    deviceData: {} // Add deviceData property that the client expects
   }))
 }));
 
@@ -211,6 +212,9 @@ describe('VenusClient - Battery', () => {
       // First send a critical value to create the service
       await client.handleSignalKUpdate('electrical.batteries.main.stateOfCharge', 0.85);
       
+      // Wait a bit for service creation to complete
+      await new Promise(resolve => setTimeout(resolve, 10));
+      
       // Verify the service was created
       expect(client.deviceServices.size).toBe(1);
       
@@ -240,6 +244,9 @@ describe('VenusClient - Battery', () => {
     it('should handle battery temperature updates correctly', async () => {
       // First send a critical value to create the service
       await client.handleSignalKUpdate('electrical.batteries.main.voltage', 12.5);
+      
+      // Wait a bit for service creation to complete
+      await new Promise(resolve => setTimeout(resolve, 10));
       
       // Verify the service was created
       expect(client.deviceServices.size).toBe(1);
@@ -272,6 +279,9 @@ describe('VenusClient - Battery', () => {
       // Create a device with critical data first
       await client.handleSignalKUpdate('electrical.batteries.main.voltage', 12.5);
       await client.handleSignalKUpdate('electrical.batteries.main.stateOfCharge', 0.75);
+      
+      // Wait a bit for service creation to complete
+      await new Promise(resolve => setTimeout(resolve, 10));
       
       // Ensure device service is created
       expect(client.deviceServices.size).toBe(1);
