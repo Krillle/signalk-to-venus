@@ -272,6 +272,9 @@ describe('VenusClient - Battery', () => {
       
       // Get the device service and set up spies
       const deviceService = Array.from(client.deviceServices.values())[0];
+      expect(deviceService).toBeDefined();
+      expect(deviceService.updateProperty).toBeDefined();
+      
       const updatePropertySpy = vi.spyOn(deviceService, 'updateProperty');
       
       // First, set a valid timeRemaining (8640 seconds = 2.4 hours)

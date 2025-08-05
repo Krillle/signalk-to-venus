@@ -117,10 +117,11 @@ describe('VenusClient - Switch', () => {
     });
 
     it('should handle switch position updates correctly', async () => {
-      const emitSpy = vi.spyOn(client, 'emit');
-      
       // Set critical data first (state)
       await client.handleSignalKUpdate('electrical.switches.nav.state', true);
+      
+      // Now spy on emit and test position update
+      const emitSpy = vi.spyOn(client, 'emit');
       await client.handleSignalKUpdate('electrical.switches.nav.position', 2);
       
       expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Switch Position', 'Nav: 2');
