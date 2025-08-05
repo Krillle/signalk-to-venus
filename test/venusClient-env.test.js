@@ -72,18 +72,18 @@ describe('VenusClient - Environment', () => {
 
   describe('Device Naming', () => {
     it('should generate correct environment sensor names', () => {
-      expect(client._getEnvironmentName('environment.inside.temperature')).toBe('Inside Temperature');
-      expect(client._getEnvironmentName('environment.outside.temperature')).toBe('Outside Temperature');
-      expect(client._getEnvironmentName('environment.water.temperature')).toBe('Water Temperature');
-      expect(client._getEnvironmentName('environment.air.temperature')).toBe('Air Temperature');
-      expect(client._getEnvironmentName('environment.inside.humidity')).toBe('Inside Humidity');
-      expect(client._getEnvironmentName('environment.outside.humidity')).toBe('Outside Humidity');
-      expect(client._getEnvironmentName('environment.inside.relativeHumidity')).toBe('Inside Humidity');
+      expect(client._getEnvironmentName('environment.inside.temperature')).toBe('Inside');
+      expect(client._getEnvironmentName('environment.outside.temperature')).toBe('Outside');
+      expect(client._getEnvironmentName('environment.water.temperature')).toBe('Water');
+      expect(client._getEnvironmentName('environment.air.temperature')).toBe('Air');
+      expect(client._getEnvironmentName('environment.inside.humidity')).toBe('Inside');
+      expect(client._getEnvironmentName('environment.outside.humidity')).toBe('Outside');
+      expect(client._getEnvironmentName('environment.inside.relativeHumidity')).toBe('Inside');
     });
 
     it('should handle unknown environment types gracefully', () => {
-      expect(client._getEnvironmentName('environment.unknown.temperature')).toBe('Unknown Temperature');
-      expect(client._getEnvironmentName('environment.custom.customSensor')).toBe('Custom CustomSensor');
+      expect(client._getEnvironmentName('environment.unknown.temperature')).toBe('Unknown');
+      expect(client._getEnvironmentName('environment.custom.customSensor')).toBe('Custom');
       expect(client._getEnvironmentName('invalid.path')).toBe('Environment sensor');
     });
   });
@@ -96,7 +96,7 @@ describe('VenusClient - Environment', () => {
       
       expect(client.deviceInstances.size).toBe(1);
       expect(client.deviceServices.size).toBe(1);
-      expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Environment Temperature', 'Inside Temperature: 25.5°C');
+      expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Environment Temperature', 'Inside: 25.5°C');
     });
 
     it('should handle humidity updates correctly', async () => {
@@ -104,7 +104,7 @@ describe('VenusClient - Environment', () => {
       
       await client.handleSignalKUpdate('environment.inside.humidity', 0.65);
       
-      expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Environment Humidity', 'Inside Humidity: 65.0%');
+      expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Environment Humidity', 'Inside: 65.0%');
     });
 
     it('should handle relative humidity updates correctly', async () => {
@@ -112,7 +112,7 @@ describe('VenusClient - Environment', () => {
       
       await client.handleSignalKUpdate('environment.inside.relativeHumidity', 0.72);
       
-      expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Environment Humidity', 'Inside Humidity: 72.0%');
+      expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Environment Humidity', 'Inside: 72.0%');
     });
 
     it('should handle temperature conversion from Kelvin', async () => {
@@ -120,11 +120,11 @@ describe('VenusClient - Environment', () => {
       
       // Test Celsius temperature (below 200, should not convert)
       await client.handleSignalKUpdate('environment.inside.temperature', 25);
-      expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Environment Temperature', 'Inside Temperature: 25.0°C');
+      expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Environment Temperature', 'Inside: 25.0°C');
       
       // Test Kelvin temperature (above 200, should convert)
       await client.handleSignalKUpdate('environment.outside.temperature', 298.15);
-      expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Environment Temperature', 'Outside Temperature: 25.0°C');
+      expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Environment Temperature', 'Outside: 25.0°C');
     });
 
     it('should handle humidity values as percentages (0-1 and 0-100)', async () => {
@@ -132,11 +132,11 @@ describe('VenusClient - Environment', () => {
       
       // Test fractional value (0-1)
       await client.handleSignalKUpdate('environment.inside.humidity', 0.50);
-      expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Environment Humidity', 'Inside Humidity: 50.0%');
+      expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Environment Humidity', 'Inside: 50.0%');
       
       // Test percentage value (0-100)
       await client.handleSignalKUpdate('environment.outside.humidity', 75);
-      expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Environment Humidity', 'Outside Humidity: 75.0%');
+      expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Environment Humidity', 'Outside: 75.0%');
     });
 
     it('should ignore invalid values', async () => {

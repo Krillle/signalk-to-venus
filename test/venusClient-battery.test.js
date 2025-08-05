@@ -210,6 +210,10 @@ describe('VenusClient - Battery', () => {
     it('should handle battery power updates correctly', async () => {
       const emitSpy = vi.spyOn(client, 'emit');
       
+      // First send a critical value to create the service
+      await client.handleSignalKUpdate('electrical.batteries.main.stateOfCharge', 0.85);
+      
+      // Now test power update
       await client.handleSignalKUpdate('electrical.batteries.main.power', 65);
       
       expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Battery Power', 'Battery: 65.0W');
@@ -233,6 +237,9 @@ describe('VenusClient - Battery', () => {
 
     it('should handle battery temperature updates correctly', async () => {
       const emitSpy = vi.spyOn(client, 'emit');
+      
+      // First send a critical value to create the service
+      await client.handleSignalKUpdate('electrical.batteries.main.voltage', 12.5);
       
       // Test Celsius temperature
       await client.handleSignalKUpdate('electrical.batteries.main.temperature', 25);
