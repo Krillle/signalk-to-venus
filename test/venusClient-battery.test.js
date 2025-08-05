@@ -4,13 +4,18 @@ import { EventEmitter } from 'events';
 
 // Mock the vedbus module to avoid D-Bus dependency in tests
 vi.mock('../vedbus.js', () => ({
-  VEDBusService: vi.fn().mockImplementation(() => ({
-    init: vi.fn().mockResolvedValue(true), // Make init async and successful
-    updateProperty: vi.fn().mockResolvedValue(true),
-    disconnect: vi.fn().mockResolvedValue(true),
-    isConnected: true,
-    deviceData: {} // Add deviceData property that the client expects
-  }))
+  VEDBusService: vi.fn().mockImplementation(() => {
+    const mockService = {
+      init: vi.fn().mockResolvedValue(true),
+      updateProperty: vi.fn().mockResolvedValue(true),
+      disconnect: vi.fn().mockResolvedValue(true),
+      isConnected: true,
+      deviceData: {}
+    };
+    // Make sure init resolves immediately in tests
+    mockService.init.mockImplementation(() => Promise.resolve(true));
+    return mockService;
+  })
 }));
 
 describe('VenusClient - Battery', () => {
@@ -213,21 +218,14 @@ describe('VenusClient - Battery', () => {
       await client.handleSignalKUpdate('electrical.batteries.main.stateOfCharge', 0.85);
       
       // Wait a bit for service creation to complete
-      await new Promise(resolve => setTimeout(resolve, 10));
+      await new Promise(resolve => setTimeout(resolve, 50));
       
       // Verify the service was created
       expect(client.deviceServices.size).toBe(1);
-      console.log('After critical data setup:');
-      console.log('- deviceServices.size:', client.deviceServices.size);
-      console.log('- deviceInstances.size:', client.deviceInstances.size);
-      console.log('- Service keys:', Array.from(client.deviceServices.keys()));
-      console.log('- Instance keys:', Array.from(client.deviceInstances.keys()));
       
       // Now spy on emit and test power update
       const emitSpy = vi.spyOn(client, 'emit');
-      console.log('About to send power update...');
       await client.handleSignalKUpdate('electrical.batteries.main.power', 65);
-      console.log('Power update completed. Emit calls:', emitSpy.mock.calls);
       
       expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Battery Power', 'Battery: 65.0W');
     });
@@ -253,7 +251,7 @@ describe('VenusClient - Battery', () => {
       await client.handleSignalKUpdate('electrical.batteries.main.voltage', 12.5);
       
       // Wait a bit for service creation to complete
-      await new Promise(resolve => setTimeout(resolve, 10));
+      await new Promise(resolve => setTimeout(resolve, 50));
       
       // Verify the service was created
       expect(client.deviceServices.size).toBe(1);
@@ -288,7 +286,7 @@ describe('VenusClient - Battery', () => {
       await client.handleSignalKUpdate('electrical.batteries.main.stateOfCharge', 0.75);
       
       // Wait a bit for service creation to complete
-      await new Promise(resolve => setTimeout(resolve, 10));
+      await new Promise(resolve => setTimeout(resolve, 50));
       
       // Ensure device service is created
       expect(client.deviceServices.size).toBe(1);
