@@ -200,6 +200,17 @@ export class VenusClient extends EventEmitter {
       if (isNaN(existing.chargedEnergy)) existing.chargedEnergy = 0;
       if (isNaN(existing.totalAhDrawn)) existing.totalAhDrawn = 0;
       
+      // Also validate loaded accumulator data
+      const existingAccumulator = this.energyAccumulators.get(devicePath);
+      if (existingAccumulator) {
+        if (isNaN(existingAccumulator.lastCurrent)) existingAccumulator.lastCurrent = 0;
+        if (isNaN(existingAccumulator.lastVoltage) || existingAccumulator.lastVoltage === 0) {
+          // If we have a real voltage now, use it, otherwise keep existing valid voltage
+          existingAccumulator.lastVoltage = (initialVoltage && initialVoltage > 5.0) ? initialVoltage : (existingAccumulator.lastVoltage > 5.0 ? existingAccumulator.lastVoltage : 12.0);
+        }
+        if (isNaN(existingAccumulator.lastTimestamp)) existingAccumulator.lastTimestamp = Date.now();
+      }
+      
       // Update min/max voltage with valid initial voltage ONLY if it's a real voltage value
       // Don't initialize with fallback values (12.0) - only use actual measured voltages
       if (hasRealInitialVoltage) {
@@ -329,9 +340,13 @@ export class VenusClient extends EventEmitter {
           this.logger.debug(`Battery charging: ${validCurrent.toFixed(1)}A → +${chargeEnergyDelta.toFixed(4)}kWh charged, cumulative Ah: +${cumulativeAhDelta.toFixed(4)}Ah`);
         }
         
-        // Update accumulator with valid values
-        accumulator.lastCurrent = validCurrent;
-        accumulator.lastVoltage = validVoltage;
+        // Update accumulator with valid values - only update if we have valid data
+        if (validCurrent !== null) {
+          accumulator.lastCurrent = validCurrent;
+        }
+        if (validVoltage !== null) {
+          accumulator.lastVoltage = validVoltage;
+        }
         accumulator.lastTimestamp = now;
       }
     }
