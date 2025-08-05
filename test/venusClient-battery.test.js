@@ -265,20 +265,24 @@ describe('VenusClient - Battery', () => {
     });
 
     it('should handle timeRemaining correctly - ignore null values', async () => {
-      // Create a device with critical data first
+      // timeRemaining is NOT critical data, so we test with an existing service
+      // First create a device with critical data 
       await client.handleSignalKUpdate('electrical.batteries.main.voltage', 12.5);
       await client.handleSignalKUpdate('electrical.batteries.main.stateOfCharge', 0.75);
       
-      // Wait a bit for service creation to complete
-      await new Promise(resolve => setTimeout(resolve, 50));
+      // Wait for service creation to complete
+      await new Promise(resolve => setTimeout(resolve, 100));
       
       // Ensure device service is created
       expect(client.deviceServices.size).toBe(1);
       
-      // Get the device service and set up spies
+      // Get the device service and verify it's properly initialized
       const deviceService = Array.from(client.deviceServices.values())[0];
       expect(deviceService).toBeDefined();
       expect(deviceService.updateProperty).toBeDefined();
+      
+      // Wait for service to be fully ready
+      await new Promise(resolve => setTimeout(resolve, 50));
       
       const updatePropertySpy = vi.spyOn(deviceService, 'updateProperty');
       
