@@ -214,20 +214,14 @@ describe('VenusClient - Battery', () => {
     });
 
     it('should handle battery power updates correctly', async () => {
-      // First send a critical value to create the service
-      await client.handleSignalKUpdate('electrical.batteries.main.stateOfCharge', 0.85);
-      
-      // Wait a bit for service creation to complete
-      await new Promise(resolve => setTimeout(resolve, 50));
-      
-      // Verify the service was created
-      expect(client.deviceServices.size).toBe(1);
-      
-      // Now spy on emit and test power update
+      // Power is NOT critical data, so we expect NO emit calls
       const emitSpy = vi.spyOn(client, 'emit');
+      
       await client.handleSignalKUpdate('electrical.batteries.main.power', 65);
       
-      expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Battery Power', 'Battery: 65.0W');
+      // Power alone should not create a service or emit (no critical data)
+      expect(client.deviceServices.size).toBe(0);
+      expect(emitSpy).not.toHaveBeenCalled();
     });
 
     it('should handle battery state of charge updates correctly', async () => {
@@ -247,25 +241,15 @@ describe('VenusClient - Battery', () => {
     });
 
     it('should handle battery temperature updates correctly', async () => {
-      // First send a critical value to create the service
-      await client.handleSignalKUpdate('electrical.batteries.main.voltage', 12.5);
-      
-      // Wait a bit for service creation to complete
-      await new Promise(resolve => setTimeout(resolve, 50));
-      
-      // Verify the service was created
-      expect(client.deviceServices.size).toBe(1);
-      
-      // Now spy on emit and test temperature updates
+      // Temperature is NOT critical data, so we expect NO emit calls
       const emitSpy = vi.spyOn(client, 'emit');
       
       // Test Celsius temperature
       await client.handleSignalKUpdate('electrical.batteries.main.temperature', 25);
-      expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Battery Temperature', 'Battery: 25.0°C');
       
-      // Test Kelvin temperature (should be converted)
-      await client.handleSignalKUpdate('electrical.batteries.house.temperature', 298.15);
-      expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Battery Temperature', 'Battery House: 25.0°C');
+      // Temperature alone should not create a service or emit (no critical data)
+      expect(client.deviceServices.size).toBe(0);
+      expect(emitSpy).not.toHaveBeenCalled();
     });
 
     it('should handle SoC values as percentages (0-1 and 0-100)', async () => {
