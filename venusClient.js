@@ -353,8 +353,6 @@ export class VenusClient extends EventEmitter {
           }
           
           this.logger.debug(`Battery charging: ${validCurrent.toFixed(1)}A → +${chargeEnergyDelta.toFixed(4)}kWh charged`);
-          
-          this.logger.debug(`Battery charging: ${validCurrent.toFixed(1)}A → +${chargeEnergyDelta.toFixed(4)}kWh charged, cumulative Ah: +${cumulativeAhDelta.toFixed(4)}Ah`);
         }
         
         // Update accumulator with valid values - only update if we have valid data
@@ -394,7 +392,7 @@ export class VenusClient extends EventEmitter {
       let totalSolarCurrent = 0;
       for (const path of solarPaths) {
         const value = this._getCurrentSignalKValue(path);
-        if (value !== null && typeof value === 'number' && !isNaN(value) && value > 0) {
+        if (value !== null && typeof value === 'number' && !isNaN(value) && value >= 0) {
           totalSolarCurrent += value;
         }
       }
@@ -423,7 +421,7 @@ export class VenusClient extends EventEmitter {
       let totalAlternatorCurrent = 0;
       for (const path of alternatorPaths) {
         const value = this._getCurrentSignalKValue(path);
-        if (value !== null && typeof value === 'number' && !isNaN(value) && value > 0) {
+        if (value !== null && typeof value === 'number' && !isNaN(value) && value >= 0) {
           totalAlternatorCurrent += value;
         }
       }
@@ -1492,7 +1490,7 @@ export class VenusClient extends EventEmitter {
         if (typeof voltage === 'number' && !isNaN(voltage) &&
             typeof current === 'number' && !isNaN(current)) {
           
-          this.logger.debug(`Periodic history update for ${devicePath}: V=${voltage.toFixed(2)}V, I=${current.toFixed(2)}A`);
+          this.logger.debug(`Periodic history update for ${devicePath}: V=${voltage.toFixed(2)}V, I=${current.toFixed(2)}A, Solar=${this._getSolarCurrent().toFixed(1)}A, Alt=${this._getAlternatorCurrent().toFixed(1)}A`);
           
           const history = this.updateHistoryData(devicePath, voltage, current, power);
           
