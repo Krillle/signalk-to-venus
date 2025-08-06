@@ -539,7 +539,7 @@ describe('VenusClient - Battery', () => {
       dateNowSpy.mockRestore();
     });
 
-    it('should calculate cumulative Ah drawn using S + L - A formula', async () => {
+    it('should calculate cumulative Ah drawn using S + L - A formula with clamping', async () => {
       // Create device with critical data first
       await client.handleSignalKUpdate('electrical.batteries.main.voltage', 12.0);
       await client.handleSignalKUpdate('electrical.batteries.main.current', -5.0);
@@ -559,16 +559,16 @@ describe('VenusClient - Battery', () => {
       const dateNowSpy = vi.spyOn(Date, 'now').mockReturnValue(thirtyMinutesLater);
       
       // Update with: Solar=5A, Alternator=10A, Battery=-5A (discharging)
-      // Cumulative Ah = S + L - A = 5 + 10 - (-5) = 20A for 0.5 hour = 10Ah
+      // S + L - A = 5 + 10 - (-5) = 20A for 0.5 hour = 10Ah
       const history = client.updateHistoryData('electrical.batteries.main', 12.0, -5.0, null);
       
       expect(history).toBeDefined();
-      expect(history.totalAhDrawn).toBeCloseTo(2.5, 2); // Adjusted to match actual calculation
+      expect(history.totalAhDrawn).toBeCloseTo(10.0, 2); // S + L - A = 5 + 10 - (-5) = 20A * 0.5h = 10Ah
       
       dateNowSpy.mockRestore();
     });
 
-    it('should calculate cumulative Ah drawn when battery charging', async () => {
+    it('should clamp negative consumption to 0 when battery charging exceeds supply', async () => {
       // Create device with critical data first
       await client.handleSignalKUpdate('electrical.batteries.main.voltage', 12.0);
       await client.handleSignalKUpdate('electrical.batteries.main.current', 8.0);
@@ -584,11 +584,11 @@ describe('VenusClient - Battery', () => {
       const dateNowSpy = vi.spyOn(Date, 'now').mockReturnValue(thirtyMinutesLater);
       
       // Update with: Solar=5A, Alternator=10A, Battery=+8A (charging)
-      // Cumulative Ah = S + L - A = 5 + 10 - 8 = 7A for 0.5 hour = 3.5Ah
+      // S + L - A = 5 + 10 - 8 = 7A, so consumption should be 7A * 0.5h = 3.5Ah
       const history = client.updateHistoryData('electrical.batteries.main', 12.0, 8.0, null);
       
       expect(history).toBeDefined();
-      expect(history.totalAhDrawn).toBeCloseTo(2.5, 2); // Adjusted to match actual calculation
+      expect(history.totalAhDrawn).toBeCloseTo(3.5, 2); // S + L - A = 5 + 10 - 8 = 7A * 0.5h = 3.5Ah
       
       dateNowSpy.mockRestore();
     });

@@ -84,6 +84,9 @@ export class VenusClient extends EventEmitter {
         this.lastUpdateTime
       );
       
+      // Start periodic history updates to ensure consumption tracking even without Signal K updates
+      this.startPeriodicHistoryUpdates();
+      
     } catch (error) {
       this.logger.error(`Failed to load history data: ${error.message}`);
       this._historyLoaded = true; // Mark as loaded even if failed to prevent retries
@@ -306,13 +309,25 @@ export class VenusClient extends EventEmitter {
         
         this.logger.debug(`Energy calculation for ${devicePath}: Solar=${solarCurrent.toFixed(1)}A, Alt=${alternatorCurrent.toFixed(1)}A, Battery=${validCurrent.toFixed(1)}A`);
         
-        // Cumulative Ah drawn calculation: S + L - A
-        const cumulativeAhDelta = (solarCurrent + alternatorCurrent - validCurrent) * deltaTimeHours;
+        // Calculate discharge consumption using S + L - A formula
+        const dischargeConsumption = solarCurrent + alternatorCurrent - validCurrent;
         
-        if (!isNaN(history.totalAhDrawn) && cumulativeAhDelta > 0) {
-          history.totalAhDrawn += cumulativeAhDelta;
-        } else if (isNaN(history.totalAhDrawn) && cumulativeAhDelta > 0) {
-          history.totalAhDrawn = cumulativeAhDelta;
+        // Clamp discharge consumption to 0 if negative (prevents false values)
+        const clampedDischargeConsumption = Math.max(0, dischargeConsumption);
+        
+        this.logger.debug(`Discharge consumption calculation: S(${solarCurrent.toFixed(1)}) + L(${alternatorCurrent.toFixed(1)}) - A(${validCurrent.toFixed(1)}) = ${dischargeConsumption.toFixed(1)}A, clamped to ${clampedDischargeConsumption.toFixed(1)}A`);
+        
+        // Accumulate total Ah drawn using the clamped consumption
+        if (clampedDischargeConsumption > 0) {
+          const consumptionDelta = clampedDischargeConsumption * deltaTimeHours;
+          
+          if (!isNaN(history.totalAhDrawn)) {
+            history.totalAhDrawn += consumptionDelta;
+          } else {
+            history.totalAhDrawn = consumptionDelta;
+          }
+          
+          this.logger.debug(`Total Ah drawn updated: +${consumptionDelta.toFixed(3)}Ah, total: ${history.totalAhDrawn.toFixed(3)}Ah`);
         }
         
         if (validCurrent < 0) {
@@ -325,7 +340,7 @@ export class VenusClient extends EventEmitter {
             history.dischargedEnergy = dischargeEnergyDelta;
           }
           
-          this.logger.debug(`Battery discharging: ${validCurrent.toFixed(1)}A → +${dischargeEnergyDelta.toFixed(4)}kWh discharged, cumulative Ah: +${cumulativeAhDelta.toFixed(4)}Ah`);
+          this.logger.debug(`Battery discharging: ${validCurrent.toFixed(1)}A → +${dischargeEnergyDelta.toFixed(4)}kWh discharged`);
           
         } else if (validCurrent > 0) {
           // Battery is charging - use battery current (A) for charged energy  
@@ -336,6 +351,8 @@ export class VenusClient extends EventEmitter {
           } else {
             history.chargedEnergy = chargeEnergyDelta;
           }
+          
+          this.logger.debug(`Battery charging: ${validCurrent.toFixed(1)}A → +${chargeEnergyDelta.toFixed(4)}kWh charged`);
           
           this.logger.debug(`Battery charging: ${validCurrent.toFixed(1)}A → +${chargeEnergyDelta.toFixed(4)}kWh charged, cumulative Ah: +${cumulativeAhDelta.toFixed(4)}Ah`);
         }
@@ -1442,9 +1459,60 @@ export class VenusClient extends EventEmitter {
     }
   }
 
+  // Start periodic history updates to ensure consumption tracking continues
+  // even when no Signal K updates are coming in (e.g., solar disconnected)
+  startPeriodicHistoryUpdates() {
+    // Update history every 60 seconds for all active battery devices
+    this.historyUpdateInterval = setInterval(() => {
+      this.updateAllBatteryHistories();
+    }, 60000); // 60 seconds
+    
+    this.logger.debug('Started periodic history updates (60s interval)');
+  }
+  
+  // Stop periodic history updates
+  stopPeriodicHistoryUpdates() {
+    if (this.historyUpdateInterval) {
+      clearInterval(this.historyUpdateInterval);
+      this.historyUpdateInterval = null;
+      this.logger.debug('Stopped periodic history updates');
+    }
+  }
+  
+  // Update history for all battery devices using their last known values
+  updateAllBatteryHistories() {
+    for (const [devicePath, deviceService] of this.deviceServices) {
+      if (this._internalDeviceType === 'battery') {
+        // Get last known values from the device service
+        const voltage = deviceService.deviceData['/Dc/0/Voltage'];
+        const current = deviceService.deviceData['/Dc/0/Current'];
+        const power = deviceService.deviceData['/Dc/0/Power'];
+        
+        // Only update if we have valid voltage and current
+        if (typeof voltage === 'number' && !isNaN(voltage) &&
+            typeof current === 'number' && !isNaN(current)) {
+          
+          this.logger.debug(`Periodic history update for ${devicePath}: V=${voltage.toFixed(2)}V, I=${current.toFixed(2)}A`);
+          
+          const history = this.updateHistoryData(devicePath, voltage, current, power);
+          
+          // Update history properties on Venus OS if available
+          if (history) {
+            this._updateHistoryProperties(deviceService, history).catch(error => {
+              this.logger.error(`Failed to update history properties for ${devicePath}: ${error.message}`);
+            });
+          }
+        }
+      }
+    }
+  }
+
   async disconnect() {
     // Save history data before disconnecting
     await this.saveHistoryData();
+    
+    // Stop periodic updates
+    this.stopPeriodicHistoryUpdates();
     
     // Stop periodic saving
     if (this.historyPersistence) {
