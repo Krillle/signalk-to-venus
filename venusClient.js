@@ -208,8 +208,12 @@ export class VenusClient extends EventEmitter {
       if (existingAccumulator) {
         if (isNaN(existingAccumulator.lastCurrent)) existingAccumulator.lastCurrent = 0;
         if (isNaN(existingAccumulator.lastVoltage) || existingAccumulator.lastVoltage === 0) {
-          // If we have a real voltage now, use it, otherwise keep existing valid voltage
-          existingAccumulator.lastVoltage = (initialVoltage && initialVoltage > 5.0) ? initialVoltage : (existingAccumulator.lastVoltage > 5.0 ? existingAccumulator.lastVoltage : 12.0);
+          // If we have a real voltage now, use it, otherwise use fallback
+          if (initialVoltage && initialVoltage > 5.0) {
+            existingAccumulator.lastVoltage = initialVoltage;
+          } else {
+            existingAccumulator.lastVoltage = 12.0; // Fallback for accumulator calculations
+          }
         }
         if (isNaN(existingAccumulator.lastTimestamp)) existingAccumulator.lastTimestamp = Date.now();
       }

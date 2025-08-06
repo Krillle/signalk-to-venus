@@ -630,18 +630,18 @@ describe('VenusClient - Battery', () => {
       // Wait a bit for accumulator to be initialized
       await new Promise(resolve => setTimeout(resolve, 10));
       
-      // Update with valid voltage
+      // Update with valid voltage - should update accumulator voltage
       client.updateHistoryData('electrical.batteries.main', 12.5, -3.0, null);
       
       const accumulator = client.energyAccumulators.get('electrical.batteries.main');
       expect(accumulator).toBeDefined();
-      expect(accumulator.lastVoltage).toBe(12.0); // Should be the initial voltage from device creation
-      expect(accumulator.lastCurrent).toBe(8.0); // Adjusted to match actual value from device creation
+      expect(accumulator.lastVoltage).toBe(12.5); // Should update to the new voltage
+      expect(accumulator.lastCurrent).toBe(-3.0); // Should update to the new current
       
       // Update with null voltage (should not change lastVoltage)
       client.updateHistoryData('electrical.batteries.main', null, -2.0, null);
       
-      expect(accumulator.lastVoltage).toBe(12.0); // Should remain unchanged
+      expect(accumulator.lastVoltage).toBe(12.5); // Should remain unchanged from last valid voltage
       expect(accumulator.lastCurrent).toBe(-2.0); // Should update
     });
 
@@ -670,7 +670,7 @@ describe('VenusClient - Battery', () => {
       dateNowSpy = vi.spyOn(Date, 'now').mockReturnValue(mockTime);
       history = client.updateHistoryData('electrical.batteries.main', 12.0, 8.0, null);
       
-      expect(history.dischargedEnergy).toBeCloseTo(0.09, 2); // Adjusted based on actual behavior
+      expect(history.dischargedEnergy).toBeCloseTo(0.03, 2); // Should remain unchanged during charging
       expect(history.chargedEnergy).toBeCloseTo(0.048, 2); // 12V * 8A * 0.5h / 1000
       
       dateNowSpy.mockRestore();
