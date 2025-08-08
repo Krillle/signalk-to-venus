@@ -510,7 +510,7 @@ describe('VenusClient - Battery', () => {
       const dateNowSpy = vi.spyOn(Date, 'now').mockReturnValue(thirtyMinutesLater);
       
       // Update with discharging current (-5A for 0.5 hour)
-      const updatedHistory = client.updateHistoryData('electrical.batteries.main', 12.0, -5.0, null);
+      const updatedHistory = await client.updateHistoryData('electrical.batteries.main', 12.0, -5.0, null);
       
       expect(updatedHistory).toBeDefined();
       expect(updatedHistory.dischargedEnergy).toBeCloseTo(0.03, 3); // 12V * 5A * 0.5h / 1000 = 0.03 kWh
@@ -540,7 +540,7 @@ describe('VenusClient - Battery', () => {
       const dateNowSpy = vi.spyOn(Date, 'now').mockReturnValue(thirtyMinutesLater);
       
       // Update with charging current (+5A for 0.5 hour)
-      const updatedHistory = client.updateHistoryData('electrical.batteries.main', 12.0, 5.0, null);
+      const updatedHistory = await client.updateHistoryData('electrical.batteries.main', 12.0, 5.0, null);
       
       expect(updatedHistory).toBeDefined();
       expect(updatedHistory.chargedEnergy).toBeCloseTo(0.03, 2); // 12V * 5A * 0.5h / 1000 = 0.03 kWh
@@ -570,7 +570,7 @@ describe('VenusClient - Battery', () => {
       
       // Update with: Solar=5A, Alternator=10A, Battery=-5A (discharging)
       // S + L - A = 5 + 10 - (-5) = 20A for 0.5 hour = 10Ah
-      const history = client.updateHistoryData('electrical.batteries.main', 12.0, -5.0, null);
+      const history = await client.updateHistoryData('electrical.batteries.main', 12.0, -5.0, null);
       
       expect(history).toBeDefined();
       expect(history.totalAhDrawn).toBeCloseTo(10.0, 2); // S + L - A = 5 + 10 - (-5) = 20A * 0.5h = 10Ah
@@ -595,7 +595,7 @@ describe('VenusClient - Battery', () => {
       
       // Update with: Solar=5A, Alternator=10A, Battery=+8A (charging)
       // S + L - A = 5 + 10 - 8 = 7A, so consumption should be 7A * 0.5h = 3.5Ah
-      const history = client.updateHistoryData('electrical.batteries.main', 12.0, 8.0, null);
+      const history = await client.updateHistoryData('electrical.batteries.main', 12.0, 8.0, null);
       
       expect(history).toBeDefined();
       expect(history.totalAhDrawn).toBeCloseTo(13.5, 2); // Previous test added 10Ah, this test adds 3.5Ah = 13.5Ah total
@@ -621,7 +621,7 @@ describe('VenusClient - Battery', () => {
       // Set same timestamp as current time
       client.lastUpdateTime.set('electrical.batteries.main', mockNow);
       
-      const history = client.updateHistoryData('electrical.batteries.main', 12.0, -5.0, null);
+      const history = await client.updateHistoryData('electrical.batteries.main', 12.0, -5.0, null);
       
       expect(history).toBeDefined();
       // Values should remain unchanged with zero time delta
@@ -673,7 +673,7 @@ describe('VenusClient - Battery', () => {
       
       mockTime += timeIncrement;
       let dateNowSpy = vi.spyOn(Date, 'now').mockReturnValue(mockTime);
-      history = client.updateHistoryData('electrical.batteries.main', 12.0, -5.0, null);
+      history = await client.updateHistoryData('electrical.batteries.main', 12.0, -5.0, null);
       
       expect(history.dischargedEnergy).toBeCloseTo(0.03, 2); // 12V * 5A * 0.5h / 1000
       expect(history.chargedEnergy).toBe(0);
@@ -683,7 +683,7 @@ describe('VenusClient - Battery', () => {
       // Second period: charging at 8A
       mockTime += timeIncrement;
       dateNowSpy = vi.spyOn(Date, 'now').mockReturnValue(mockTime);
-      history = client.updateHistoryData('electrical.batteries.main', 12.0, 8.0, null);
+      history = await client.updateHistoryData('electrical.batteries.main', 12.0, 8.0, null);
       
       expect(history.dischargedEnergy).toBeCloseTo(0.03, 2); // Should remain unchanged during charging
       expect(history.chargedEnergy).toBeCloseTo(0.048, 2); // 12V * 8A * 0.5h / 1000
@@ -703,7 +703,7 @@ describe('VenusClient - Battery', () => {
       history.totalAhDrawn = NaN;
       
       // Update should clean up NaN values
-      const cleanHistory = client.updateHistoryData('electrical.batteries.main', 12.0, -5.0, null);
+      const cleanHistory = await client.updateHistoryData('electrical.batteries.main', 12.0, -5.0, null);
       
       expect(cleanHistory.dischargedEnergy).toBe(0);
       expect(cleanHistory.chargedEnergy).toBe(0);
@@ -726,7 +726,7 @@ describe('VenusClient - Battery', () => {
       const dateNowSpy = vi.spyOn(Date, 'now').mockReturnValue(tenMinutesLater);
       
       // Update with high charging current (+50A for 10 minutes = 1/6 hour)
-      const history = client.updateHistoryData('electrical.batteries.main', 12.0, 50.0, null);
+      const history = await client.updateHistoryData('electrical.batteries.main', 12.0, 50.0, null);
       
       expect(history).toBeDefined();
       // Calculate expected: 12V * 50A * (1/6)h / 1000 = 0.1 kWh
@@ -762,7 +762,7 @@ describe('VenusClient - Battery', () => {
       const dateNowSpy = vi.spyOn(Date, 'now').mockReturnValue(fiveMinutesLater);
       
       // Update with charging current
-      const history = client.updateHistoryData('electrical.batteries.main', 12.0, 50.0, null);
+      const history = await client.updateHistoryData('electrical.batteries.main', 12.0, 50.0, null);
       
       // Check if energy calculation happened
       expect(history).toBeDefined();
