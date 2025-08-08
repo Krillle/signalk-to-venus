@@ -18,7 +18,12 @@ vi.mock('../vedbus.js', () => ({
   })
 }));
 
-describe('VenusClient - Battery', () => {
+describe      // Update should clean up NaN values
+      const cleanHistory = await client.updateHistoryData('electrical.batteries.main', 12.0, -5.0, null);
+      
+      expect(cleanHistory.dischargedEnergy).toBeCloseTo(0, 6); // Allow for tiny floating point precision
+      expect(cleanHistory.chargedEnergy).toBeCloseTo(0, 6); // Allow for tiny floating point precision
+      expect(cleanHistory.totalAhDrawn).toBeCloseTo(0, 6); // Allow for tiny floating point precisionsClient - Battery', () => {
   let client;
   let mockSettings;
 
@@ -731,7 +736,7 @@ describe('VenusClient - Battery', () => {
       expect(history).toBeDefined();
       // Calculate expected: 12V * 50A * (1/6)h / 1000 = 0.1 kWh
       expect(history.chargedEnergy).toBeCloseTo(0.1, 3);
-      expect(history.dischargedEnergy).toBe(0);
+      expect(history.dischargedEnergy).toBeCloseTo(0, 6); // Allow for tiny floating point precision
       
       // Also check cumulative Ah calculation
       // With Solar=5A, Alternator=10A, Battery=+50A (charging)
