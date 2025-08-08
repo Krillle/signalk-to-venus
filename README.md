@@ -335,8 +335,8 @@ MIT © Christian Wegerhoff
 ## Change Log
 
 ### v1.0.18 (2025/08/08 14:30)
-- Improved environment sensor display naming
-- Simplified 20-second startup delay for system readiness (Still at first start devices might be missing. Restart plugin.)
+- Energy consumption, charged and discharged energy history for VRM and Remote Console 
+- Removed 20-second startup delay (Still at first start devices might be missing. Restart plugin.)
 
 ### v1.0.17 (2025/08/04 14:30)
 - Improved environment sensor display naming
