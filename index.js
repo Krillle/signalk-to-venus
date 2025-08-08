@@ -355,7 +355,7 @@ export default function(app) {
                     app.setPluginStatus(`Connecting to Venus OS at ${config.venusHost} for ${deviceTypeNames[deviceType]}`);
                     
                     try {
-                      plugin.clients[deviceType] = VenusClientFactory(config, deviceType);
+                      plugin.clients[deviceType] = VenusClientFactory(config, deviceType, app);
                       
                       await plugin.clients[deviceType].handleSignalKUpdate(pathValue.path, pathValue.value);
                       

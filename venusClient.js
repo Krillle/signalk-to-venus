@@ -12,7 +12,23 @@ export class VenusClient extends EventEmitter {
     super();
     this.settings = settings;
     this.deviceType = deviceType;
-    this.logger = logger || { debug: () => {}, error: () => {} }; // Fallback logger
+    
+    // Create a proper logger wrapper for SignalK app or fallback
+    if (logger && typeof logger.debug === 'function' && typeof logger.error === 'function') {
+      this.logger = {
+        debug: (msg) => logger.debug(`[signalk-to-venus] ${msg}`),
+        error: (msg) => logger.error(`[signalk-to-venus] ${msg}`),
+        warn: (msg) => typeof logger.warn === 'function' ? logger.warn(`[signalk-to-venus] ${msg}`) : logger.error(`[signalk-to-venus] WARN: ${msg}`)
+      };
+    } else {
+      // Fallback logger for tests or when no logger provided
+      this.logger = { 
+        debug: () => {}, 
+        error: () => {}, 
+        warn: () => {} 
+      };
+    }
+    
     this.signalKApp = null; // Store reference to Signal K app for getting current values
     
     // Map plural device types to singular for internal configuration lookup
@@ -1186,7 +1202,7 @@ export class VenusClient extends EventEmitter {
         if (path.includes('stateOfCharge') && typeof value === 'number' && !isNaN(value)) {
           // Don't create devices for spurious 0% SOC values from reconnection issues
           if (value === 0 && this.settings.socValidationEnabled !== false) {
-            this.logger.debug(`Ignoring SOC 0% for device creation - likely reconnection artifact`);
+            this.logger.warn(`SOC Protection: Ignoring 0% SOC for device creation - likely reconnection artifact for path: ${path}`);
             return false;
           }
           return true; // SoC is the most critical battery metric
@@ -1362,12 +1378,12 @@ export class VenusClient extends EventEmitter {
           
           if (!currentReading || currentReading >= 0) {
             // No discharge current or positive current (charging) - likely a spurious 0% from reconnection
-            this.logger.warn(`Ignoring spurious SOC 0% for ${deviceName} - no discharge current detected (current: ${currentReading}A)`);
+            this.logger.warn(`SOC Protection: Ignoring spurious 0% SOC for ${deviceName} - no discharge current detected (current: ${currentReading}A, path: ${devicePath})`);
             return;
           }
           // If we have significant discharge current, allow the 0% SOC (battery might be truly empty)
           if (Math.abs(currentReading) < minDischargeCurrent) {
-            this.logger.warn(`Ignoring spurious SOC 0% for ${deviceName} - insufficient discharge current (${currentReading}A, min: ${minDischargeCurrent}A)`);
+            this.logger.warn(`SOC Protection: Ignoring spurious 0% SOC for ${deviceName} - insufficient discharge current (${currentReading}A, min: ${minDischargeCurrent}A, path: ${devicePath})`);
             return;
           }
           this.logger.info(`Allowing SOC 0% for ${deviceName} with discharge current ${currentReading}A`);
