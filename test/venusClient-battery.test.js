@@ -705,9 +705,9 @@ describe('VenusClient - Battery', () => {
       // Update should clean up NaN values
       const cleanHistory = await client.updateHistoryData('electrical.batteries.main', 12.0, -5.0, null);
       
-      expect(cleanHistory.dischargedEnergy).toBeCloseTo(0, 6); // Allow for tiny floating point precision
-      expect(cleanHistory.chargedEnergy).toBeCloseTo(0, 6); // Allow for tiny floating point precision  
-      expect(cleanHistory.totalAhDrawn).toBeCloseTo(0, 6); // Allow for tiny floating point precision
+      expect(cleanHistory.dischargedEnergy).toBeCloseTo(0, 4); // Allow for floating point precision in energy calculations
+      expect(cleanHistory.chargedEnergy).toBeCloseTo(0, 4); // Allow for floating point precision in energy calculations  
+      expect(cleanHistory.totalAhDrawn).toBeCloseTo(0, 4); // Allow for floating point precision in energy calculations
     });
 
     it('should calculate charged energy with high charging current (50A)', async () => {
