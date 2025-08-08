@@ -1,14 +1,41 @@
 export default {
   venusHost: 'venus.local',
   interval: 1000,
-  batteryCapacity: 800, // Default battery capacity in Ah for time-to-charge calculation
   enabledDevices: {
     batteries: true,
     tanks: true,
     environment: true,
     switches: true
   },
-  defaultBatteryCapacity: 800.0, // Default battery capacity in Ah for battery monitor
+  
+  // Battery Monitor Configuration
+  batteryMonitor: {
+    batteryCapacity: 800, // Battery capacity in Ah for TTG calculations and monitoring
+    directDcDevices: [
+      // Solar devices - add your solar panel device paths
+      {
+        type: 'solar',
+        basePath: 'electrical.solar.278',
+        currentPath: 'electrical.solar.278.current',
+        powerPath: 'electrical.solar.278.panelPower'
+      },
+      // Alternator devices - add your alternator device paths  
+      {
+        type: 'alternator',
+        basePath: 'electrical.alternator.277',
+        currentPath: 'electrical.alternator.277.current',
+        powerPath: 'electrical.alternator.277.power'
+      }
+      // Add more devices as needed:
+      // {
+      //   type: 'solar',
+      //   basePath: 'electrical.solar.279',
+      //   currentPath: 'electrical.solar.279.current',
+      //   powerPath: 'electrical.solar.279.panelPower'
+      // }
+    ]
+  },
+  
   batteryRegex: /^electrical\.batteries\.\d+\./, 
   tankRegex: /^tanks\.[^.\/]+\.[^.\/]+\./, 
   temperatureRegex: /^environment\..*\.temperature$|^propulsion\..*\.temperature$/, 

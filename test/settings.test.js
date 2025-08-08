@@ -5,8 +5,7 @@ describe('Settings Configuration', () => {
   it('should have correct default values', () => {
     expect(settings.venusHost).toBe('venus.local');
     expect(settings.interval).toBe(1000);
-    expect(settings.batteryCapacity).toBe(800);
-    expect(settings.defaultBatteryCapacity).toBe(800.0);
+    expect(settings.batteryMonitor.batteryCapacity).toBe(800);
   });
 
   it('should have correct enabled devices configuration', () => {
@@ -56,9 +55,8 @@ describe('Settings Configuration', () => {
     const requiredProperties = [
       'venusHost',
       'interval',
-      'batteryCapacity',
       'enabledDevices',
-      'defaultBatteryCapacity',
+      'batteryMonitor',
       'batteryRegex',
       'tankRegex',
       'temperatureRegex',
@@ -73,14 +71,29 @@ describe('Settings Configuration', () => {
   });  it('should have valid types for all properties', () => {
     expect(typeof settings.venusHost).toBe('string');
     expect(typeof settings.interval).toBe('number');
-    expect(typeof settings.batteryCapacity).toBe('number');
     expect(typeof settings.enabledDevices).toBe('object');
-    expect(typeof settings.defaultBatteryCapacity).toBe('number');
+    expect(typeof settings.batteryMonitor).toBe('object');
+    expect(typeof settings.batteryMonitor.batteryCapacity).toBe('number');
     expect(settings.batteryRegex).toBeInstanceOf(RegExp);
     expect(settings.tankRegex).toBeInstanceOf(RegExp);
     expect(settings.temperatureRegex).toBeInstanceOf(RegExp);
     expect(settings.humidityRegex).toBeInstanceOf(RegExp);
     expect(settings.switchRegex).toBeInstanceOf(RegExp);
     expect(settings.dimmerRegex).toBeInstanceOf(RegExp);
+  });
+
+  it('should have correct batteryMonitor configuration', () => {
+    expect(settings.batteryMonitor).toBeDefined();
+    expect(settings.batteryMonitor.batteryCapacity).toBe(800);
+    expect(Array.isArray(settings.batteryMonitor.directDcDevices)).toBe(true);
+    expect(settings.batteryMonitor.directDcDevices.length).toBeGreaterThan(0);
+    
+    // Check that devices have required properties
+    settings.batteryMonitor.directDcDevices.forEach(device => {
+      expect(device).toHaveProperty('type');
+      expect(device).toHaveProperty('basePath');
+      expect(device).toHaveProperty('currentPath');
+      expect(['solar', 'alternator']).toContain(device.type);
+    });
   });
 });

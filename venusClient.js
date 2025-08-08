@@ -391,6 +391,10 @@ export class VenusClient extends EventEmitter {
           
           this.logger.debug(`Battery charging: ${validCurrent.toFixed(1)}A → +${chargeEnergyDelta.toFixed(6)}kWh charged (total: ${history.chargedEnergy.toFixed(6)}kWh)`);
         }
+        
+        // Only update lastUpdateTime when we actually performed energy calculations
+        this.lastUpdateTime.set(devicePath, now);
+        this.logger.debug(`Updated lastUpdateTime for ${devicePath} after energy calculation`);
       }
     }
     
@@ -412,7 +416,6 @@ export class VenusClient extends EventEmitter {
     if (isNaN(history.totalAhDrawn)) history.totalAhDrawn = 0;
     // Note: minimumVoltage and maximumVoltage can be null until first real voltage is received
     
-    this.lastUpdateTime.set(devicePath, now);
     return history;
   }
 
@@ -421,22 +424,23 @@ export class VenusClient extends EventEmitter {
     if (!this.signalKApp) return 0;
     
     try {
-      // Check common solar current paths
-      const solarPaths = [
-        'electrical.solar.current',
-        'electrical.chargers.solar.current',
-        'electrical.solar.0.current',
-        'electrical.solar.1.current'
-      ];
-      
       let totalSolarCurrent = 0;
-      for (const path of solarPaths) {
-        const value = this._getCurrentSignalKValue(path);
-        if (value !== null && typeof value === 'number' && !isNaN(value) && value >= 0) {
-          totalSolarCurrent += value;
+      
+      // Get solar devices from configuration
+      const solarDevices = this.deviceSettings.batteryMonitor?.directDcDevices?.filter(device => device.type === 'solar') || [];
+      
+      for (const device of solarDevices) {
+        const currentPath = device.currentPath;
+        if (currentPath) {
+          const value = this._getCurrentSignalKValue(currentPath);
+          if (value !== null && typeof value === 'number' && !isNaN(value) && value >= 0) {
+            totalSolarCurrent += value;
+            this.logger.debug(`Solar device ${device.basePath}: ${value.toFixed(1)}A`);
+          }
         }
       }
       
+      this.logger.debug(`Total solar current: ${totalSolarCurrent.toFixed(1)}A from ${solarDevices.length} devices`);
       return totalSolarCurrent;
     } catch (err) {
       this.logger.debug(`Error getting solar current: ${err.message}`);
@@ -448,24 +452,23 @@ export class VenusClient extends EventEmitter {
     if (!this.signalKApp) return 0;
     
     try {
-      // Check common alternator current paths
-      const alternatorPaths = [
-        'electrical.alternators.current',
-        'electrical.alternators.0.current',
-        'electrical.alternators.1.current',
-        'propulsion.main.alternator.current',
-        'propulsion.port.alternator.current',
-        'propulsion.starboard.alternator.current'
-      ];
-      
       let totalAlternatorCurrent = 0;
-      for (const path of alternatorPaths) {
-        const value = this._getCurrentSignalKValue(path);
-        if (value !== null && typeof value === 'number' && !isNaN(value) && value >= 0) {
-          totalAlternatorCurrent += value;
+      
+      // Get alternator devices from configuration
+      const alternatorDevices = this.deviceSettings.batteryMonitor?.directDcDevices?.filter(device => device.type === 'alternator') || [];
+      
+      for (const device of alternatorDevices) {
+        const currentPath = device.currentPath;
+        if (currentPath) {
+          const value = this._getCurrentSignalKValue(currentPath);
+          if (value !== null && typeof value === 'number' && !isNaN(value) && value >= 0) {
+            totalAlternatorCurrent += value;
+            this.logger.debug(`Alternator device ${device.basePath}: ${value.toFixed(1)}A`);
+          }
         }
       }
       
+      this.logger.debug(`Total alternator current: ${totalAlternatorCurrent.toFixed(1)}A from ${alternatorDevices.length} devices`);
       return totalAlternatorCurrent;
     } catch (err) {
       this.logger.debug(`Error getting alternator current: ${err.message}`);
@@ -749,8 +752,8 @@ export class VenusClient extends EventEmitter {
                       // Fallback: use typical 12V if voltage not available
                       workingCapacity = signalKCapacity / (12 * 3600);
                     }
-                  } else if (this.settings.batteryCapacity) {
-                    workingCapacity = this.settings.batteryCapacity;
+                  } else if (this.settings.batteryMonitor?.batteryCapacity) {
+                    workingCapacity = this.settings.batteryMonitor.batteryCapacity;
                   }
                   
                   if (workingCapacity && typeof workingCapacity === 'number' && workingCapacity > 0) {
@@ -1706,8 +1709,8 @@ export class VenusClient extends EventEmitter {
     if (typeof currentSoc === 'number' && !isNaN(currentSoc)) {
       // Use device capacity if available, otherwise fall back to settings
       let workingCapacity = capacity;
-      if (!workingCapacity && this.settings.batteryCapacity) {
-        workingCapacity = this.settings.batteryCapacity;
+      if (!workingCapacity && this.settings.batteryMonitor?.batteryCapacity) {
+        workingCapacity = this.settings.batteryMonitor.batteryCapacity;
       }
       
       if (typeof workingCapacity === 'number' && !isNaN(workingCapacity)) {
@@ -1759,8 +1762,8 @@ export class VenusClient extends EventEmitter {
       
       // Use configured battery capacity if device capacity is not available
       let workingCapacity = capacity;
-      if (!workingCapacity && this.settings.batteryCapacity) {
-        workingCapacity = this.settings.batteryCapacity;
+      if (!workingCapacity && this.settings.batteryMonitor?.batteryCapacity) {
+        workingCapacity = this.settings.batteryMonitor.batteryCapacity;
       }
       
       if (typeof workingCapacity === 'number' && !isNaN(workingCapacity)) {

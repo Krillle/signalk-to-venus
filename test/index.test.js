@@ -114,11 +114,17 @@ describe('Signal K Plugin - Main Index', () => {
         title: 'Update Interval (ms)',
         default: 1000
       });
-      expect(schema.properties.batteryCapacity).toEqual({
-        type: 'number',
-        title: 'Battery Capacity (Ah)',
-        description: 'Total battery capacity in Amp-hours for time-to-charge calculation',
-        default: 800
+      expect(schema.properties.batteryMonitor).toEqual({
+        type: 'object',
+        title: 'Battery Monitor Configuration',
+        properties: {
+          batteryCapacity: {
+            type: 'number',
+            title: 'Battery Capacity (Ah)',
+            description: 'Total battery capacity in Amp-hours for TTG calculation and monitoring',
+            default: 800
+          }
+        }
       });
     });
 
@@ -267,7 +273,7 @@ describe('Signal K Plugin - Main Index', () => {
       expect(schema.properties).toBeDefined();
       expect(schema.properties.venusHost).toBeDefined();
       expect(schema.properties.interval).toBeDefined();
-      expect(schema.properties.batteryCapacity).toBeDefined();
+      expect(schema.properties.batteryMonitor).toBeDefined();
     });
 
     it('should track discovered paths correctly', () => {
