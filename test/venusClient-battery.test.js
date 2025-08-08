@@ -27,7 +27,21 @@ describe('VenusClient - Battery', () => {
       venusHost: 'test.local',
       productName: 'Test Battery Device',
       batteryMonitor: {
-        batteryCapacity: 800 // Required for TTG calculation
+        batteryCapacity: 800, // Required for TTG calculation
+        directDcDevices: [
+          {
+            type: 'solar',
+            basePath: 'electrical.solar.test',
+            currentPath: 'electrical.solar.test.current',
+            powerPath: 'electrical.solar.test.power'
+          },
+          {
+            type: 'alternator',
+            basePath: 'electrical.alternator.test',
+            currentPath: 'electrical.alternator.test.current',
+            powerPath: 'electrical.alternator.test.power'
+          }
+        ]
       }
     };
     client = new VenusClient(mockSettings, 'batteries');
@@ -556,6 +570,10 @@ describe('VenusClient - Battery', () => {
       await client.handleSignalKUpdate('electrical.batteries.main.voltage', 12.0);
       await client.handleSignalKUpdate('electrical.batteries.main.current', -5.0);
       
+      // Add solar and alternator data for S + L - A calculation
+      await client.handleSignalKUpdate('electrical.solar.test.current', 5.0);     // Solar = 5A
+      await client.handleSignalKUpdate('electrical.alternator.test.current', 10.0); // Alternator = 10A
+      
       // Get initial state and reset totalAhDrawn to ensure clean test
       const initialHistory = client.historyData.get('electrical.batteries.main');
       initialHistory.totalAhDrawn = 0; // Reset to 0 for clean test
@@ -584,6 +602,10 @@ describe('VenusClient - Battery', () => {
       // Create device with critical data first
       await client.handleSignalKUpdate('electrical.batteries.main.voltage', 12.0);
       await client.handleSignalKUpdate('electrical.batteries.main.current', 8.0);
+      
+      // Add solar and alternator data for S + L - A calculation
+      await client.handleSignalKUpdate('electrical.solar.test.current', 5.0);     // Solar = 5A
+      await client.handleSignalKUpdate('electrical.alternator.test.current', 10.0); // Alternator = 10A
       
       // Mock time to control delta calculation (simulate 30 minutes)
       const mockNow = Date.now();
