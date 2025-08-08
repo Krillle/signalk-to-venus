@@ -51,7 +51,9 @@ export class HistoryPersistence {
       const energyAccumulators = new Map();
       
       if (parsed.historyData) {
+        this.logger.debug(`Loading historyData with ${Object.keys(parsed.historyData).length} entries`);
         for (const [key, value] of Object.entries(parsed.historyData)) {
+          this.logger.debug(`Loading history entry: ${key}`, value);
           // Skip invalid keys
           if (!key || key === 'undefined' || key === 'null') {
             this.logger.debug(`Skipping invalid history key: ${key}`);
@@ -61,8 +63,13 @@ export class HistoryPersistence {
           // Validate data structure
           if (value && typeof value === 'object') {
             historyData.set(key, value);
+            this.logger.debug(`Added to historyData map: ${key}`);
+          } else {
+            this.logger.debug(`Skipping invalid history value for ${key}:`, value);
           }
         }
+      } else {
+        this.logger.debug(`No historyData found in parsed file`);
       }
       
       if (parsed.lastUpdateTime) {

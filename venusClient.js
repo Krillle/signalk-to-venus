@@ -133,10 +133,15 @@ export class VenusClient extends EventEmitter {
   cleanupHistoryData() {
     const keysToRemove = [];
     
+    this.logger.debug(`Cleanup: Starting with ${this.historyData.size} devices in history`);
+    
     // Find invalid keys
     for (const [key, value] of this.historyData.entries()) {
+      this.logger.debug(`Cleanup: Checking device ${key}`, value);
+      
       // Remove undefined, null, or empty keys
       if (!key || key === 'undefined' || key === 'null') {
+        this.logger.debug(`Cleanup: Removing invalid key: ${key}`);
         keysToRemove.push(key);
         continue;
       }
@@ -148,7 +153,10 @@ export class VenusClient extends EventEmitter {
                          (value.minimumVoltage !== null && value.minimumVoltage > 5.0 && value.minimumVoltage < 50.0) ||
                          (value.maximumVoltage !== null && value.maximumVoltage > 5.0 && value.maximumVoltage < 50.0);
       
+      this.logger.debug(`Cleanup: Device ${key} hasRealData=${hasRealData}, discharged=${value.dischargedEnergy}, charged=${value.chargedEnergy}, totalAh=${value.totalAhDrawn}, minV=${value.minimumVoltage}, maxV=${value.maximumVoltage}`);
+      
       if (!hasRealData) {
+        this.logger.debug(`Cleanup: Removing device with no real data: ${key}`);
         keysToRemove.push(key);
       }
     }
