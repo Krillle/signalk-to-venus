@@ -234,7 +234,7 @@ export class VenusClient extends EventEmitter {
   }
 
   // Update history data based on current battery values
-  updateHistoryData(devicePath, voltage, current, power) {
+  async updateHistoryData(devicePath, voltage, current, power) {
     // Validate devicePath to prevent undefined keys
     if (!devicePath || devicePath === 'undefined' || devicePath === 'null') {
       this.logger.error(`Invalid devicePath for history update: ${devicePath}`);
@@ -242,31 +242,41 @@ export class VenusClient extends EventEmitter {
     }
     
     if (!this.historyData.has(devicePath)) {
-      // Initialize synchronously with basic values if not loaded yet
-      // Don't use fallback voltage - only use real voltage values
-      const validInitialVoltage = (typeof voltage === 'number' && !isNaN(voltage)) ? voltage : null;
+      // If history data hasn't been loaded yet, ensure it's loaded first
+      // This prevents creating empty data that overwrites loaded values
+      if (!this._historyLoaded) {
+        this.logger.debug(`History not loaded yet for ${devicePath}, loading first...`);
+        await this.loadHistoryData();
+      }
       
-      this.historyData.set(devicePath, {
-        minimumVoltage: null, // Will be set to first real voltage value
-        maximumVoltage: null, // Will be set to first real voltage value
-        dischargedEnergy: 0, // kWh
-        chargedEnergy: 0,    // kWh
-        totalAhDrawn: 0      // Ah
-      });
-      
-      this.lastUpdateTime.set(devicePath, Date.now());
-      
-      this.energyAccumulators.set(devicePath, {
-        lastCurrent: 0,
-        lastVoltage: validInitialVoltage || 12.0, // Only for accumulator calculation, not for min/max
-        lastTimestamp: Date.now()
-      });
-      
-      // Trigger async loading in background (non-blocking) - only pass real voltage
-      if (validInitialVoltage !== null) {
-        this.initializeHistoryTracking(devicePath, validInitialVoltage).catch(err => {
-          this.logger.error(`Failed to load history data for ${devicePath}: ${err.message}`);
-        });
+      // After loading, check again if we now have the device data
+      if (!this.historyData.has(devicePath)) {
+        // Device not in loaded data, so create new entry
+        const validInitialVoltage = (typeof voltage === 'number' && !isNaN(voltage)) ? voltage : null;
+        
+        if (validInitialVoltage !== null) {
+          // Initialize properly through the normal initialization path
+          await this.initializeHistoryTracking(devicePath, validInitialVoltage);
+        } else {
+          // Create minimal structure for devices without valid voltage
+          this.historyData.set(devicePath, {
+            minimumVoltage: null,
+            maximumVoltage: null,
+            dischargedEnergy: 0,
+            chargedEnergy: 0,
+            totalAhDrawn: 0
+          });
+          
+          this.lastUpdateTime.set(devicePath, Date.now());
+          
+          this.energyAccumulators.set(devicePath, {
+            lastCurrent: 0,
+            lastVoltage: 12.0,
+            lastTimestamp: Date.now()
+          });
+          
+          this.logger.debug(`Created minimal history structure for ${devicePath} (no valid voltage)`);
+        }
       }
     }
     
@@ -1296,7 +1306,7 @@ export class VenusClient extends EventEmitter {
         // Update history with current values
         const current = this._getCurrentSignalKValue(`${devicePath}.current`);
         const power = this._getCurrentSignalKValue(`${devicePath}.power`);
-        const history = this.updateHistoryData(devicePath, value, current, power);
+        const history = await this.updateHistoryData(devicePath, value, current, power);
         
         // Update history properties on Venus OS (only if history data is available)
         if (history) {
@@ -1319,7 +1329,7 @@ export class VenusClient extends EventEmitter {
         // Update history with current values
         const voltage = this._getCurrentSignalKValue(`${devicePath}.voltage`);
         const power = this._getCurrentSignalKValue(`${devicePath}.power`);
-        const history = this.updateHistoryData(devicePath, voltage, value, power);
+        const history = await this.updateHistoryData(devicePath, voltage, value, power);
         
         // Update history properties on Venus OS (only if history data is available)
         if (history) {
@@ -1485,7 +1495,7 @@ export class VenusClient extends EventEmitter {
   }
   
   // Update history for all battery devices using their last known values
-  updateAllBatteryHistories() {
+  async updateAllBatteryHistories() {
     for (const [devicePath, deviceService] of this.deviceServices) {
       if (this._internalDeviceType === 'battery') {
         // Get last known values from the device service
@@ -1499,7 +1509,7 @@ export class VenusClient extends EventEmitter {
           
           this.logger.debug(`Periodic history update for ${devicePath}: V=${voltage.toFixed(2)}V, I=${current.toFixed(2)}A, Solar=${this._getSolarCurrent().toFixed(1)}A, Alt=${this._getAlternatorCurrent().toFixed(1)}A`);
           
-          const history = this.updateHistoryData(devicePath, voltage, current, power);
+          const history = await this.updateHistoryData(devicePath, voltage, current, power);
           
           // Update history properties on Venus OS if available
           if (history) {
