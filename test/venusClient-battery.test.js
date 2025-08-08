@@ -494,6 +494,11 @@ describe('VenusClient - Battery', () => {
       await client.handleSignalKUpdate('electrical.batteries.main.voltage', 12.0);
       await client.handleSignalKUpdate('electrical.batteries.main.current', -5.0);
       
+      // Reset energy values to ensure clean test
+      const history = client.historyData.get('electrical.batteries.main');
+      history.dischargedEnergy = 0;
+      history.chargedEnergy = 0;
+      
       // Mock time to control delta calculation (simulate 30 minutes = 1800000ms)
       const mockNow = Date.now();
       const thirtyMinutesLater = mockNow + 1800000; // 30 minutes to stay under 1 hour limit
@@ -505,11 +510,11 @@ describe('VenusClient - Battery', () => {
       const dateNowSpy = vi.spyOn(Date, 'now').mockReturnValue(thirtyMinutesLater);
       
       // Update with discharging current (-5A for 0.5 hour)
-      const history = client.updateHistoryData('electrical.batteries.main', 12.0, -5.0, null);
+      const updatedHistory = client.updateHistoryData('electrical.batteries.main', 12.0, -5.0, null);
       
-      expect(history).toBeDefined();
-      expect(history.dischargedEnergy).toBeCloseTo(0.03, 3); // 12V * 5A * 0.5h / 1000 = 0.03 kWh
-      expect(history.chargedEnergy).toBeCloseTo(0, 6); // Should be 0 when discharging (allow tiny floating point errors)
+      expect(updatedHistory).toBeDefined();
+      expect(updatedHistory.dischargedEnergy).toBeCloseTo(0.03, 3); // 12V * 5A * 0.5h / 1000 = 0.03 kWh
+      expect(updatedHistory.chargedEnergy).toBeCloseTo(0, 6); // Should be 0 when discharging (allow tiny floating point errors)
       
       dateNowSpy.mockRestore();
     });
@@ -518,6 +523,11 @@ describe('VenusClient - Battery', () => {
       // Create device with critical data first
       await client.handleSignalKUpdate('electrical.batteries.main.voltage', 12.0);
       await client.handleSignalKUpdate('electrical.batteries.main.current', 5.0);
+      
+      // Reset energy values to ensure clean test
+      const history = client.historyData.get('electrical.batteries.main');
+      history.dischargedEnergy = 0;
+      history.chargedEnergy = 0;
       
       // Mock time to control delta calculation (simulate 30 minutes)
       const mockNow = Date.now();
@@ -530,11 +540,11 @@ describe('VenusClient - Battery', () => {
       const dateNowSpy = vi.spyOn(Date, 'now').mockReturnValue(thirtyMinutesLater);
       
       // Update with charging current (+5A for 0.5 hour)
-      const history = client.updateHistoryData('electrical.batteries.main', 12.0, 5.0, null);
+      const updatedHistory = client.updateHistoryData('electrical.batteries.main', 12.0, 5.0, null);
       
-      expect(history).toBeDefined();
-      expect(history.chargedEnergy).toBeCloseTo(0.03, 2); // 12V * 5A * 0.5h / 1000 = 0.03 kWh
-      expect(history.dischargedEnergy).toBeCloseTo(0.03, 2); // Actually getting energy here too
+      expect(updatedHistory).toBeDefined();
+      expect(updatedHistory.chargedEnergy).toBeCloseTo(0.03, 2); // 12V * 5A * 0.5h / 1000 = 0.03 kWh
+      expect(updatedHistory.dischargedEnergy).toBeCloseTo(0, 6); // Should be 0 when charging
       
       dateNowSpy.mockRestore();
     });
@@ -650,6 +660,11 @@ describe('VenusClient - Battery', () => {
       await client.handleSignalKUpdate('electrical.batteries.main.voltage', 12.0);
       await client.handleSignalKUpdate('electrical.batteries.main.current', -5.0);
       
+      // Reset energy values to ensure clean test
+      let history = client.historyData.get('electrical.batteries.main');
+      history.dischargedEnergy = 0;
+      history.chargedEnergy = 0;
+      
       let mockTime = Date.now();
       const timeIncrement = 1800000; // 30 minutes to stay under 1 hour limit
       
@@ -658,7 +673,7 @@ describe('VenusClient - Battery', () => {
       
       mockTime += timeIncrement;
       let dateNowSpy = vi.spyOn(Date, 'now').mockReturnValue(mockTime);
-      let history = client.updateHistoryData('electrical.batteries.main', 12.0, -5.0, null);
+      history = client.updateHistoryData('electrical.batteries.main', 12.0, -5.0, null);
       
       expect(history.dischargedEnergy).toBeCloseTo(0.03, 2); // 12V * 5A * 0.5h / 1000
       expect(history.chargedEnergy).toBe(0);
