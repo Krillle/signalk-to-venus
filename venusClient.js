@@ -1606,18 +1606,6 @@ export class VenusClient extends EventEmitter {
     }
   }
 
-  /**
-   * Get current Signal K value for a path
-   */
-  _getCurrentSignalKValue(path) {
-    try {
-      return this.signalkClient?.get(path)?.value || 0;
-    } catch (error) {
-      this.emit('debug', `Could not get Signal K value for ${path}: ${error.message}`);
-      return 0;
-    }
-  }
-
   async _calculateAndUpdatePower(deviceService, deviceName) {
     // Calculate power from voltage and current if both are available
     const voltage = deviceService.deviceData['/Dc/0/Voltage'];
