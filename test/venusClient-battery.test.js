@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import VenusClient from '../venusClient.js';
+import { VenusClient } from '../venusClient.js';
 import { EventEmitter } from 'events';
 
 // Mock the vedbus module to avoid D-Bus dependency in tests
