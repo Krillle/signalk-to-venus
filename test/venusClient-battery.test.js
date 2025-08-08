@@ -18,12 +18,10 @@ vi.mock('../vedbus.js', () => ({
   })
 }));
 
-describe      // Update should clean up NaN values
-      const cleanHistory = await client.updateHistoryData('electrical.batteries.main', 12.0, -5.0, null);
-      
-      expect(cleanHistory.dischargedEnergy).toBeCloseTo(0, 6); // Allow for tiny floating point precision
-      expect(cleanHistory.chargedEnergy).toBeCloseTo(0, 6); // Allow for tiny floating point precision
-      expect(cleanHistory.totalAhDrawn).toBeCloseTo(0, 6); // Allow for tiny floating point precisionsClient - Battery', () => {
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import VenusClient from '../venusClient.js';
+
+describe('VenusClient - Battery', () => {
   let client;
   let mockSettings;
 
