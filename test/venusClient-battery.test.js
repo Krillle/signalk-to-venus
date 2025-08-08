@@ -574,18 +574,6 @@ describe('VenusClient - Battery', () => {
       await client.handleSignalKUpdate('electrical.solar.test.current', 5.0);     // Solar = 5A
       await client.handleSignalKUpdate('electrical.alternator.test.current', 10.0); // Alternator = 10A
       
-      // Debug: Test the solar and alternator current functions directly
-      console.log('=== DEBUG SOLAR/ALTERNATOR DETECTION ===');
-      console.log('Client has signalKApp:', !!client.signalKApp);
-      console.log('Client has signalKApp.getSelfPath:', !!(client.signalKApp && client.signalKApp.getSelfPath));
-      console.log('Client settings:', JSON.stringify(client.settings, null, 2));
-      
-      const solarCurrent = client._getSolarCurrent();
-      const alternatorCurrent = client._getAlternatorCurrent();
-      console.log('Solar current detected:', solarCurrent);
-      console.log('Alternator current detected:', alternatorCurrent);
-      console.log('==========================================');
-      
       // Get initial state and reset totalAhDrawn to ensure clean test
       const initialHistory = client.historyData.get('electrical.batteries.main');
       initialHistory.totalAhDrawn = 0; // Reset to 0 for clean test

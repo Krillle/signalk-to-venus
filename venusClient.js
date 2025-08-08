@@ -429,13 +429,44 @@ export class VenusClient extends EventEmitter {
       // Get solar devices from configuration
       const solarDevices = this.settings.batteryMonitor?.directDcDevices?.filter(device => device.type === 'solar') || [];
       
+      this.logger.debug(`Solar devices configured: ${solarDevices.length}`);
+      
       for (const device of solarDevices) {
         const currentPath = device.currentPath;
         if (currentPath) {
           const value = this._getCurrentSignalKValue(currentPath);
+          this.logger.debug(`Checking solar path '${currentPath}': value=${value} (type=${typeof value})`);
           if (value !== null && typeof value === 'number' && !isNaN(value) && value >= 0) {
             totalSolarCurrent += value;
             this.logger.debug(`Solar device ${device.basePath}: ${value.toFixed(1)}A`);
+          } else {
+            this.logger.debug(`Solar device ${device.basePath}: invalid value ${value} at path ${currentPath}`);
+          }
+        }
+      }
+      
+      // If no configured devices found any current, try to detect common solar paths
+      if (totalSolarCurrent === 0 && solarDevices.length > 0) {
+        this.logger.debug('No solar current from configured devices, trying common paths...');
+        
+        // First, specifically test the user's confirmed path
+        const userSolarPath = 'electrical.solar.278.current';
+        const userValue = this._getCurrentSignalKValue(userSolarPath);
+        this.logger.debug(`Direct test of user's solar path '${userSolarPath}': ${userValue} (type=${typeof userValue})`);
+        
+        const commonSolarPaths = [
+          'electrical.solar.current',
+          'electrical.solar.0.current', 
+          'electrical.solar.1.current',
+          'electrical.solar.panelsCurrent',
+          'electrical.chargers.solar.current'
+        ];
+        
+        for (const path of commonSolarPaths) {
+          const value = this._getCurrentSignalKValue(path);
+          if (value !== null && typeof value === 'number' && !isNaN(value) && value > 0) {
+            this.logger.debug(`Found solar current at common path '${path}': ${value}A`);
+            // Don't add to total, just log for discovery
           }
         }
       }
@@ -457,13 +488,40 @@ export class VenusClient extends EventEmitter {
       // Get alternator devices from configuration
       const alternatorDevices = this.settings.batteryMonitor?.directDcDevices?.filter(device => device.type === 'alternator') || [];
       
+      this.logger.debug(`Alternator devices configured: ${alternatorDevices.length}`);
+      
       for (const device of alternatorDevices) {
         const currentPath = device.currentPath;
         if (currentPath) {
           const value = this._getCurrentSignalKValue(currentPath);
+          this.logger.debug(`Checking alternator path '${currentPath}': value=${value} (type=${typeof value})`);
           if (value !== null && typeof value === 'number' && !isNaN(value) && value >= 0) {
             totalAlternatorCurrent += value;
             this.logger.debug(`Alternator device ${device.basePath}: ${value.toFixed(1)}A`);
+          } else {
+            this.logger.debug(`Alternator device ${device.basePath}: invalid value ${value} at path ${currentPath}`);
+          }
+        }
+      }
+      
+      // If no configured devices found any current, try to detect common alternator paths
+      if (totalAlternatorCurrent === 0 && alternatorDevices.length > 0) {
+        this.logger.debug('No alternator current from configured devices, trying common paths...');
+        const commonAlternatorPaths = [
+          'electrical.alternators.current',
+          'electrical.alternators.0.current',
+          'electrical.alternators.1.current', 
+          'electrical.alternator.current',
+          'propulsion.main.alternator.current',
+          'propulsion.port.alternator.current',
+          'propulsion.starboard.alternator.current'
+        ];
+        
+        for (const path of commonAlternatorPaths) {
+          const value = this._getCurrentSignalKValue(path);
+          if (value !== null && typeof value === 'number' && !isNaN(value) && value > 0) {
+            this.logger.debug(`Found alternator current at common path '${path}': ${value}A`);
+            // Don't add to total, just log for discovery
           }
         }
       }
@@ -607,12 +665,15 @@ export class VenusClient extends EventEmitter {
   _getCurrentSignalKValue(path) {
     if (this.signalKApp && this.signalKApp.getSelfPath) {
       try {
-        return this.signalKApp.getSelfPath(path);
+        const value = this.signalKApp.getSelfPath(path);
+        this.logger.debug(`SignalK getSelfPath('${path}') returned: ${value} (type: ${typeof value})`);
+        return value;
       } catch (err) {
         this.logger.debug(`Could not get Signal K value for ${path}: ${err.message}`);
         return null;
       }
     }
+    this.logger.debug(`SignalK app not available for path: ${path}`);
     return null;
   }
 
