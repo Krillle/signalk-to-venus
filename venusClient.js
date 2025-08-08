@@ -665,9 +665,18 @@ export class VenusClient extends EventEmitter {
   _getCurrentSignalKValue(path) {
     if (this.signalKApp && this.signalKApp.getSelfPath) {
       try {
-        const value = this.signalKApp.getSelfPath(path);
-        this.logger.debug(`SignalK getSelfPath('${path}') returned: ${value} (type: ${typeof value})`);
-        return value;
+        const rawValue = this.signalKApp.getSelfPath(path);
+        this.logger.debug(`SignalK getSelfPath('${path}') returned: ${rawValue} (type: ${typeof rawValue})`);
+        
+        // Handle SignalK value objects that have nested .value property
+        if (rawValue && typeof rawValue === 'object' && rawValue.value !== undefined) {
+          const extractedValue = rawValue.value;
+          this.logger.debug(`Extracted value from SignalK object: ${extractedValue} (type: ${typeof extractedValue})`);
+          return extractedValue;
+        }
+        
+        // Return raw value if it's already a primitive
+        return rawValue;
       } catch (err) {
         this.logger.debug(`Could not get Signal K value for ${path}: ${err.message}`);
         return null;
