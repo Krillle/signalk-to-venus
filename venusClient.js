@@ -332,6 +332,17 @@ export class VenusClient extends EventEmitter {
           }
           
           this.logger.debug(`Total Ah drawn updated: +${consumptionDelta.toFixed(3)}Ah, total: ${history.totalAhDrawn.toFixed(3)}Ah`);
+          
+          // Also calculate discharged energy based on consumption (S+L-A formula)
+          const consumptionEnergyDelta = (validVoltage * clampedDischargeConsumption * deltaTimeHours) / 1000; // kWh
+          
+          if (!isNaN(history.dischargedEnergy)) {
+            history.dischargedEnergy += consumptionEnergyDelta;
+          } else {
+            history.dischargedEnergy = consumptionEnergyDelta;
+          }
+          
+          this.logger.debug(`Consumption energy: ${clampedDischargeConsumption.toFixed(1)}A → +${consumptionEnergyDelta.toFixed(4)}kWh discharged`);
         }
         
         if (validCurrent < 0) {
