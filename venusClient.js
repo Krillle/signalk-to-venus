@@ -337,7 +337,7 @@ export class VenusClient extends EventEmitter {
         // Discharged energy: If A < 0 then use A (battery current itself)
         // Charged energy: If A > 0 then use A (battery current itself)
         
-        this.logger.debug(`Energy calculation for ${devicePath}: Solar=${solarCurrent.toFixed(1)}A, Alt=${alternatorCurrent.toFixed(1)}A, Battery=${validCurrent.toFixed(1)}A`);
+        this.logger.debug(`Energy calculation for ${devicePath}: Solar=${solarCurrent.toFixed(1)}A, Alt=${alternatorCurrent.toFixed(1)}A, Battery=${validCurrent.toFixed(1)}A, ΔT=${deltaTimeHours.toFixed(6)}h`);
         
         // Calculate discharge consumption using S + L - A formula
         const dischargeConsumption = solarCurrent + alternatorCurrent - validCurrent;
@@ -370,7 +370,7 @@ export class VenusClient extends EventEmitter {
             history.dischargedEnergy = dischargeEnergyDelta;
           }
           
-          this.logger.debug(`Battery discharging: ${validCurrent.toFixed(1)}A → +${dischargeEnergyDelta.toFixed(4)}kWh discharged`);
+          this.logger.debug(`Battery discharging: ${validCurrent.toFixed(1)}A → +${dischargeEnergyDelta.toFixed(6)}kWh discharged (total: ${history.dischargedEnergy.toFixed(6)}kWh)`);
           
         } else if (validCurrent > 0) {
           // Battery is charging - use battery current (A) for charged energy  
@@ -382,7 +382,7 @@ export class VenusClient extends EventEmitter {
             history.chargedEnergy = chargeEnergyDelta;
           }
           
-          this.logger.debug(`Battery charging: ${validCurrent.toFixed(1)}A → +${chargeEnergyDelta.toFixed(4)}kWh charged`);
+          this.logger.debug(`Battery charging: ${validCurrent.toFixed(1)}A → +${chargeEnergyDelta.toFixed(6)}kWh charged (total: ${history.chargedEnergy.toFixed(6)}kWh)`);
         }
       }
     }
