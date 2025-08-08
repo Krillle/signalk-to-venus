@@ -453,11 +453,11 @@ describe('VenusClient - Battery', () => {
 
   describe('History Data Tracking', () => {
     beforeEach(async () => {
-      // Mock the Signal K app to provide solar and alternator data
+      // Mock the Signal K app to provide solar and alternator data for configured devices
       client.signalKApp = {
         getSelfPath: vi.fn((path) => {
-          if (path === 'electrical.solar.current') return 5.0; // 5A solar
-          if (path === 'electrical.alternators.current') return 10.0; // 10A alternator
+          if (path === 'electrical.solar.test.current') return 5.0; // 5A solar from configured device
+          if (path === 'electrical.alternator.test.current') return 10.0; // 10A alternator from configured device
           return null;
         })
       };
@@ -566,15 +566,6 @@ describe('VenusClient - Battery', () => {
     });
 
     it('should calculate cumulative Ah drawn using S + L - A formula with clamping', async () => {
-      // Mock the Signal K app to provide solar and alternator data for configured devices
-      client.signalKApp = {
-        getSelfPath: vi.fn((path) => {
-          if (path === 'electrical.solar.test.current') return 5.0; // 5A solar
-          if (path === 'electrical.alternator.test.current') return 10.0; // 10A alternator
-          return null;
-        })
-      };
-      
       // Create device with critical data first
       await client.handleSignalKUpdate('electrical.batteries.main.voltage', 12.0);
       await client.handleSignalKUpdate('electrical.batteries.main.current', -5.0);
@@ -608,15 +599,6 @@ describe('VenusClient - Battery', () => {
     });
 
     it('should clamp negative consumption to 0 when battery charging exceeds supply', async () => {
-      // Mock the Signal K app to provide solar and alternator data for configured devices
-      client.signalKApp = {
-        getSelfPath: vi.fn((path) => {
-          if (path === 'electrical.solar.test.current') return 5.0; // 5A solar
-          if (path === 'electrical.alternator.test.current') return 10.0; // 10A alternator
-          return null;
-        })
-      };
-      
       // Create device with critical data first
       await client.handleSignalKUpdate('electrical.batteries.main.voltage', 12.0);
       await client.handleSignalKUpdate('electrical.batteries.main.current', 8.0);
