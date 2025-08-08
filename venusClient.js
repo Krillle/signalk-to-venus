@@ -358,16 +358,19 @@ export class VenusClient extends EventEmitter {
           
           this.logger.debug(`Battery charging: ${validCurrent.toFixed(1)}A → +${chargeEnergyDelta.toFixed(4)}kWh charged`);
         }
-        
-        // Update accumulator with valid values - only update if we have valid data
-        if (validCurrent !== null) {
-          accumulator.lastCurrent = validCurrent;
-        }
-        if (validVoltage !== null) {
-          accumulator.lastVoltage = validVoltage;
-        }
-        accumulator.lastTimestamp = now;
       }
+    }
+    
+    // Update accumulator with valid values - only update if we have valid data
+    // This should happen regardless of whether energy calculation occurred
+    if (accumulator) {
+      if (validCurrent !== null) {
+        accumulator.lastCurrent = validCurrent;
+      }
+      if (validVoltage !== null) {
+        accumulator.lastVoltage = validVoltage;
+      }
+      accumulator.lastTimestamp = now;
     }
     
     // Ensure all history values are valid numbers
