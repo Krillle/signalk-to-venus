@@ -327,6 +327,8 @@ export class VenusClient extends EventEmitter {
     if (accumulator && validCurrent !== null && validVoltage !== null) {
       const deltaTimeHours = (now - lastTime) / (1000 * 3600); // Convert to hours
       
+      this.logger.debug(`Time calculation for ${devicePath}: now=${now}, lastTime=${lastTime}, deltaHours=${deltaTimeHours.toFixed(6)}`);
+      
       if (deltaTimeHours > 0 && deltaTimeHours < 1) { // Sanity check: less than 1 hour
         // Get solar and alternator currents for the new calculation method
         const solarCurrent = this._getSolarCurrent() || 0;
@@ -338,6 +340,9 @@ export class VenusClient extends EventEmitter {
         // Charged energy: If A > 0 then use A (battery current itself)
         
         this.logger.debug(`Energy calculation for ${devicePath}: Solar=${solarCurrent.toFixed(1)}A, Alt=${alternatorCurrent.toFixed(1)}A, Battery=${validCurrent.toFixed(1)}A, ΔT=${deltaTimeHours.toFixed(6)}h`);
+        
+        // Debug: Log what solar paths we're checking
+        this.logger.debug(`Solar current check - app exists: ${!!this.signalKApp}, getSelfPath exists: ${!!(this.signalKApp && this.signalKApp.getSelfPath)}`);
         
         // Calculate discharge consumption using S + L - A formula
         const dischargeConsumption = solarCurrent + alternatorCurrent - validCurrent;
@@ -351,13 +356,15 @@ export class VenusClient extends EventEmitter {
         if (clampedDischargeConsumption > 0) {
           const consumptionDelta = clampedDischargeConsumption * deltaTimeHours;
           
+          this.logger.debug(`Consumption delta calculation: ${clampedDischargeConsumption.toFixed(1)}A × ${deltaTimeHours.toFixed(6)}h = ${consumptionDelta.toFixed(6)}Ah`);
+          
           if (!isNaN(history.totalAhDrawn)) {
             history.totalAhDrawn += consumptionDelta;
           } else {
             history.totalAhDrawn = consumptionDelta;
           }
           
-          this.logger.debug(`Total Ah drawn updated: +${consumptionDelta.toFixed(3)}Ah, total: ${history.totalAhDrawn.toFixed(3)}Ah`);
+          this.logger.debug(`Total Ah drawn updated: +${consumptionDelta.toFixed(6)}Ah, total: ${history.totalAhDrawn.toFixed(6)}Ah`);
         }
         
         if (validCurrent < 0) {
@@ -1106,7 +1113,10 @@ export class VenusClient extends EventEmitter {
       
       if (existingDeviceService) {
         // We have an existing device - update it with any valid data
-        this.logger.debug(`Updating existing device ${basePath} with ${path} = ${value}`);
+        // Only log battery updates to reduce noise
+        if (basePath.includes('electrical.batteries')) {
+          this.logger.debug(`Updating battery device ${basePath} with ${path} = ${value}`);
+        }
         
         // Check if device service is connected and ready for data updates
         if (!existingDeviceService.isConnected) {
@@ -1616,12 +1626,12 @@ export class VenusClient extends EventEmitter {
     }
     
     try {
-      // Validate all values before sending to prevent NaN errors
-      const dischargedEnergy = isNaN(history.dischargedEnergy) ? 0 : (history.dischargedEnergy / 1000);
-      const chargedEnergy = isNaN(history.chargedEnergy) ? 0 : (history.chargedEnergy / 1000);
+      // Validate all values before sending to prevent NaN errors  
+      const dischargedEnergy = isNaN(history.dischargedEnergy) ? 0 : history.dischargedEnergy; 
+      const chargedEnergy = isNaN(history.chargedEnergy) ? 0 : history.chargedEnergy; 
       const totalAh = isNaN(history.totalAhDrawn) ? 0 : history.totalAhDrawn;
       
-      // Update energy history properties (in kWh)
+      // Update energy history properties 
       await deviceService.updateProperty('/History/DischargedEnergy', 
         dischargedEnergy, 'd', 'Total discharged energy');
       await deviceService.updateProperty('/History/ChargedEnergy', 
