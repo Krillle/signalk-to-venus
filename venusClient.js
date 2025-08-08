@@ -427,7 +427,7 @@ export class VenusClient extends EventEmitter {
       let totalSolarCurrent = 0;
       
       // Get solar devices from configuration
-      const solarDevices = this.deviceSettings.batteryMonitor?.directDcDevices?.filter(device => device.type === 'solar') || [];
+      const solarDevices = this.settings.batteryMonitor?.directDcDevices?.filter(device => device.type === 'solar') || [];
       
       for (const device of solarDevices) {
         const currentPath = device.currentPath;
@@ -455,7 +455,7 @@ export class VenusClient extends EventEmitter {
       let totalAlternatorCurrent = 0;
       
       // Get alternator devices from configuration
-      const alternatorDevices = this.deviceSettings.batteryMonitor?.directDcDevices?.filter(device => device.type === 'alternator') || [];
+      const alternatorDevices = this.settings.batteryMonitor?.directDcDevices?.filter(device => device.type === 'alternator') || [];
       
       for (const device of alternatorDevices) {
         const currentPath = device.currentPath;
