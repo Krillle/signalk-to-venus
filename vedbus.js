@@ -38,7 +38,10 @@ export class VEDBusService extends EventEmitter {
     this.connectionHealthTimer = null;
     this.isConnected = false;
     this.reconnectAttempts = 0;
-    this.maxReconnectAttempts = 10;
+    this.maxReconnectAttempts = settings.maxReconnectAttempts || 15; // Configurable max reconnect attempts
+    this.connectionTimeout = settings.connectionTimeout || 5000; // Configurable connection timeout
+    this.reconnectBaseDelay = settings.reconnectBaseDelay || 1000; // Configurable base delay
+    this.maxReconnectDelay = settings.maxReconnectDelay || 60000; // Configurable max delay
     
     // Generate unique serial number like dbus-serialbattery - combine serviceType and instance
     // const uniqueSerial = `SK_${deviceConfig.serviceType}_${serviceName}_${this.vrmInstanceId}`;
@@ -254,14 +257,32 @@ export class VEDBusService extends EventEmitter {
         // Wait for bus to be ready (if it has event support)
         if (typeof this.bus.on === 'function') {
           await new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+              this.isConnected = false;
+              reject(new Error(`D-Bus connection timeout after ${this.connectionTimeout}ms`));
+            }, this.connectionTimeout);
+
             this.bus.on('connect', () => {
+              clearTimeout(timeout);
               this.isConnected = true;
-              this.reconnectAttempts = 0;
+              this.reconnectAttempts = 0; // Reset reconnect counter on successful connection
               resolve();
             });
+            
             this.bus.on('error', (err) => {
+              clearTimeout(timeout);
               console.error(`D-Bus connection error for ${this.dbusServiceName}:`, err);
               this.isConnected = false;
+              
+              // Enhanced error handling for different types of connection failures
+              if (err.code === 'ENOTFOUND') {
+                console.warn(`DNS resolution failed for ${this.settings.venusHost} - will retry with exponential backoff`);
+              } else if (err.code === 'ECONNREFUSED') {
+                console.warn(`D-Bus connection refused by ${this.settings.venusHost} - Venus OS may not be ready`);
+              } else if (err.code === 'ETIMEDOUT') {
+                console.warn(`D-Bus connection timed out to ${this.settings.venusHost}`);
+              }
+              
               reject(err);
             });
           });
@@ -287,13 +308,15 @@ export class VEDBusService extends EventEmitter {
     });
 
     this.bus.on('error', (err) => {
-      // Handle different types of connection errors
+      // Handle different types of connection errors with appropriate logging
       if (err.code === 'ECONNRESET') {
-        // D-Bus connection reset (Venus OS restarted)
+        console.log(`D-Bus connection reset for ${this.dbusServiceName} (Venus OS restarted)`);
       } else if (err.code === 'ECONNREFUSED') {
-        // D-Bus connection refused (Venus OS not ready)
+        console.warn(`D-Bus connection refused for ${this.dbusServiceName} (Venus OS not ready)`);
       } else if (err.code === 'ENOTFOUND') {
-        // D-Bus host not found (DNS issue)
+        console.warn(`DNS resolution failed for ${this.dbusServiceName} (${this.settings.venusHost} not found)`);
+      } else if (err.code === 'ETIMEDOUT') {
+        console.warn(`D-Bus connection timeout for ${this.dbusServiceName}`);
       } else {
         console.error(`D-Bus error for ${this.dbusServiceName}:`, err);
       }
@@ -396,12 +419,18 @@ export class VEDBusService extends EventEmitter {
     }
 
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.error(`Max reconnect attempts reached for ${this.dbusServiceName}`);
+      console.error(`Max reconnect attempts (${this.maxReconnectAttempts}) reached for ${this.dbusServiceName}`);
       return;
     }
 
-    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000); // Exponential backoff, max 30s
+    // Exponential backoff with configurable base delay and max delay
+    const delay = Math.min(
+      this.reconnectBaseDelay * Math.pow(2, this.reconnectAttempts), 
+      this.maxReconnectDelay
+    );
     this.reconnectAttempts++;
+    
+    console.log(`Scheduling reconnect attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts} for ${this.dbusServiceName} in ${delay}ms`);
     
     this.reconnectTimer = setTimeout(async () => {
       this.reconnectTimer = null;

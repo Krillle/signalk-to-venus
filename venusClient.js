@@ -1184,6 +1184,11 @@ export class VenusClient extends EventEmitter {
       case 'battery':
         // For batteries, create device only when we have meaningful electrical data
         if (path.includes('stateOfCharge') && typeof value === 'number' && !isNaN(value)) {
+          // Don't create devices for spurious 0% SOC values from reconnection issues
+          if (value === 0 && this.settings.socValidationEnabled !== false) {
+            this.logger.debug(`Ignoring SOC 0% for device creation - likely reconnection artifact`);
+            return false;
+          }
           return true; // SoC is the most critical battery metric
         }
         if (path.includes('voltage') && typeof value === 'number' && !isNaN(value) && value > 5.0) {
@@ -1348,6 +1353,26 @@ export class VenusClient extends EventEmitter {
     } else if (path.includes('stateOfCharge') || (path.includes('capacity') && path.includes('state'))) {
       if (typeof value === 'number' && !isNaN(value)) {
         const socPercent = value > 1 ? value : value * 100;
+        
+        // Protect against spurious 0% SOC values that can occur during Venus OS reconnection
+        // Only allow 0% SOC if we have a valid current reading indicating actual discharge
+        if (socPercent === 0 && this.settings.socValidationEnabled !== false) {
+          const currentReading = this._getCurrentSignalKValue(`${devicePath}.current`);
+          const minDischargeCurrent = this.settings.minDischargeCurrent || 0.5;
+          
+          if (!currentReading || currentReading >= 0) {
+            // No discharge current or positive current (charging) - likely a spurious 0% from reconnection
+            this.logger.warn(`Ignoring spurious SOC 0% for ${deviceName} - no discharge current detected (current: ${currentReading}A)`);
+            return;
+          }
+          // If we have significant discharge current, allow the 0% SOC (battery might be truly empty)
+          if (Math.abs(currentReading) < minDischargeCurrent) {
+            this.logger.warn(`Ignoring spurious SOC 0% for ${deviceName} - insufficient discharge current (${currentReading}A, min: ${minDischargeCurrent}A)`);
+            return;
+          }
+          this.logger.info(`Allowing SOC 0% for ${deviceName} with discharge current ${currentReading}A`);
+        }
+        
         await deviceService.updateProperty('/Soc', socPercent, 'd', `${deviceName} state of charge`);
         this.emit('dataUpdated', 'Battery SoC', `${deviceName}: ${socPercent.toFixed(1)}%`);
         

@@ -14,5 +14,15 @@ export default {
   temperatureRegex: /^environment\..*\.temperature$|^propulsion\..*\.temperature$/, 
   humidityRegex: /^environment\..*\.(humidity|relativeHumidity)$/, 
   switchRegex: /^electrical\.switches\.[^.]+\.state$/, 
-  dimmerRegex: /^electrical\.switches\.[^.]+\.dimmingLevel$/
+  dimmerRegex: /^electrical\.switches\.[^.]+\.dimmingLevel$/,
+  
+  // Connection resilience settings
+  connectionTimeout: 5000, // Connection timeout in milliseconds (default: 5 seconds)
+  maxReconnectAttempts: 15, // Maximum reconnection attempts (default: 15)
+  reconnectBaseDelay: 1000, // Base delay for exponential backoff (default: 1 second)
+  maxReconnectDelay: 60000, // Maximum delay between reconnection attempts (default: 60 seconds)
+  
+  // Data validation settings
+  socValidationEnabled: true, // Enable SOC 0% validation to prevent spurious values
+  minDischargeCurrent: 0.5 // Minimum discharge current (A) to accept SOC 0% values
 };
