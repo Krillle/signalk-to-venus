@@ -400,9 +400,14 @@ export class VenusClient extends EventEmitter {
           this.logger.debug(`Battery charging: ${validCurrent.toFixed(1)}A → +${chargeEnergyDelta.toFixed(6)}kWh charged (total: ${history.chargedEnergy.toFixed(6)}kWh)`);
         }
         
-        // Only update lastUpdateTime when we actually performed energy calculations
+        // Update lastUpdateTime only when energy calculations were performed
         this.lastUpdateTime.set(devicePath, now);
         this.logger.debug(`Updated lastUpdateTime for ${devicePath} after energy calculation`);
+      } else {
+        // Even if energy calculation conditions weren't met, we still need to update lastUpdateTime
+        // to ensure the next update can calculate deltaTimeHours properly
+        this.lastUpdateTime.set(devicePath, now);
+        this.logger.debug(`Updated lastUpdateTime for ${devicePath} (no energy calc - deltaTime: ${deltaTimeHours.toFixed(6)}h)`);
       }
     }
     
