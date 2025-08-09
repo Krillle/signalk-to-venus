@@ -522,10 +522,10 @@ export default function(app) {
     
     if (settings.batteryRegex.test(path)) return 'batteries';
     if (settings.tankRegex.test(path)) return 'tanks';
+    if (settings.engineRegex.test(path)) return 'engines'; // Check engines before temperature to prevent propulsion.*.temperature being caught by environment
+    if (settings.systemRegex.test(path)) return 'system';
     if (settings.temperatureRegex.test(path) || settings.humidityRegex.test(path)) return 'environment';
     if (settings.switchRegex.test(path) || settings.dimmerRegex.test(path)) return 'switches';
-    if (settings.engineRegex.test(path)) return 'engines';
-    if (settings.systemRegex.test(path)) return 'system';
     return null;
   }
 
