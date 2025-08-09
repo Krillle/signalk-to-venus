@@ -152,6 +152,22 @@ The plugin automatically detects and supports:
 /Capacity                  # Battery capacity (Ah)
 /State                     # Battery state (0=Offline, 1=Online, 2=Error, 3=Unavailable)
 
+# Computed/Calculated Values (✅ IMPLEMENTED) - Smart Battery Monitor Features!
+/ConsumedAmphours          # Consumed Ah calculated from SOC: capacity × (100 - SOC) / 100
+/Dc/0/Power                # Battery power calculated as: voltage × current (Watts)
+
+# Advanced Consumption Tracking with S+L-A Formula (✅ IMPLEMENTED)
+# When solar/alternator devices are configured, consumption is calculated using:
+# Consumption = Solar Current + Alternator Current - Battery Current
+# This provides accurate house load calculation by accounting for all energy sources
+/History/TotalAhDrawn      # Accumulated consumption using S+L-A formula or battery current integration
+
+# Time Calculations (✅ IMPLEMENTED)
+/TimeToGo                  # Intelligent time remaining calculation:
+                          # - During discharge: Based on current consumption rate and remaining capacity
+                          # - During charge: Time to reach 100% SOC based on charging current
+                          # - Uses Signal K timeRemaining if available, otherwise calculated
+
 # Historical Energy Tracking (✅ IMPLEMENTED) - Major Feature for VRM Charts!
 /History/DischargedEnergy  # Total discharged energy (kWh)
 /History/ChargedEnergy     # Total charged energy (kWh)
@@ -233,6 +249,91 @@ The plugin automatically detects and supports:
 /Position                  # Switch position
 /DimmingLevel              # Dimming level (0-100%)
 ```
+
+## Energy Calculation Formulas
+
+### Smart Consumption Tracking
+
+The plugin implements advanced energy calculation logic that provides accurate consumption data for VRM monitoring:
+
+#### **S+L-A Formula for House Load Calculation**
+
+When solar panels and alternators are configured, the plugin uses the sophisticated S+L-A formula:
+
+```
+House Consumption (A) = Solar Current + Alternator Current - Battery Current
+```
+
+**Example Scenario:**
+- Solar panels: 1.4A (generating power)
+- Alternator: 24.1A (charging)  
+- Battery: 19.0A (accepting charge)
+- **Result**: 1.4 + 24.1 - 19.0 = **6.5A house consumption**
+
+This formula accurately calculates the actual house load by accounting for all energy sources flowing to the batteries.
+
+#### **Configuration for S+L-A Formula**
+
+Configure your solar and alternator devices in plugin settings:
+
+```javascript
+// Example configuration paths
+directDcDevices: [
+  {
+    type: 'solar',
+    basePath: 'electrical.solar.278',
+    currentPath: 'electrical.solar.278.current'
+  },
+  {
+    type: 'alternator', 
+    basePath: 'electrical.alternator.277',
+    currentPath: 'electrical.alternator.277.current'
+  }
+]
+```
+
+#### **Consumption Calculation Methods**
+
+1. **S+L-A Mode** (preferred when solar/alternator configured):
+   - Uses solar + alternator - battery current
+   - Provides most accurate house load calculation
+   - Accounts for all energy sources
+
+2. **Battery Current Integration** (fallback mode):
+   - Uses battery current directly when positive (discharging)
+   - Simple but less accurate during mixed charging/consumption
+
+#### **Energy Integration Formulas**
+
+**Consumed Amp-Hours (from SOC):**
+```
+ConsumedAmphours = Battery Capacity × (100 - Current SOC) / 100
+```
+
+**Historical Energy Tracking:**
+```
+Total Ah Drawn += Consumption Current × Time Delta (hours)
+Discharged Energy += Discharge Current × Voltage × Time Delta (hours) / 1000
+Charged Energy += Charge Current × Voltage × Time Delta (hours) / 1000
+```
+
+**Time-to-Go Calculations:**
+```
+During Discharge: TimeToGo = Remaining Capacity ÷ Current Consumption Rate
+During Charge: TimeToGo = Capacity to Full ÷ Current Charging Rate
+```
+
+**Power Calculation:**
+```
+Power (W) = Voltage (V) × Current (A)
+```
+
+### Historical Data Persistence
+
+All energy calculations are persisted across reboots and plugin restarts, ensuring:
+- Continuous consumption tracking for VRM charts
+- Accurate long-term energy statistics  
+- No data loss during system maintenance
 
 ## Bidirectional Operation
 
