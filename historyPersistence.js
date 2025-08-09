@@ -219,6 +219,26 @@ export class HistoryPersistence {
         }
       }
       
+      // PROTECTION: Don't save empty history data - this can happen during shutdown/restart
+      // and would overwrite existing good data
+      const hasValidHistoryData = Object.keys(historyObj).length > 0;
+      
+      if (!hasValidHistoryData) {
+        // Check if we have existing data on disk before deciding to save empty data
+        try {
+          const existingData = await fs.readFile(this.filePath, 'utf8');
+          const existing = JSON.parse(existingData);
+          
+          if (existing.historyData && Object.keys(existing.historyData).length > 0) {
+            this.logger.debug(`Skipping save of empty history data - preserving existing data with ${Object.keys(existing.historyData).length} devices`);
+            return; // Don't overwrite existing good data with empty data
+          }
+        } catch (existingError) {
+          // File doesn't exist or can't be read, proceed with save
+          this.logger.debug(`No existing history file found, proceeding with empty data save`);
+        }
+      }
+      
       const data = {
         historyData: historyObj,
         energyAccumulators: energyObj,
@@ -251,9 +271,31 @@ export class HistoryPersistence {
       }
       
       // If verification passes, rename to final location
-      await fs.rename(tempFilePath, this.filePath);
-      
-      this.logger.debug(`Saved history data for ${historyData.size} devices to ${this.filePath}`);
+      try {
+        await fs.rename(tempFilePath, this.filePath);
+        this.logger.debug(`Saved history data for ${historyData.size} devices to ${this.filePath}`);
+      } catch (renameError) {
+        // Enhanced error handling for rename operation
+        this.logger.error(`Failed to rename temp file ${tempFilePath} -> ${this.filePath}: ${renameError.message}`);
+        
+        // Check if temp file still exists
+        try {
+          await fs.access(tempFilePath);
+          this.logger.debug(`Temp file ${tempFilePath} still exists after failed rename`);
+        } catch (accessError) {
+          this.logger.debug(`Temp file ${tempFilePath} does not exist after failed rename`);
+        }
+        
+        // Check if target file exists and is writable
+        try {
+          await fs.access(this.filePath, fs.constants.W_OK);
+          this.logger.debug(`Target file ${this.filePath} exists and is writable`);
+        } catch (targetError) {
+          this.logger.debug(`Target file ${this.filePath} access issue: ${targetError.message}`);
+        }
+        
+        throw renameError;
+      }
       
     } catch (error) {
       this.logger.error(`Error saving history data: ${error.message}`);
