@@ -642,7 +642,7 @@ describe('VenusClient - Battery', () => {
       const history = await client.updateHistoryData('electrical.batteries.main', 12.0, 8.0, null);
       
       expect(history).toBeDefined();
-      expect(history.totalAhDrawn).toBeCloseTo(13.5, 2); // Previous test added 10Ah, this test adds 3.5Ah = 13.5Ah total
+      expect(history.totalAhDrawn).toBeCloseTo(3.5, 2); // This test alone should add 3.5Ah since we now use unique history files
       
       dateNowSpy.mockRestore();
     });
