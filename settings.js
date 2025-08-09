@@ -5,7 +5,9 @@ export default {
     batteries: true,
     tanks: true,
     environment: true,
-    switches: true
+    switches: true,
+    engines: true,
+    system: true
   },
   
   // Battery Monitor Configuration
@@ -42,6 +44,8 @@ export default {
   humidityRegex: /^environment\..*\.(humidity|relativeHumidity)$/, 
   switchRegex: /^electrical\.switches\.[^.]+\.state$/, 
   dimmerRegex: /^electrical\.switches\.[^.]+\.dimmingLevel$/,
+  engineRegex: /^propulsion\.[^.]+\.(rpm|temperature|oilPressure|gearPosition|alternator\.voltage)$|^propulsion\.[^.]+\.drive\.gear\.reduction$/,
+  systemRegex: /^navigation\.(speedOverGround|courseOverGroundTrue|headingTrue|headingMagnetic|position|gnss\.antennaAltitude)$|^environment\.depth\.belowKeel$/,
   
   // Connection resilience settings
   connectionTimeout: 5000, // Connection timeout in milliseconds (default: 5 seconds)

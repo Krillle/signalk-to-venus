@@ -238,5 +238,74 @@ export const DEVICE_CONFIGS = {
       '/Humidity': 'd',
       '/Status': 'i'
     }
+  },
+
+  engine: {
+    serviceType: 'motordrive',
+    processName: 'signalk-virtual-device', 
+    productName: 'SignalK Virtual Engine',
+    serviceDescription: 'SignalK Virtual Engine Service',
+    additionalProperties: {
+      // Engine specific properties - populated from Signal K propulsion.* data
+      "/Engine/0/RPM": { type: "d", text: "Engine RPM" },
+      "/Engine/1/RPM": { type: "d", text: "Engine 1 RPM" },
+      "/Engine/0/Temperature": { type: "d", text: "Engine temperature" },
+      "/Engine/0/OilPressure": { type: "d", text: "Engine oil pressure" },
+      "/Engine/0/Alternator/Voltage": { type: "d", text: "Alternator voltage" },
+      "/Engine/0/GearPosition": { type: "i", value: 0, text: "Gear position" },
+      "/DeviceInstance": { type: "i", value: 512, text: "Device instance" },
+      "/ProductId": { type: "i", value: 0xB030, text: "Product ID" },
+      "/ProductName": { type: "s", value: "SignalK Virtual Engine", text: "Product name" },
+      "/Connected": { type: "i", value: 1, text: "Connected" },
+      "/Mgmt/ProcessName": { type: "s", value: "signalk-virtual-device", text: "Process name" },
+      "/Mgmt/ProcessVersion": { type: "s", value: "1.1.0", text: "Process version" },
+      "/Mgmt/Connection": { type: "s", value: "SignalK", text: "Connection type" }
+    },
+    pathMappings: {
+      '/Engine/0/RPM': 'Engine RPM',
+      '/Engine/1/RPM': 'Engine 1 RPM', 
+      '/Engine/0/Temperature': 'Engine temperature',
+      '/Engine/0/OilPressure': 'Oil pressure',
+      '/Engine/0/Alternator/Voltage': 'Alternator voltage',
+      '/Engine/0/GearPosition': 'Gear position'
+    },
+    pathTypes: {
+      '/Engine/0/RPM': 'd',
+      '/Engine/1/RPM': 'd',
+      '/Engine/0/Temperature': 'd', 
+      '/Engine/0/OilPressure': 'd',
+      '/Engine/0/Alternator/Voltage': 'd',
+      '/Engine/0/GearPosition': 'i'
+    }
+  },
+
+  system: {
+    serviceType: 'system',
+    processName: 'signalk-virtual-device',
+    productName: 'SignalK Virtual System', 
+    serviceDescription: 'SignalK Virtual System Service',
+    additionalProperties: {
+      // System specific properties - populated from Signal K navigation.* data
+      "/Speed": { type: "d", text: "Speed over ground" },
+      "/Heading/True": { type: "d", text: "True heading" },
+      "/Depth/Depth": { type: "d", text: "Water depth" },
+      "/DeviceInstance": { type: "i", value: 513, text: "Device instance" },
+      "/ProductId": { type: "i", value: 0xB040, text: "Product ID" },
+      "/ProductName": { type: "s", value: "SignalK Virtual System", text: "Product name" },
+      "/Connected": { type: "i", value: 1, text: "Connected" },
+      "/Mgmt/ProcessName": { type: "s", value: "signalk-virtual-device", text: "Process name" },
+      "/Mgmt/ProcessVersion": { type: "s", value: "1.1.0", text: "Process version" },
+      "/Mgmt/Connection": { type: "s", value: "SignalK", text: "Connection type" }
+    },
+    pathMappings: {
+      '/Speed': 'Speed over ground',
+      '/Heading/True': 'True heading',
+      '/Depth/Depth': 'Water depth'
+    },
+    pathTypes: {
+      '/Speed': 'd',
+      '/Heading/True': 'd', 
+      '/Depth/Depth': 'd'
+    }
   }
 };

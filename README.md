@@ -117,6 +117,14 @@ After starting the plugin, it will automatically discover all compatible Signal 
 ☐ Engine temperature (propulsion.main.temperature)
 ☐ Cabin humidity (environment.cabin.humidity)
 
+> Engines
+☐ Main Engine (propulsion.main)
+☐ Port Engine (propulsion.port)
+☐ Starboard Engine (propulsion.starboard)
+
+> System (Speed, Heading, Depth)
+☐ System Data (navigation)
+
 > Switches & Dimmers
 ☐ Nav (electrical.switches.nav)
 ☐ Anchor (electrical.switches.anchor)
@@ -134,6 +142,8 @@ The plugin automatically detects and supports:
 - **Temperature**: `environment.*.temperature`, `propulsion.*.temperature`
 - **Humidity**: `environment.*.humidity` or `environment.*.relativeHumidity`
 - **Switches/Dimmers**: `electrical.switches.*` (state, dimming level)
+- **Engines**: `propulsion.*` (RPM, temperature, oil pressure, gear position, alternator voltage)
+- **System/Navigation**: `navigation.*` (speed over ground, heading, position), `environment.depth.*` (water depth)
 
 **Note**: The plugin automatically excludes devices directly connected to the Cerbo GX and its internal relay switches to prevent feedback loops.
 
@@ -246,6 +256,43 @@ This plugin provides a **comprehensive BMV (Battery Monitor) interface** that is
 /Status                    # Sensor status
 ```
 
+**Engines (Motor Drive):**
+```
+# Engine Data (✅ IMPLEMENTED) - Boat Page Integration!
+/Engine/0/RPM              # Engine RPM (displayed center on boat page)
+/Engine/1/RPM              # Engine 1 RPM (for twin engines)
+/Engine/0/Temperature      # Engine temperature (coolant, etc.)
+/Engine/0/OilPressure      # Engine oil pressure
+/Engine/0/Alternator/Voltage # Alternator voltage
+/Engine/0/GearPosition     # Gear position (0=Neutral, 1=Reverse, 2=Forward)
+
+# Device Identification (✅ IMPLEMENTED)
+/ProductId                 # Product ID (0xB030)
+/ProductName               # Product name
+/DeviceInstance            # Device instance ID
+/Connected                 # Connection status (1=Connected)
+/Mgmt/ProcessName          # Process name
+/Mgmt/ProcessVersion       # Process version
+/Mgmt/Connection           # Connection type
+```
+
+**System Data:**
+```
+# Navigation Data (✅ IMPLEMENTED) - Boat Page Integration!
+/Speed                     # Speed over ground (SOG) in knots (displayed center on boat page)
+/Heading/True              # True heading in degrees
+/Depth/Depth               # Water depth in meters
+
+# Device Identification (✅ IMPLEMENTED)
+/ProductId                 # Product ID (0xB040)
+/ProductName               # Product name
+/DeviceInstance            # Device instance ID
+/Connected                 # Connection status (1=Connected)
+/Mgmt/ProcessName          # Process name
+/Mgmt/ProcessVersion       # Process version
+/Mgmt/Connection           # Connection type
+```
+
 **Switches & Dimmers:**
 ```
 # Switch/Dimmer Data (✅ IMPLEMENTED)
@@ -338,6 +385,47 @@ All energy calculations are persisted across reboots and plugin restarts, ensuri
 - Continuous consumption tracking for VRM charts
 - Accurate long-term energy statistics  
 - No data loss during system maintenance
+
+## Boat Page Integration
+
+**🚢 COMPLETE BOAT PAGE SUPPORT FOR GX TOUCH / REMOTE CONSOLE**
+
+This plugin now provides comprehensive boat page integration, displaying essential navigation and engine data directly on the GX Touch and Remote Console boat page:
+
+### Central Display Data
+- **Engine RPM**: Primary engine RPM displayed prominently in the center
+- **Speed Over Ground (SOG)**: Speed in knots displayed centrally  
+- **Twin Engine Support**: RPM for both engines when available (`/Engine/0/RPM`, `/Engine/1/RPM`)
+
+### Engine Information Panel
+- **Engine Temperature**: Coolant or other engine temperature sensors
+- **Oil Pressure**: Engine oil pressure monitoring
+- **Alternator Voltage**: Charging system voltage
+- **Gear Position**: Forward/Neutral/Reverse indication
+
+### Navigation Information Panel  
+- **True Heading**: Compass heading in degrees
+- **Water Depth**: Depth below keel in meters
+
+### Supported Signal K Paths for Boat Page
+```
+# Engine Data (propulsion.*)
+propulsion.main.rpm                    → /Engine/0/RPM
+propulsion.port.rpm                    → /Engine/0/RPM  
+propulsion.starboard.rpm               → /Engine/1/RPM
+propulsion.main.temperature            → /Engine/0/Temperature
+propulsion.main.oilPressure            → /Engine/0/OilPressure
+propulsion.main.alternator.voltage     → /Engine/0/Alternator/Voltage
+propulsion.main.gearPosition           → /Engine/0/GearPosition
+
+# Navigation Data (navigation.*)
+navigation.speedOverGround             → /Speed
+navigation.headingTrue                 → /Heading/True
+navigation.courseOverGroundTrue        → /Heading/True
+environment.depth.belowKeel            → /Depth/Depth
+```
+
+The boat page data is automatically updated at your configured interval and provides real-time monitoring of your vessel's key operational parameters.
 
 ## Bidirectional Operation
 

@@ -2,7 +2,7 @@ import { VenusClient } from './venusClient.js';
 
 export function VenusClientFactory(settings, deviceType, logger = null) {
   // All clients now use the unified VenusClient with device-specific configurations
-  const supportedTypes = ['batteries', 'tanks', 'environment', 'switches'];
+  const supportedTypes = ['batteries', 'tanks', 'environment', 'switches', 'engines', 'system'];
   
   if (!supportedTypes.includes(deviceType)) {
     throw new Error(`Unsupported device type: ${deviceType}. Supported types: ${supportedTypes.join(', ')}`);

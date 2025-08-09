@@ -61,7 +61,9 @@ export default function(app) {
               'batteries': 'Batteries',
               'tanks': 'Tanks',
               'environment': 'Environment',
-              'switches': 'Switches & Dimmers'
+              'switches': 'Switches & Dimmers',
+              'engines': 'Engines',
+              'system': 'System (Speed, Heading, Depth)'
             };
             
             baseSchema.properties[deviceType] = {
@@ -121,7 +123,9 @@ export default function(app) {
         'batteries': 'Batteries',
         'tanks': 'Tanks', 
         'environment': 'Environment',
-        'switches': 'Switches'
+        'switches': 'Switches',
+        'engines': 'Engines',
+        'system': 'System'
       };
 
       // Test Venus OS connectivity before processing any data
@@ -213,7 +217,9 @@ export default function(app) {
         { path: 'electrical.batteries.*', period: config.interval },
         { path: 'tanks.*', period: config.interval },
         { path: 'environment.*', period: config.interval },
-        { path: 'electrical.switches.*', period: config.interval }
+        { path: 'electrical.switches.*', period: config.interval },
+        { path: 'propulsion.*', period: config.interval },
+        { path: 'navigation.*', period: config.interval }
       ];
 
       // Subscribe to Signal K delta stream using multiple approaches for compatibility
@@ -460,7 +466,7 @@ export default function(app) {
       // Set initial status immediately if no data comes in
       if (activeClientTypes.size === 0) {
         // Check if any devices are enabled
-        const hasEnabledDevices = ['batteries', 'tanks', 'environment', 'switches'].some(deviceType => {
+        const hasEnabledDevices = ['batteries', 'tanks', 'environment', 'switches', 'engines', 'system'].some(deviceType => {
           if (config[deviceType]) {
             return Object.values(config[deviceType]).some(enabled => enabled === true);
           }
@@ -518,6 +524,8 @@ export default function(app) {
     if (settings.tankRegex.test(path)) return 'tanks';
     if (settings.temperatureRegex.test(path) || settings.humidityRegex.test(path)) return 'environment';
     if (settings.switchRegex.test(path) || settings.dimmerRegex.test(path)) return 'switches';
+    if (settings.engineRegex.test(path)) return 'engines';
+    if (settings.systemRegex.test(path)) return 'system';
     return null;
   }
 
@@ -692,6 +700,18 @@ export default function(app) {
         // electrical.switches.nav.state -> electrical.switches.nav
         const switchMatch = fullPath.match(/^(electrical\.switches\.[^.]+)/);
         return switchMatch ? switchMatch[1] : null;
+        
+      case 'engines':
+        // propulsion.main.rpm -> propulsion.main
+        // propulsion.port.temperature -> propulsion.port
+        const engineMatch = fullPath.match(/^(propulsion\.[^.]+)/);
+        return engineMatch ? engineMatch[1] : null;
+        
+      case 'system':
+        // navigation.speedOverGround -> navigation (group all system data together)
+        // navigation.headingTrue -> navigation
+        // environment.depth.belowKeel -> navigation (treat depth as navigation data)
+        return 'navigation';
     }
     
     return null;
@@ -790,7 +810,47 @@ export default function(app) {
           }
         }
         break;
+        
+      case 'engines':
+        // propulsion.main -> Main Engine
+        // propulsion.port -> Port Engine
+        // propulsion.starboard -> Starboard Engine
+        const engineMatch = devicePath.match(/propulsion\.([^.]+)/);
+        if (engineMatch) {
+          let engineId = engineMatch[1];
+          
+          // Handle special engine names
+          const engineNames = {
+            'main': 'Main Engine',
+            'port': 'Port Engine', 
+            'starboard': 'Starboard Engine',
+            'left': 'Port Engine',
+            'right': 'Starboard Engine'
+          };
+          
+          if (engineNames[engineId.toLowerCase()]) {
+            return engineNames[engineId.toLowerCase()];
+          }
+          
+          // For numeric or other IDs
+          if (/^\d+$/.test(engineId)) {
+            const displayId = (parseInt(engineId) + 1).toString();
+            return `Engine ${displayId}`;
+          }
+          
+          // Capitalize first letter
+          return `${engineId.charAt(0).toUpperCase() + engineId.slice(1)} Engine`;
+        }
+        break;
+        
+      case 'system':
+        // navigation.speedOverGround -> System (since it's system-wide data)
+        // navigation.headingTrue -> System
+        // environment.depth.belowKeel -> System
+        return 'System Data';
     }
+    
+    return devicePath; // Fallback to the raw path
     
     // Fallback to path-based name with camel case removed
     const fallback = devicePath.split('.').pop() || devicePath;

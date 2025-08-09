@@ -36,7 +36,9 @@ export class VenusClient extends EventEmitter {
       'batteries': 'battery',
       'tanks': 'tank', 
       'switches': 'switch',
-      'environment': 'environment'
+      'environment': 'environment',
+      'engines': 'engine',
+      'system': 'system'
     };
     
     const configDeviceType = deviceTypeMap[deviceType] || deviceType;
@@ -1362,6 +1364,12 @@ export class VenusClient extends EventEmitter {
       case 'environment':
         await this._handleEnvironmentUpdate(path, value, deviceService, deviceName);
         break;
+      case 'engine':
+        await this._handleEngineUpdate(path, value, deviceService, deviceName);
+        break;
+      case 'system':
+        await this._handleSystemUpdate(path, value, deviceService, deviceName);
+        break;
     }
   }
 
@@ -1992,6 +2000,130 @@ export class VenusClient extends EventEmitter {
       
     } catch (err) {
       this.logger.error(`Error in system service refresh for ${deviceName}:`, err);
+    }
+  }
+
+  async _handleEngineUpdate(path, value, deviceService, deviceName) {
+    if (typeof value !== 'number' || isNaN(value)) {
+      return;
+    }
+
+    try {
+      // Handle different engine data types
+      if (path.includes('rpm')) {
+        // Engine RPM - display as-is in RPM
+        const rpmValue = Math.round(value);
+        
+        // Determine engine number from path (propulsion.main -> 0, propulsion.port -> 0, propulsion.starboard -> 1)
+        let engineNum = 0;
+        if (path.includes('starboard') || path.includes('right') || path.includes('1')) {
+          engineNum = 1;
+        }
+        
+        await deviceService.updateProperty(`/Engine/${engineNum}/RPM`, rpmValue, 'd', `${deviceName} RPM`);
+        this.emit('dataUpdated', 'Engine RPM', `${deviceName}: ${rpmValue} RPM`);
+        
+      } else if (path.includes('temperature')) {
+        // Engine temperature - convert to Celsius if needed
+        let tempValue = value;
+        if (tempValue > 100) {
+          // Likely Kelvin, convert to Celsius
+          tempValue = value - 273.15;
+        }
+        
+        await deviceService.updateProperty('/Engine/0/Temperature', tempValue, 'd', `${deviceName} temperature`);
+        this.emit('dataUpdated', 'Engine Temperature', `${deviceName}: ${tempValue.toFixed(1)}°C`);
+        
+      } else if (path.includes('oilPressure')) {
+        // Oil pressure - display in Pascal or bar
+        let pressureValue = value;
+        if (value > 1000000) {
+          // Likely Pascal, convert to bar
+          pressureValue = value / 100000;
+        }
+        
+        await deviceService.updateProperty('/Engine/0/OilPressure', pressureValue, 'd', `${deviceName} oil pressure`);
+        this.emit('dataUpdated', 'Engine Oil Pressure', `${deviceName}: ${pressureValue.toFixed(2)} bar`);
+        
+      } else if (path.includes('alternator') && path.includes('voltage')) {
+        // Alternator voltage
+        await deviceService.updateProperty('/Engine/0/Alternator/Voltage', value, 'd', `${deviceName} alternator voltage`);
+        this.emit('dataUpdated', 'Alternator Voltage', `${deviceName}: ${value.toFixed(1)}V`);
+        
+      } else if (path.includes('gearPosition') || path.includes('gear')) {
+        // Gear position: 0=Neutral, 1=Forward, -1=Reverse
+        let gearPos = 0;
+        if (value > 0) {
+          gearPos = 2; // Forward in Venus OS
+        } else if (value < 0) {
+          gearPos = 1; // Reverse in Venus OS  
+        }
+        
+        await deviceService.updateProperty('/Engine/0/GearPosition', gearPos, 'i', `${deviceName} gear position`);
+        const gearText = gearPos === 0 ? 'Neutral' : (gearPos === 1 ? 'Reverse' : 'Forward');
+        this.emit('dataUpdated', 'Gear Position', `${deviceName}: ${gearText}`);
+      }
+      
+    } catch (err) {
+      if (err.code === 'ECONNRESET' || err.code === 'ECONNREFUSED' || err.code === 'EPIPE') {
+        this.logger.debug(`Connection lost while updating engine data for ${deviceName}`);
+      } else {
+        this.logger.error(`Error updating engine data for ${deviceName}:`, err);
+      }
+    }
+  }
+
+  async _handleSystemUpdate(path, value, deviceService, deviceName) {
+    if (typeof value !== 'number' || isNaN(value)) {
+      return;
+    }
+
+    try {
+      // Handle different system data types
+      if (path.includes('speedOverGround')) {
+        // Speed over ground - convert from m/s to knots
+        let speedKnots = value;
+        if (value < 10) {
+          // Likely in m/s, convert to knots
+          speedKnots = value * 1.94384;
+        }
+        
+        await deviceService.updateProperty('/Speed', speedKnots, 'd', `${deviceName} speed`);
+        this.emit('dataUpdated', 'Speed', `SOG: ${speedKnots.toFixed(1)} kt`);
+        
+      } else if (path.includes('headingTrue') || path.includes('courseOverGroundTrue')) {
+        // True heading - convert from radians to degrees if needed
+        let headingDeg = value;
+        if (value <= Math.PI * 2) {
+          // Likely in radians, convert to degrees
+          headingDeg = value * 180 / Math.PI;
+        }
+        
+        // Normalize to 0-360
+        while (headingDeg < 0) headingDeg += 360;
+        while (headingDeg >= 360) headingDeg -= 360;
+        
+        await deviceService.updateProperty('/Heading/True', headingDeg, 'd', `${deviceName} heading`);
+        this.emit('dataUpdated', 'Heading', `HDG: ${headingDeg.toFixed(0)}°T`);
+        
+      } else if (path.includes('depth')) {
+        // Water depth - display in meters
+        let depthValue = value;
+        if (value > 1000) {
+          // Likely in millimeters, convert to meters
+          depthValue = value / 1000;
+        }
+        
+        await deviceService.updateProperty('/Depth/Depth', depthValue, 'd', `${deviceName} depth`);
+        this.emit('dataUpdated', 'Depth', `Depth: ${depthValue.toFixed(1)}m`);
+      }
+      
+    } catch (err) {
+      if (err.code === 'ECONNRESET' || err.code === 'ECONNREFUSED' || err.code === 'EPIPE') {
+        this.logger.debug(`Connection lost while updating system data for ${deviceName}`);
+      } else {
+        this.logger.error(`Error updating system data for ${deviceName}:`, err);
+      }
     }
   }
 }
