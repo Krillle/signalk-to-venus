@@ -2010,7 +2010,7 @@ export class VenusClient extends EventEmitter {
 
     try {
       // Handle different engine data types
-      if (path.includes('rpm')) {
+      if (path.includes('rpm') || path.includes('revolutions')) {
         // Engine RPM - display as-is in RPM
         const rpmValue = Math.round(value);
         
@@ -2045,7 +2045,7 @@ export class VenusClient extends EventEmitter {
         await deviceService.updateProperty('/Engine/0/OilPressure', pressureValue, 'd', `${deviceName} oil pressure`);
         this.emit('dataUpdated', 'Engine Oil Pressure', `${deviceName}: ${pressureValue.toFixed(2)} bar`);
         
-      } else if (path.includes('alternator') && path.includes('voltage')) {
+      } else if ((path.includes('alternator') && path.includes('voltage')) || path.includes('alternatorVoltage')) {
         // Alternator voltage
         await deviceService.updateProperty('/Engine/0/Alternator/Voltage', value, 'd', `${deviceName} alternator voltage`);
         this.emit('dataUpdated', 'Alternator Voltage', `${deviceName}: ${value.toFixed(1)}V`);

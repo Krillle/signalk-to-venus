@@ -44,7 +44,7 @@ export default {
   humidityRegex: /^environment\..*\.(humidity|relativeHumidity)$/, 
   switchRegex: /^electrical\.switches\.[^.]+\.state$/, 
   dimmerRegex: /^electrical\.switches\.[^.]+\.dimmingLevel$/,
-  engineRegex: /^propulsion\.[^.]+\.(rpm|temperature|oilPressure|gearPosition|alternator\.voltage)$|^propulsion\.[^.]+\.drive\.gear\.reduction$/,
+  engineRegex: /^propulsion\.[^.]+\.(revolutions|rpm|temperature|oilPressure|gearPosition|alternatorVoltage)$|^propulsion\.[^.]+\.alternator\.voltage$|^propulsion\.[^.]+\.drive\.gear\.reduction$/,
   systemRegex: /^navigation\.(speedOverGround|courseOverGroundTrue|headingTrue|headingMagnetic|position|gnss\.antennaAltitude)$|^environment\.depth\.belowKeel$/,
   
   // Connection resilience settings
