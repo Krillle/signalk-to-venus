@@ -13,12 +13,14 @@ describe('Settings Configuration', () => {
       batteries: true,
       tanks: true,
       environment: true,
-      switches: true
+      switches: true,
+      engines: true,
+      system: true
     });
   });
 
   it('should have valid regex patterns', () => {
-    const { batteryRegex, tankRegex, temperatureRegex, humidityRegex, switchRegex, dimmerRegex } = settings;
+    const { batteryRegex, tankRegex, temperatureRegex, humidityRegex, switchRegex, dimmerRegex, engineRegex, systemRegex } = settings;
     
     // Test battery regex
     expect(batteryRegex.test('electrical.batteries.0.voltage')).toBe(true);
@@ -44,6 +46,21 @@ describe('Settings Configuration', () => {
     expect(switchRegex.test('electrical.switches.nav.state')).toBe(true);
     expect(switchRegex.test('electrical.switches.anchor.state')).toBe(true);
     expect(switchRegex.test('electrical.switches.nav.dimmingLevel')).toBe(false);
+    
+    // Test engine regex
+    expect(engineRegex.test('propulsion.main.rpm')).toBe(true);
+    expect(engineRegex.test('propulsion.main.temperature')).toBe(true);
+    expect(engineRegex.test('propulsion.main.oilPressure')).toBe(true);
+    expect(engineRegex.test('propulsion.port.alternator.voltage')).toBe(true);
+    expect(engineRegex.test('propulsion.starboard.gearPosition')).toBe(true);
+    expect(engineRegex.test('navigation.speedOverGround')).toBe(false);
+    
+    // Test system regex
+    expect(systemRegex.test('navigation.speedOverGround')).toBe(true);
+    expect(systemRegex.test('navigation.headingTrue')).toBe(true);
+    expect(systemRegex.test('navigation.courseOverGroundTrue')).toBe(true);
+    expect(systemRegex.test('environment.depth.belowKeel')).toBe(true);
+    expect(systemRegex.test('propulsion.main.rpm')).toBe(false);
     
     // Test dimmer regex
     expect(dimmerRegex.test('electrical.switches.nav.dimmingLevel')).toBe(true);
