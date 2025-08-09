@@ -746,12 +746,21 @@ describe('VenusClient - Battery', () => {
       history.chargedEnergy = NaN;
       history.totalAhDrawn = NaN;
       
-      // Update should clean up NaN values
+      // Set the last update time to now to prevent energy accumulation during cleanup
+      const now = Date.now();
+      client.lastUpdateTime.set('electrical.batteries.main', now);
+      
+      // Mock Date.now to return the same time, ensuring zero time delta
+      const dateNowSpy = vi.spyOn(Date, 'now').mockReturnValue(now);
+      
+      // Update should clean up NaN values without adding energy (zero time delta)
       const cleanHistory = await client.updateHistoryData('electrical.batteries.main', 12.0, -5.0, null);
       
       expect(cleanHistory.dischargedEnergy).toBeCloseTo(0, 4); // Allow for floating point precision in energy calculations
       expect(cleanHistory.chargedEnergy).toBeCloseTo(0, 4); // Allow for floating point precision in energy calculations  
       expect(cleanHistory.totalAhDrawn).toBeCloseTo(0, 4); // Allow for floating point precision in energy calculations
+      
+      dateNowSpy.mockRestore();
     });
 
     it('should calculate charged energy with high charging current (50A)', async () => {

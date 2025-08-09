@@ -92,6 +92,18 @@ export default function(app) {
     uiSchema: function() {
       const uiSchema = {};
 
+      // Always make engines and switches collapsible sections
+      const alwaysShowSections = ['engines', 'switches'];
+      alwaysShowSections.forEach(deviceType => {
+        uiSchema[deviceType] = {
+          'ui:field': 'collapsible',
+          collapse: {
+            field: 'ObjectField',
+            wrapClassName: 'panel-group'
+          }
+        };
+      });
+
       // Make each device type collapsible if devices have been discovered
       if (hasDiscoveredPaths()) {
         Object.keys(discoveredPaths).forEach(deviceType => {
