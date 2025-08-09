@@ -13,7 +13,8 @@ export class HistoryPersistence {
     this.saveIntervalMs = 60000; // Save every minute
     this.saveInProgress = false; // Prevent concurrent saves
     this.pendingSaveData = null; // Queue data if save is in progress
-    this.lastSaveAttempt = 0; // Track last save attempt
+    this.saveQueue = []; // Queue for multiple save requests
+    this.lastSaveAttempt = 0; // Track when we last tried to save
   }
 
   /**
@@ -126,7 +127,7 @@ export class HistoryPersistence {
   }
 
   /**
-   * Save history data to persistent storage with atomic write and concurrency protection
+   * Save history data to persistent storage with atomic write
    * @param {Map} historyData - Battery history data
    * @param {Map} energyAccumulators - Energy accumulation data
    * @param {Map} lastUpdateTime - Last update timestamps
@@ -173,10 +174,7 @@ export class HistoryPersistence {
   }
 
   /**
-   * Internal save method that performs the actual file operations
-   * @param {Map} historyData - Battery history data
-   * @param {Map} energyAccumulators - Energy accumulation data
-   * @param {Map} lastUpdateTime - Last update timestamps
+   * Internal method to perform the actual save operation
    */
   async _performSave(historyData, energyAccumulators, lastUpdateTime) {
     try {
