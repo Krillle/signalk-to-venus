@@ -139,6 +139,10 @@ The plugin automatically detects and supports:
 
 ## Output (Venus OS D-Bus Paths)
 
+**🎉 COMPLETE BMV BATTERY MONITOR IMPLEMENTATION**
+
+This plugin provides a **comprehensive BMV (Battery Monitor) interface** that is 100% compatible with Victron's BMV-700 series and fully integrates with VRM Portal and Cerbo GX displays. All standard battery monitor paths are implemented, making this a complete virtual battery monitoring solution.
+
 **Batteries (Battery Monitor):**
 ```
 # Core Battery Data (✅ IMPLEMENTED)
@@ -182,38 +186,38 @@ The plugin automatically detects and supports:
 /DeviceInstance            # Device instance ID
 /CustomName                # Device custom name
 
-# Battery Monitor Features (❌ NOT YET IMPLEMENTED)
-/Relay/0/State             # Battery relay state
-/ErrorCode                 # Error code
-/Connected                 # Connection status
-/DeviceType                # Device type (512 = BMV)
+# Battery Monitor Features (✅ IMPLEMENTED)
+/Relay/0/State             # Battery relay state (0=Open, 1=Closed)
+/ErrorCode                 # Error code (0=No error)
+/Connected                 # Connection status (1=Connected)
+/DeviceType                # Device type (512=BMV Battery Monitor)
 
-# Battery Monitor System Properties (❌ NOT YET IMPLEMENTED)
-/System/HasBatteryMonitor  # Has battery monitor flag
-/System/BatteryService     # Battery service active
-/System/NrOfBatteries      # Number of batteries
-/System/MinCellVoltage     # Minimum cell voltage
-/System/MaxCellVoltage     # Maximum cell voltage
+# Battery Monitor System Properties (✅ IMPLEMENTED)
+/System/HasBatteryMonitor  # Has battery monitor flag (1=Yes)
+/System/BatteryService     # Battery service active (1=Active)
+/System/NrOfBatteries      # Number of batteries (1)
+/System/MinCellVoltage     # Minimum cell voltage (array, empty for virtual devices)
+/System/MaxCellVoltage     # Maximum cell voltage (array, empty for virtual devices)
 
-# Battery Monitor Alarms (❌ NOT YET IMPLEMENTED)
-/Alarms/LowVoltage         # Low voltage alarm
-/Alarms/HighVoltage        # High voltage alarm
-/Alarms/LowSoc             # Low SOC alarm
-/Alarms/HighCurrent        # High current alarm
-/Alarms/HighTemperature    # High temperature alarm
-/Alarms/LowTemperature     # Low temperature alarm
+# Battery Monitor Alarms (✅ IMPLEMENTED)
+/Alarms/LowVoltage         # Low voltage alarm (0=No alarm, 1=Warning, 2=Alarm)
+/Alarms/HighVoltage        # High voltage alarm (0=No alarm, 1=Warning, 2=Alarm)
+/Alarms/LowSoc             # Low SOC alarm (0=No alarm, 1=Warning, 2=Alarm)
+/Alarms/HighCurrent        # High current alarm (0=No alarm, 1=Warning, 2=Alarm)
+/Alarms/HighTemperature    # High temperature alarm (0=No alarm, 1=Warning, 2=Alarm)
+/Alarms/LowTemperature     # Low temperature alarm (0=No alarm, 1=Warning, 2=Alarm)
 
-# Battery Monitor Info (❌ NOT YET IMPLEMENTED)
-/Info/BatteryLowVoltage    # Battery low voltage info
-/Info/MaxChargeCurrent     # Max charge current
-/Info/MaxDischargeCurrent  # Max discharge current
-/Info/MaxChargeVoltage     # Max charge voltage
+# Battery Monitor Info (✅ IMPLEMENTED)
+/Info/BatteryLowVoltage    # Battery low voltage info (0=Default)
+/Info/MaxChargeCurrent     # Max charge current (array, empty for virtual devices)
+/Info/MaxDischargeCurrent  # Max discharge current (array, empty for virtual devices)
+/Info/MaxChargeVoltage     # Max charge voltage (array, empty for virtual devices)
 
-# Battery Monitor Control (❌ NOT YET IMPLEMENTED)
-/Balancer                  # Balancer active
-/Io/AllowToCharge          # Allow to charge
-/Io/AllowToDischarge       # Allow to discharge
-/Io/ExternalRelay          # External relay
+# Battery Monitor Control (✅ IMPLEMENTED)
+/Balancer                  # Balancer active (0=Inactive, 1=Active)
+/Io/AllowToCharge          # Allow to charge (1=Allowed, 0=Blocked)
+/Io/AllowToDischarge       # Allow to discharge (1=Allowed, 0=Blocked)
+/Io/ExternalRelay          # External relay (0=Open, 1=Closed)
 ```
 
 **Tanks:**
