@@ -53,7 +53,7 @@ tcp        0      0 0.0.0.0:78              0.0.0.0:*               LISTEN
 
 **X. Manually Update Victron Venus Plugin to Avoid Feedback Loops**
 
-The upcoming version of **Victron Venus Plugin** (`signalk-venus-plugin`) will ignore virtual devices injected by this plugin, avoiding reading virtual devices back to Signal K. If the latest published version of **signalk-venus-plugin** is still **v1.43.1 (2025-02-04)**, the fix hasn’t been released yet. In this case, apply the patch manually:
+The upcoming version of **Victron Venus Plugin** (`signalk-venus-plugin`) will ignore virtual devices injected by this plugin, avoiding reading virtual devices back to Signal K. If the latest published version of **signalk-venus-plugin** is still **v1.43.1 (2025-02-04)**, the fix hasn't been released yet. In this case, apply the patch manually:
 
 ```bash
 cd ~/.signalk/node_modules/signalk-venus-plugin
@@ -141,6 +141,7 @@ The plugin automatically detects and supports:
 
 **Batteries (Battery Monitor):**
 ```
+# Core Battery Data (✅ IMPLEMENTED)
 /Dc/0/Voltage              # Battery voltage (Volts)
 /Dc/0/Current              # Battery current (Amps, + charging, - discharging)  
 /Dc/0/Power                # Battery power (Watts)
@@ -149,20 +150,36 @@ The plugin automatically detects and supports:
 /TimeToGo                  # Time remaining (seconds)
 /Dc/0/Temperature          # Battery temperature (°C)
 /Capacity                  # Battery capacity (Ah)
-/Relay/0/State             # Battery relay state
 /State                     # Battery state (0=Offline, 1=Online, 2=Error, 3=Unavailable)
+
+# Historical Energy Tracking (✅ IMPLEMENTED) - Major Feature for VRM Charts!
+/History/DischargedEnergy  # Total discharged energy (kWh)
+/History/ChargedEnergy     # Total charged energy (kWh)
+/History/TotalAhDrawn      # Total Ah drawn (consumption tracking)
+/History/MinimumVoltage    # Historical minimum voltage
+/History/MaximumVoltage    # Historical maximum voltage
+
+# Device Identification (✅ IMPLEMENTED)
+/ProductId                 # Product ID
+/ProductName               # Product name
+/Serial                    # Device serial number
+/DeviceInstance            # Device instance ID
+/CustomName                # Device custom name
+
+# Battery Monitor Features (❌ NOT YET IMPLEMENTED)
+/Relay/0/State             # Battery relay state
 /ErrorCode                 # Error code
 /Connected                 # Connection status
 /DeviceType                # Device type (512 = BMV)
 
-# Battery Monitor System Properties
+# Battery Monitor System Properties (❌ NOT YET IMPLEMENTED)
 /System/HasBatteryMonitor  # Has battery monitor flag
 /System/BatteryService     # Battery service active
 /System/NrOfBatteries      # Number of batteries
 /System/MinCellVoltage     # Minimum cell voltage
 /System/MaxCellVoltage     # Maximum cell voltage
 
-# Battery Monitor Alarms
+# Battery Monitor Alarms (❌ NOT YET IMPLEMENTED)
 /Alarms/LowVoltage         # Low voltage alarm
 /Alarms/HighVoltage        # High voltage alarm
 /Alarms/LowSoc             # Low SOC alarm
@@ -170,18 +187,13 @@ The plugin automatically detects and supports:
 /Alarms/HighTemperature    # High temperature alarm
 /Alarms/LowTemperature     # Low temperature alarm
 
-# Battery Monitor History & Info
-/History/DischargedEnergy  # Discharged energy
-/History/ChargedEnergy     # Charged energy
-/History/TotalAhDrawn      # Total Ah drawn
-/History/MinimumVoltage    # Historical minimum voltage
-/History/MaximumVoltage    # Historical maximum voltage
+# Battery Monitor Info (❌ NOT YET IMPLEMENTED)
 /Info/BatteryLowVoltage    # Battery low voltage info
 /Info/MaxChargeCurrent     # Max charge current
 /Info/MaxDischargeCurrent  # Max discharge current
 /Info/MaxChargeVoltage     # Max charge voltage
 
-# Battery Monitor Control
+# Battery Monitor Control (❌ NOT YET IMPLEMENTED)
 /Balancer                  # Balancer active
 /Io/AllowToCharge          # Allow to charge
 /Io/AllowToDischarge       # Allow to discharge
@@ -190,12 +202,15 @@ The plugin automatically detects and supports:
 
 **Tanks:**
 ```
+# Tank Data (✅ IMPLEMENTED)
 /Level                     # Tank level (0-100%)
 /Capacity                  # Tank capacity (liters/gallons)
 /Remaining                 # Remaining volume (liters/gallons)
 /FluidType                 # Fluid type (0=Fuel, 1=Fresh Water, 2=Waste Water, etc.)
 /Status                    # Tank status
 /CustomName                # Tank name for VRM display
+
+# Tank Features (❌ NOT YET IMPLEMENTED)
 /Volume                    # Tank volume (liters/gallons)
 /RawUnit                   # Raw sensor unit (e.g., 'V' for voltage)
 /RawValue                  # Raw sensor value
@@ -203,13 +218,17 @@ The plugin automatically detects and supports:
 
 **Environment:**
 ```
+# Environment Data (✅ IMPLEMENTED)
 /Temperature               # Temperature (°C)
 /Humidity                  # Humidity (0-100%)
+
+# Environment Features (❌ NOT YET IMPLEMENTED)
 /Status                    # Sensor status
 ```
 
 **Switches & Dimmers:**
 ```
+# Switch/Dimmer Data (✅ IMPLEMENTED)
 /State                     # Switch state (0=Off, 1=On)
 /Position                  # Switch position
 /DimmingLevel              # Dimming level (0-100%)
@@ -334,8 +353,8 @@ MIT © Christian Wegerhoff
 
 ## Change Log
 
-### v1.0.18 (2025/08/08 14:30)
-- Energy consumption, charged and discharged energy history for VRM and Remote Console 
+### v1.1.0 (2025/08/08 14:30)
+- History for VRM and Remote Console of energy consumption, charged and discharged energy 
 - Removed 20-second startup delay (Still at first start devices might be missing. Restart plugin.)
 
 ### v1.0.17 (2025/08/04 14:30)

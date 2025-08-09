@@ -3,7 +3,23 @@ import path from 'path';
 
 /**
  * Handles persistence of battery history data for VRM consumption calculations
- * Provides atomic write operations and periodic saving to prevent data loss
+ * Provides atomic write operations and p  }
+
+  /**
+   * Validate and sanitize numeric values to prevent JSON corruption
+   * @param {*} value - Value to validate
+   * @returns {number|null} - Valid number or null
+   */
+  validateNumber(value) {
+    if (value === null || value === undefined) return null;
+    if (typeof value === 'number' && !isNaN(value) && isFinite(value)) {
+      return value;
+    }
+    return null;
+  }
+
+  /**
+   * Internal save method that performs the actual file operationsdic saving to prevent data loss
  */
 export class HistoryPersistence {
   constructor(filePath, logger) {
@@ -152,24 +168,32 @@ export class HistoryPersistence {
     this.saveInProgress = true;
     this.lastSaveAttempt = now;
     
+    // Add unique save ID for debugging
+    const saveId = Math.random().toString(36).substr(2, 9);
+    this.logger.debug(`Starting save operation ${saveId}`);
+    
     try {
       await this._performSave(historyData, energyAccumulators, lastUpdateTime);
+      this.logger.debug(`Save operation ${saveId} completed successfully`);
       
       // If there's pending data, save it too (but only once to avoid loops)
       if (this.pendingSaveData) {
         const pendingData = this.pendingSaveData;
         this.pendingSaveData = null;
         
+        this.logger.debug(`Processing pending save data after ${saveId}`);
         // Wait a bit before saving pending data
         await new Promise(resolve => setTimeout(resolve, 100));
         await this._performSave(pendingData.historyData, pendingData.energyAccumulators, pendingData.lastUpdateTime);
+        this.logger.debug(`Pending save data processed after ${saveId}`);
       }
       
     } catch (error) {
-      this.logger.error(`Failed to save history data: ${error.message}`);
+      this.logger.error(`Failed to save history data (${saveId}): ${error.message}`);
       throw error;
     } finally {
       this.saveInProgress = false;
+      this.logger.debug(`Save operation ${saveId} finished, saveInProgress = false`);
     }
   }
 
