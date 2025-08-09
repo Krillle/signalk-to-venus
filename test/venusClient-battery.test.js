@@ -453,6 +453,16 @@ describe('VenusClient - Battery', () => {
 
   describe('History Data Tracking', () => {
     beforeEach(async () => {
+      // Use a unique history file for this test to avoid interference
+      const testId = Math.random().toString(36).substring(7);
+      client.historyPersistence.filePath = `./test-history-${testId}.json`;
+      
+      // Clear any existing history data
+      client.historyData.clear();
+      client.lastUpdateTime.clear();
+      client.energyAccumulators.clear();
+      client._historyLoaded = false;
+      
       // Mock the Signal K app to provide solar and alternator data for configured devices
       client.signalKApp = {
         getSelfPath: vi.fn((path) => {
@@ -462,7 +472,7 @@ describe('VenusClient - Battery', () => {
         })
       };
       
-      // Ensure history data is loaded
+      // Ensure history data is loaded with fresh state
       await client.loadHistoryData();
     });
 
