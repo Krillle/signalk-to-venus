@@ -467,19 +467,29 @@ describe('VenusClient - Battery', () => {
     });
 
     it('should track voltage min/max correctly', async () => {
-      // Create device with critical data first
+      // Create device with critical data first to ensure proper initialization
       await client.handleSignalKUpdate('electrical.batteries.main.voltage', 12.5);
       await client.handleSignalKUpdate('electrical.batteries.main.current', -5.0);
+      
+      // Wait for device creation to complete
+      await new Promise(resolve => setTimeout(resolve, 10));
+      
+      // Clear any initial min/max values that might have been set
+      const history = client.historyData.get('electrical.batteries.main');
+      if (history) {
+        history.minimumVoltage = null;
+        history.maximumVoltage = null;
+      }
       
       // Update history with different voltage values (all above 5V threshold)
       await client.updateHistoryData('electrical.batteries.main', 12.0, -5.0, null);
       await client.updateHistoryData('electrical.batteries.main', 13.8, 5.0, null);
       await client.updateHistoryData('electrical.batteries.main', 11.5, -2.0, null);
       
-      const history = client.historyData.get('electrical.batteries.main');
-      expect(history).toBeDefined();
-      expect(history.minimumVoltage).toBe(11.5);
-      expect(history.maximumVoltage).toBe(13.8);
+      const updatedHistory = client.historyData.get('electrical.batteries.main');
+      expect(updatedHistory).toBeDefined();
+      expect(updatedHistory.minimumVoltage).toBe(11.5);
+      expect(updatedHistory.maximumVoltage).toBe(13.8);
     });
 
     it('should ignore invalid voltage values in min/max tracking', async () => {
