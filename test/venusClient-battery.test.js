@@ -472,9 +472,9 @@ describe('VenusClient - Battery', () => {
       await client.handleSignalKUpdate('electrical.batteries.main.current', -5.0);
       
       // Update history with different voltage values (all above 5V threshold)
-      client.updateHistoryData('electrical.batteries.main', 12.0, -5.0, null);
-      client.updateHistoryData('electrical.batteries.main', 13.8, 5.0, null);
-      client.updateHistoryData('electrical.batteries.main', 11.5, -2.0, null);
+      await client.updateHistoryData('electrical.batteries.main', 12.0, -5.0, null);
+      await client.updateHistoryData('electrical.batteries.main', 13.8, 5.0, null);
+      await client.updateHistoryData('electrical.batteries.main', 11.5, -2.0, null);
       
       const history = client.historyData.get('electrical.batteries.main');
       expect(history).toBeDefined();
@@ -493,10 +493,10 @@ describe('VenusClient - Battery', () => {
       const initialMax = initialHistory.maximumVoltage;
       
       // Try to update with invalid voltage values (should be ignored due to <5V threshold)
-      client.updateHistoryData('electrical.batteries.main', 0, -5.0, null); // Too low
-      client.updateHistoryData('electrical.batteries.main', 3.0, -5.0, null); // Too low
-      client.updateHistoryData('electrical.batteries.main', null, -5.0, null); // Null
-      client.updateHistoryData('electrical.batteries.main', NaN, -5.0, null); // NaN
+      await client.updateHistoryData('electrical.batteries.main', 0, -5.0, null); // Too low
+      await client.updateHistoryData('electrical.batteries.main', 3.0, -5.0, null); // Too low
+      await client.updateHistoryData('electrical.batteries.main', null, -5.0, null); // Null
+      await client.updateHistoryData('electrical.batteries.main', NaN, -5.0, null); // NaN
       
       const history = client.historyData.get('electrical.batteries.main');
       expect(history).toBeDefined();
@@ -665,7 +665,7 @@ describe('VenusClient - Battery', () => {
       await new Promise(resolve => setTimeout(resolve, 10));
       
       // Update with valid voltage - should update accumulator voltage
-      client.updateHistoryData('electrical.batteries.main', 12.5, -3.0, null);
+      await client.updateHistoryData('electrical.batteries.main', 12.5, -3.0, null);
       
       const accumulator = client.energyAccumulators.get('electrical.batteries.main');
       expect(accumulator).toBeDefined();
@@ -673,7 +673,7 @@ describe('VenusClient - Battery', () => {
       expect(accumulator.lastCurrent).toBe(-3.0); // Should update to the new current
       
       // Update with null voltage (should not change lastVoltage)
-      client.updateHistoryData('electrical.batteries.main', null, -2.0, null);
+      await client.updateHistoryData('electrical.batteries.main', null, -2.0, null);
       
       expect(accumulator.lastVoltage).toBe(12.5); // Should remain unchanged from last valid voltage
       expect(accumulator.lastCurrent).toBe(-2.0); // Should update
