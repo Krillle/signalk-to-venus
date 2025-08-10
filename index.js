@@ -9,7 +9,9 @@ export default function(app) {
     batteries: new Map(),
     tanks: new Map(), 
     environment: new Map(),
-    switches: new Map()
+    switches: new Map(),
+    engines: new Map(),
+    system: new Map()
   };
   let lastSchemaUpdate = 0;
   
