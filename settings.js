@@ -42,6 +42,8 @@ export default {
   humidityRegex: /^environment\..*\.(humidity|relativeHumidity)$/, 
   switchRegex: /^electrical\.switches\.[^.]+\.state$/, 
   dimmerRegex: /^electrical\.switches\.[^.]+\.dimmingLevel$/,
+  engineRegex: /^propulsion\.[^.]+\.(revolutions|temperature|oilPressure|alternatorVoltage|gear)$/,
+  systemRegex: /^(navigation\.(speedOverGround|courseOverGroundTrue)|environment\.depth\.(belowKeel|belowTransducer))$/,
   
   // Connection resilience settings
   connectionTimeout: 5000, // Connection timeout in milliseconds (default: 5 seconds)

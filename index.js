@@ -467,7 +467,10 @@ export default function(app) {
           return false;
         });
         
-        if (!hasEnabledDevices) {
+        // Engines and system are always auto-enabled
+        const hasEnginesOrSystem = discoveredPaths.engines.size > 0 || discoveredPaths.system.size > 0;
+        
+        if (!hasEnabledDevices && !hasEnginesOrSystem) {
           const deviceCountText = generateDeviceCountText();
           if (deviceCountText.includes('0 devices')) {
             app.setPluginStatus('Discovering Signal K devices');
@@ -518,6 +521,8 @@ export default function(app) {
     if (settings.tankRegex.test(path)) return 'tanks';
     if (settings.temperatureRegex.test(path) || settings.humidityRegex.test(path)) return 'environment';
     if (settings.switchRegex.test(path) || settings.dimmerRegex.test(path)) return 'switches';
+    if (settings.engineRegex.test(path)) return 'engines';
+    if (settings.systemRegex.test(path)) return 'system';
     return null;
   }
 
@@ -548,7 +553,9 @@ export default function(app) {
       batteries: discoveredPaths.batteries.size,
       tanks: discoveredPaths.tanks.size,
       environment: discoveredPaths.environment.size,
-      switches: discoveredPaths.switches.size
+      switches: discoveredPaths.switches.size,
+      engines: discoveredPaths.engines.size,
+      system: discoveredPaths.system.size
     };
     
     const deviceCountParts = [];
@@ -563,6 +570,12 @@ export default function(app) {
     }
     if (deviceCounts.switches > 0) {
       deviceCountParts.push(`${deviceCounts.switches} ${deviceCounts.switches === 1 ? 'switch' : 'switches'}`);
+    }
+    if (deviceCounts.engines > 0) {
+      deviceCountParts.push(`${deviceCounts.engines} ${deviceCounts.engines === 1 ? 'engine' : 'engines'}`);
+    }
+    if (deviceCounts.system > 0) {
+      deviceCountParts.push('system data');
     }
     
     if (deviceCountParts.length > 0) {

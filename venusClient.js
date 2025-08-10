@@ -1030,6 +1030,10 @@ export class VenusClient extends EventEmitter {
         return this._getSwitchName(path);
       case 'environment':
         return this._getEnvironmentName(path);
+      case 'engine':
+        return this._getEngineName(path);
+      case 'system':
+        return 'System';
       default:
         return 'Unknown Device';
     }
@@ -1176,6 +1180,42 @@ export class VenusClient extends EventEmitter {
       return sensor;
     }
     return 'Environment sensor';
+  }
+
+  _getEngineName(path) {
+    const parts = path.split('.');
+    if (parts.length >= 2) {
+      const engineId = parts[1]; // e.g., 'port', 'starboard', 'main', '0', '1'
+      
+      // Check if we have multiple engines
+      const totalEngines = Array.from(this.deviceInstances.keys())
+        .filter(devicePath => devicePath.includes('propulsion.')).length;
+      
+      // For numeric IDs, convert to start from 1 instead of 0
+      if (/^\d+$/.test(engineId)) {
+        const displayId = (parseInt(engineId) + 1).toString();
+        return `Engine ${displayId}`;
+      }
+      
+      // For named engines, use common mappings
+      const engineNameMap = {
+        'port': 'Port Engine',
+        'starboard': 'Starboard Engine', 
+        'main': 'Main Engine',
+        'primary': 'Primary Engine',
+        'secondary': 'Secondary Engine'
+      };
+      
+      const mappedName = engineNameMap[engineId.toLowerCase()];
+      if (mappedName) {
+        return mappedName;
+      }
+      
+      // For other names, capitalize and add "Engine"
+      const name = engineId.replace(/([A-Z])/g, ' $1').trim();
+      return `${name.charAt(0).toUpperCase() + name.slice(1)} Engine`;
+    }
+    return 'Engine';
   }
 
   async handleSignalKUpdate(path, value) {
@@ -1341,6 +1381,35 @@ export class VenusClient extends EventEmitter {
         }
         if ((path.includes('humidity') || path.includes('relativeHumidity')) && typeof value === 'number' && !isNaN(value)) {
           return true; // Humidity reading indicates a real sensor
+        }
+        return false;
+        
+      case 'engine':
+        // For engines, create device when we have engine data
+        if (path.includes('revolutions') && typeof value === 'number' && !isNaN(value)) {
+          return true; // RPM is the primary engine metric
+        }
+        if (path.includes('temperature') && typeof value === 'number' && !isNaN(value)) {
+          return true; // Engine temperature indicates a real engine
+        }
+        if (path.includes('oilPressure') && typeof value === 'number' && !isNaN(value)) {
+          return true; // Oil pressure indicates a real engine
+        }
+        if (path.includes('alternatorVoltage') && typeof value === 'number' && !isNaN(value)) {
+          return true; // Alternator voltage indicates a real engine
+        }
+        return false;
+        
+      case 'system':
+        // For system, create device when we have navigation/depth data
+        if (path.includes('speedOverGround') && typeof value === 'number' && !isNaN(value)) {
+          return true; // SOG is important system metric
+        }
+        if (path.includes('courseOverGroundTrue') && typeof value === 'number' && !isNaN(value)) {
+          return true; // COG True is important system metric
+        }
+        if (path.includes('environment.depth.') && typeof value === 'number' && !isNaN(value)) {
+          return true; // Depth is important system metric
         }
         return false;
         
