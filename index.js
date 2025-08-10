@@ -8,7 +8,30 @@ export default function(app) {
   let discoveredPaths = {
     batteries: new Map(),
     tanks: new Map(), 
-    environment: new Map(),
+              update.values.forEach(async pathValue => {
+                try {
+                  // Check if pathValue exists and has required properties
+                  if (!pathValue || typeof pathValue !== 'object') {
+                    return;
+                  }
+                  
+                  if (!pathValue.path) {
+                    return;
+                  }
+                  
+                  // Skip null/undefined values - this should be rare if streambundle filtering works
+                  if (pathValue.value === undefined || pathValue.value === null) {
+                    return;
+                  }
+                  
+                  // Log all paths for debugging new device types
+                  if (pathValue.path.startsWith('propulsion.') || 
+                      pathValue.path.startsWith('navigation.') || 
+                      pathValue.path.startsWith('environment.depth.')) {
+                    console.log(`[DEBUG] Signal K path available: ${pathValue.path} = ${pathValue.value}`);
+                  }
+                
+                const deviceType = identifyDeviceType(pathValue.path); Map(),
     switches: new Map(),
     engines: new Map(),
     system: new Map()
@@ -519,12 +542,25 @@ export default function(app) {
       return null;
     }
     
+    // Debug logging for engine and system paths
+    if (path.startsWith('propulsion.') || path.startsWith('navigation.') || path.startsWith('environment.depth.')) {
+      console.log(`[DEBUG] Checking path: ${path}`);
+      console.log(`[DEBUG] Engine regex test: ${settings.engineRegex.test(path)}`);
+      console.log(`[DEBUG] System regex test: ${settings.systemRegex.test(path)}`);
+    }
+    
     if (settings.batteryRegex.test(path)) return 'batteries';
     if (settings.tankRegex.test(path)) return 'tanks';
     if (settings.temperatureRegex.test(path) || settings.humidityRegex.test(path)) return 'environment';
     if (settings.switchRegex.test(path) || settings.dimmerRegex.test(path)) return 'switches';
-    if (settings.engineRegex.test(path)) return 'engines';
-    if (settings.systemRegex.test(path)) return 'system';
+    if (settings.engineRegex.test(path)) {
+      console.log(`[DEBUG] Found engine path: ${path}`);
+      return 'engines';
+    }
+    if (settings.systemRegex.test(path)) {
+      console.log(`[DEBUG] Found system path: ${path}`);
+      return 'system';
+    }
     return null;
   }
 
