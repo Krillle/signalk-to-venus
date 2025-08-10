@@ -133,15 +133,10 @@ export class VenusClient extends EventEmitter {
   cleanupHistoryData() {
     const keysToRemove = [];
     
-    this.logger.debug(`Cleanup: Starting with ${this.historyData.size} devices in history`);
-    
     // Find invalid keys
     for (const [key, value] of this.historyData.entries()) {
-      this.logger.debug(`Cleanup: Checking device ${key}`, value);
-      
       // Remove undefined, null, or empty keys
       if (!key || key === 'undefined' || key === 'null') {
-        this.logger.debug(`Cleanup: Removing invalid key: ${key}`);
         keysToRemove.push(key);
         continue;
       }
@@ -153,17 +148,13 @@ export class VenusClient extends EventEmitter {
                          (value.minimumVoltage !== null && value.minimumVoltage > 5.0 && value.minimumVoltage < 50.0) ||
                          (value.maximumVoltage !== null && value.maximumVoltage > 5.0 && value.maximumVoltage < 50.0);
       
-      this.logger.debug(`Cleanup: Device ${key} hasRealData=${hasRealData}, discharged=${value.dischargedEnergy}, charged=${value.chargedEnergy}, totalAh=${value.totalAhDrawn}, minV=${value.minimumVoltage}, maxV=${value.maximumVoltage}`);
-      
       if (!hasRealData) {
-        this.logger.debug(`Cleanup: Removing device with no real data: ${key}`);
         keysToRemove.push(key);
       }
     }
     
     // Remove invalid entries from all maps
     for (const key of keysToRemove) {
-      this.logger.debug(`Removing invalid history entry: ${key}`);
       this.historyData.delete(key);
       this.energyAccumulators.delete(key);
       this.lastUpdateTime.delete(key);
@@ -214,8 +205,6 @@ export class VenusClient extends EventEmitter {
         lastVoltage: validInitialVoltage,
         lastTimestamp: now
       });
-      
-      this.logger.debug(`Initialized new history tracking for ${devicePath}`);
     } else {
       // Update existing data with current voltage if needed and validate existing values
       const existing = this.historyData.get(devicePath);
@@ -252,8 +241,6 @@ export class VenusClient extends EventEmitter {
           existing.maximumVoltage = initialVoltage;
         }
       }
-      
-      this.logger.debug(`Restored existing history tracking for ${devicePath}`);
     }
   }
 
@@ -298,8 +285,6 @@ export class VenusClient extends EventEmitter {
             lastVoltage: 12.0,
             lastTimestamp: Date.now()
           });
-          
-          this.logger.debug(`Created minimal history structure for ${devicePath} (no valid voltage)`);
         }
       }
     }
@@ -338,22 +323,10 @@ export class VenusClient extends EventEmitter {
     if (accumulator && validCurrent !== null && validVoltage !== null) {
       const deltaTimeHours = (now - lastTime) / (1000 * 3600); // Convert to hours
       
-      this.logger.debug(`Time calculation for ${devicePath}: now=${now}, lastTime=${lastTime}, deltaHours=${deltaTimeHours.toFixed(6)}`);
-      
       if (deltaTimeHours > 0 && deltaTimeHours < 1) { // Sanity check: less than 1 hour
         // Get solar and alternator currents for the new calculation method
         const solarCurrent = this._getSolarCurrent() || 0;
         const alternatorCurrent = this._getAlternatorCurrent() || 0;
-        
-        // Your corrected specification: 
-        // Cumulative Ah drawn = S + L - A (Solar + Alternator - Battery Current)
-        // Discharged energy: If A < 0 then use A (battery current itself)
-        // Charged energy: If A > 0 then use A (battery current itself)
-        
-        this.logger.debug(`Energy calculation for ${devicePath}: Solar=${solarCurrent.toFixed(1)}A, Alt=${alternatorCurrent.toFixed(1)}A, Battery=${validCurrent.toFixed(1)}A, ΔT=${deltaTimeHours.toFixed(6)}h`);
-        
-        // Debug: Log what solar paths we're checking
-        this.logger.debug(`Solar current check - app exists: ${!!this.signalKApp}, getSelfPath exists: ${!!(this.signalKApp && this.signalKApp.getSelfPath)}`);
         
         // Calculate discharge consumption using S + L - A formula
         const dischargeConsumption = solarCurrent + alternatorCurrent - validCurrent;
@@ -361,21 +334,15 @@ export class VenusClient extends EventEmitter {
         // Clamp discharge consumption to 0 if negative (prevents false values)
         const clampedDischargeConsumption = Math.max(0, dischargeConsumption);
         
-        this.logger.debug(`Discharge consumption calculation: S(${solarCurrent.toFixed(1)}) + L(${alternatorCurrent.toFixed(1)}) - A(${validCurrent.toFixed(1)}) = ${dischargeConsumption.toFixed(1)}A, clamped to ${clampedDischargeConsumption.toFixed(1)}A`);
-        
         // Accumulate total Ah drawn using the clamped consumption
         if (clampedDischargeConsumption > 0) {
           const consumptionDelta = clampedDischargeConsumption * deltaTimeHours;
-          
-          this.logger.debug(`Consumption delta calculation: ${clampedDischargeConsumption.toFixed(1)}A × ${deltaTimeHours.toFixed(6)}h = ${consumptionDelta.toFixed(6)}Ah`);
           
           if (!isNaN(history.totalAhDrawn)) {
             history.totalAhDrawn += consumptionDelta;
           } else {
             history.totalAhDrawn = consumptionDelta;
           }
-          
-          this.logger.debug(`Total Ah drawn updated: +${consumptionDelta.toFixed(6)}Ah, total: ${history.totalAhDrawn.toFixed(6)}Ah`);
         }
         
         if (validCurrent < 0) {
@@ -388,8 +355,6 @@ export class VenusClient extends EventEmitter {
             history.dischargedEnergy = dischargeEnergyDelta;
           }
           
-          this.logger.debug(`Battery discharging: ${validCurrent.toFixed(1)}A → +${dischargeEnergyDelta.toFixed(6)}kWh discharged (total: ${history.dischargedEnergy.toFixed(6)}kWh)`);
-          
         } else if (validCurrent > 0) {
           // Battery is charging - use battery current (A) for charged energy  
           const chargeEnergyDelta = (validVoltage * validCurrent * deltaTimeHours) / 1000; // kWh
@@ -399,18 +364,14 @@ export class VenusClient extends EventEmitter {
           } else {
             history.chargedEnergy = chargeEnergyDelta;
           }
-          
-          this.logger.debug(`Battery charging: ${validCurrent.toFixed(1)}A → +${chargeEnergyDelta.toFixed(6)}kWh charged (total: ${history.chargedEnergy.toFixed(6)}kWh)`);
         }
         
         // Update lastUpdateTime only when energy calculations were performed
         this.lastUpdateTime.set(devicePath, now);
-        this.logger.debug(`Updated lastUpdateTime for ${devicePath} after energy calculation`);
       } else {
         // Even if energy calculation conditions weren't met, we still need to update lastUpdateTime
         // to ensure the next update can calculate deltaTimeHours properly
         this.lastUpdateTime.set(devicePath, now);
-        this.logger.debug(`Updated lastUpdateTime for ${devicePath} (no energy calc - deltaTime: ${deltaTimeHours.toFixed(6)}h)`);
       }
     }
     
@@ -445,52 +406,18 @@ export class VenusClient extends EventEmitter {
       // Get solar devices from configuration
       const solarDevices = this.settings.batteryMonitor?.directDcDevices?.filter(device => device.type === 'solar') || [];
       
-      this.logger.debug(`Solar devices configured: ${solarDevices.length}`);
-      
       for (const device of solarDevices) {
         const currentPath = device.currentPath;
         if (currentPath) {
           const value = this._getCurrentSignalKValue(currentPath);
-          this.logger.debug(`Checking solar path '${currentPath}': value=${value} (type=${typeof value})`);
           if (value !== null && typeof value === 'number' && !isNaN(value) && value >= 0) {
             totalSolarCurrent += value;
-            this.logger.debug(`Solar device ${device.basePath}: ${value.toFixed(1)}A`);
-          } else {
-            this.logger.debug(`Solar device ${device.basePath}: invalid value ${value} at path ${currentPath}`);
           }
         }
       }
       
-      // If no configured devices found any current, try to detect common solar paths
-      if (totalSolarCurrent === 0 && solarDevices.length > 0) {
-        this.logger.debug('No solar current from configured devices, trying common paths...');
-        
-        // First, specifically test the user's confirmed path
-        const userSolarPath = 'electrical.solar.278.current';
-        const userValue = this._getCurrentSignalKValue(userSolarPath);
-        this.logger.debug(`Direct test of user's solar path '${userSolarPath}': ${userValue} (type=${typeof userValue})`);
-        
-        const commonSolarPaths = [
-          'electrical.solar.current',
-          'electrical.solar.0.current', 
-          'electrical.solar.1.current',
-          'electrical.solar.panelsCurrent',
-          'electrical.chargers.solar.current'
-        ];
-        
-        for (const path of commonSolarPaths) {
-          const value = this._getCurrentSignalKValue(path);
-          if (value !== null && typeof value === 'number' && !isNaN(value) && value > 0) {
-            this.logger.debug(`Found solar current at common path '${path}': ${value}A`);
-            // Don't add to total, just log for discovery
-          }
-        }
-      }
-      
-      this.logger.debug(`Total solar current: ${totalSolarCurrent.toFixed(1)}A from ${solarDevices.length} devices`);
       return totalSolarCurrent;
     } catch (err) {
-      this.logger.debug(`Error getting solar current: ${err.message}`);
       return 0;
     }
   }
@@ -504,48 +431,18 @@ export class VenusClient extends EventEmitter {
       // Get alternator devices from configuration
       const alternatorDevices = this.settings.batteryMonitor?.directDcDevices?.filter(device => device.type === 'alternator') || [];
       
-      this.logger.debug(`Alternator devices configured: ${alternatorDevices.length}`);
-      
       for (const device of alternatorDevices) {
         const currentPath = device.currentPath;
         if (currentPath) {
           const value = this._getCurrentSignalKValue(currentPath);
-          this.logger.debug(`Checking alternator path '${currentPath}': value=${value} (type=${typeof value})`);
           if (value !== null && typeof value === 'number' && !isNaN(value) && value >= 0) {
             totalAlternatorCurrent += value;
-            this.logger.debug(`Alternator device ${device.basePath}: ${value.toFixed(1)}A`);
-          } else {
-            this.logger.debug(`Alternator device ${device.basePath}: invalid value ${value} at path ${currentPath}`);
           }
         }
       }
       
-      // If no configured devices found any current, try to detect common alternator paths
-      if (totalAlternatorCurrent === 0 && alternatorDevices.length > 0) {
-        this.logger.debug('No alternator current from configured devices, trying common paths...');
-        const commonAlternatorPaths = [
-          'electrical.alternators.current',
-          'electrical.alternators.0.current',
-          'electrical.alternators.1.current', 
-          'electrical.alternator.current',
-          'propulsion.main.alternator.current',
-          'propulsion.port.alternator.current',
-          'propulsion.starboard.alternator.current'
-        ];
-        
-        for (const path of commonAlternatorPaths) {
-          const value = this._getCurrentSignalKValue(path);
-          if (value !== null && typeof value === 'number' && !isNaN(value) && value > 0) {
-            this.logger.debug(`Found alternator current at common path '${path}': ${value}A`);
-            // Don't add to total, just log for discovery
-          }
-        }
-      }
-      
-      this.logger.debug(`Total alternator current: ${totalAlternatorCurrent.toFixed(1)}A from ${alternatorDevices.length} devices`);
       return totalAlternatorCurrent;
     } catch (err) {
-      this.logger.debug(`Error getting alternator current: ${err.message}`);
       return 0;
     }
   }
@@ -682,23 +579,18 @@ export class VenusClient extends EventEmitter {
     if (this.signalKApp && this.signalKApp.getSelfPath) {
       try {
         const rawValue = this.signalKApp.getSelfPath(path);
-        this.logger.debug(`SignalK getSelfPath('${path}') returned: ${rawValue} (type: ${typeof rawValue})`);
         
         // Handle SignalK value objects that have nested .value property
         if (rawValue && typeof rawValue === 'object' && rawValue.value !== undefined) {
-          const extractedValue = rawValue.value;
-          this.logger.debug(`Extracted value from SignalK object: ${extractedValue} (type: ${typeof extractedValue})`);
-          return extractedValue;
+          return rawValue.value;
         }
         
         // Return raw value if it's already a primitive
         return rawValue;
       } catch (err) {
-        this.logger.debug(`Could not get Signal K value for ${path}: ${err.message}`);
         return null;
       }
     }
-    this.logger.debug(`SignalK app not available for path: ${path}`);
     return null;
   }
 
@@ -1434,6 +1326,12 @@ export class VenusClient extends EventEmitter {
       case 'environment':
         await this._handleEnvironmentUpdate(path, value, deviceService, deviceName);
         break;
+      case 'engines':
+        await this._handleEngineUpdate(path, value, deviceService, deviceName);
+        break;
+      case 'system':
+        await this._handleSystemUpdate(path, value, deviceService, deviceName);
+        break;
     }
   }
 
@@ -2064,6 +1962,84 @@ export class VenusClient extends EventEmitter {
       
     } catch (err) {
       this.logger.error(`Error in system service refresh for ${deviceName}:`, err);
+    }
+  }
+
+  // Map Signal K propulsion.* to Venus /Engine/* metrics
+  async _handleEngineUpdate(path, value, deviceService, deviceName) {
+    const base = deviceService.basePath || '';
+    const id = base.split('.')[1] || '';
+    let idx = 0;
+    if (/^(1|starboard|right|sb|stb)$/i.test(id)) idx = 1;
+    
+    // revolutions (Hz) -> RPM
+    if (path.endsWith('.revolutions')) {
+      if (typeof value === 'number' && !isNaN(value)) {
+        const rpm = value * 60;
+        await deviceService.updateProperty(`/Engine/${idx}/RPM`, rpm, 'd', `${deviceName} RPM`);
+        this.emit('dataUpdated', 'Engine RPM', `${deviceName}: ${rpm.toFixed(0)} rpm`);
+        this.logger.debug(`Engine ${idx}: RPM = ${rpm.toFixed(0)} rpm (from ${value.toFixed(2)} Hz)`);
+      }
+    } else if (path.endsWith('.temperature')) {
+      if (typeof value === 'number' && !isNaN(value)) {
+        const tempC = value > 100 ? value - 273.15 : value;
+        await deviceService.updateProperty(`/Engine/${idx}/Temperature`, tempC, 'd', `${deviceName} temperature`);
+        this.emit('dataUpdated', 'Engine Temperature', `${deviceName}: ${tempC.toFixed(1)}°C`);
+        this.logger.debug(`Engine ${idx}: Temperature = ${tempC.toFixed(1)}°C`);
+      }
+    } else if (path.endsWith('.oilPressure')) {
+      if (typeof value === 'number' && !isNaN(value)) {
+        const pressureBar = value > 10 ? value / 1e5 : value; // Pa -> bar if needed
+        await deviceService.updateProperty(`/Engine/${idx}/OilPressure`, pressureBar, 'd', `${deviceName} oil pressure`);
+        this.emit('dataUpdated', 'Engine Oil Pressure', `${deviceName}: ${pressureBar.toFixed(2)} bar`);
+        this.logger.debug(`Engine ${idx}: Oil Pressure = ${pressureBar.toFixed(2)} bar`);
+      }
+    } else if (path.endsWith('.alternatorVoltage')) {
+      if (typeof value === 'number' && !isNaN(value)) {
+        await deviceService.updateProperty(`/Engine/${idx}/Alternator/Voltage`, value, 'd', `${deviceName} alternator voltage`);
+        this.emit('dataUpdated', 'Engine Alternator', `${deviceName}: ${value.toFixed(1)}V`);
+        this.logger.debug(`Engine ${idx}: Alternator Voltage = ${value.toFixed(1)}V`);
+      }
+    } else if (path.endsWith('.gear')) {
+      if (typeof value === 'string') {
+        const map = { reverse: -1, neutral: 0, forward: 1, astern: -1, ahead: 1 };
+        const pos = map[value.toLowerCase()] ?? 0;
+        await deviceService.updateProperty(`/Engine/${idx}/GearPosition`, pos, 'i', `${deviceName} gear`);
+        this.emit('dataUpdated', 'Engine Gear', `${deviceName}: ${value}`);
+        this.logger.debug(`Engine ${idx}: Gear = ${value} (position: ${pos})`);
+      } else if (typeof value === 'number') {
+        await deviceService.updateProperty(`/Engine/${idx}/GearPosition`, Math.trunc(value), 'i', `${deviceName} gear`);
+        this.emit('dataUpdated', 'Engine Gear', `${deviceName}: ${value}`);
+        this.logger.debug(`Engine ${idx}: Gear Position = ${value}`);
+      }
+    }
+  }
+
+  // Map Signal K navigation.* & environment.depth.* to Venus /Speed, /Heading/True, /Depth/Depth
+  async _handleSystemUpdate(path, value, deviceService, deviceName) {
+    if (path.includes('speedOverGround')) {
+      if (typeof value === 'number' && !isNaN(value)) {
+        const speedKnots = value * 1.9438; // m/s -> knots
+        await deviceService.updateProperty('/Speed', speedKnots, 'd', 'Speed over ground');
+        this.emit('dataUpdated', 'Speed', `SOG: ${speedKnots.toFixed(1)} kn`);
+        this.logger.debug(`System: SOG = ${speedKnots.toFixed(1)} kn (from ${value.toFixed(2)} m/s)`);
+      }
+    } else if (path.includes('courseOverGroundTrue')) {
+      if (typeof value === 'number' && !isNaN(value)) {
+        const headingDeg = value * 180 / Math.PI; // radians -> degrees
+        await deviceService.updateProperty('/Heading/True', headingDeg, 'd', 'True heading');
+        this.emit('dataUpdated', 'Heading', `COG True: ${headingDeg.toFixed(1)}°`);
+        this.logger.debug(`System: COG True = ${headingDeg.toFixed(1)}° (from ${value.toFixed(3)} rad)`);
+      }
+    } else if (path.includes('environment.depth')) {
+      if (typeof value === 'number' && !isNaN(value)) {
+        // Prefer belowKeel over belowTransducer
+        const isBelowKeel = path.includes('belowKeel');
+        const depthM = value > 100 ? value / 1000 : value; // mm -> m if needed
+        await deviceService.updateProperty('/Depth/Depth', depthM, 'd', `Depth ${isBelowKeel ? '(below keel)' : '(below transducer)'}`);
+        this.emit('dataUpdated', 'Depth', `Depth: ${depthM.toFixed(1)}m ${isBelowKeel ? '(below keel)' : '(below transducer)'}`);
+        this.logger.debug(`System: Depth = ${depthM.toFixed(1)}m ${isBelowKeel ? '(below keel)' : '(below transducer)'}`);
+      }
     }
   }
 }
