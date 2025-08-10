@@ -321,12 +321,15 @@ export class VenusClient extends EventEmitter {
     const validCurrent = (typeof current === 'number' && !isNaN(current)) ? current : null;
     const validPower = (typeof power === 'number' && !isNaN(power)) ? power : null;
     
-    // Update min/max voltage only with valid values and prevent 0 values
-    if (validVoltage !== null && validVoltage > 5.0) { // Only track voltage above 5V
-      if (history.minimumVoltage === null || validVoltage < history.minimumVoltage) {
+    // Update min/max voltage only with valid values in realistic range (5V-50V)
+    if (validVoltage !== null && validVoltage > 5.0 && validVoltage < 50.0) {
+      const minInRange = (typeof history.minimumVoltage === 'number' && history.minimumVoltage > 5.0 && history.minimumVoltage < 50.0);
+      const maxInRange = (typeof history.maximumVoltage === 'number' && history.maximumVoltage > 5.0 && history.maximumVoltage < 50.0);
+
+      if (!minInRange || validVoltage < history.minimumVoltage) {
         history.minimumVoltage = validVoltage;
       }
-      if (history.maximumVoltage === null || validVoltage > history.maximumVoltage) {
+      if (!maxInRange || validVoltage > history.maximumVoltage) {
         history.maximumVoltage = validVoltage;
       }
     }
