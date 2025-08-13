@@ -36,7 +36,9 @@ export class VenusClient extends EventEmitter {
       'batteries': 'battery',
       'tanks': 'tank', 
       'switches': 'switch',
-      'environment': 'environment'
+      'environment': 'environment',
+      'engines': 'engine',
+      'system': 'system'
     };
     
     const configDeviceType = deviceTypeMap[deviceType] || deviceType;

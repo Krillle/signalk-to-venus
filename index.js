@@ -344,6 +344,12 @@ export default function(app) {
                   }
                 
                 const deviceType = identifyDeviceType(pathValue.path);
+                
+                // Debug logging for engines and system paths
+                if (pathValue.path.startsWith('propulsion.') || pathValue.path.startsWith('navigation.') || pathValue.path.includes('depth')) {
+                  app.debug(`[DEBUG] Signal K path: ${pathValue.path} -> deviceType: ${deviceType}`);
+                }
+                
                 if (deviceType) {
                   // Track this discovered path (always do discovery regardless of Venus OS connection)
                   addDiscoveredPath(deviceType, pathValue.path, pathValue.value, config);

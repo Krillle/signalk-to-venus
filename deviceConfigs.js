@@ -238,5 +238,70 @@ export const DEVICE_CONFIGS = {
       '/Humidity': 'd',
       '/Status': 'i'
     }
+  },
+
+  engine: {
+    serviceType: 'motordrive',
+    processName: 'signalk-virtual-device',
+    productName: 'SignalK Virtual Engine',
+    serviceDescription: 'SignalK Virtual Engine Service',
+    additionalProperties: {
+      '/Engine/0/RPM': { type: 'd', text: 'Engine 0 RPM' },
+      '/Engine/1/RPM': { type: 'd', text: 'Engine 1 RPM' },
+      '/Engine/0/Temperature': { type: 'd', text: 'Engine 0 temperature (C)' },
+      '/Engine/1/Temperature': { type: 'd', text: 'Engine 1 temperature (C)' },
+      '/Engine/0/OilPressure': { type: 'd', text: 'Engine 0 oil pressure (bar)' },
+      '/Engine/1/OilPressure': { type: 'd', text: 'Engine 1 oil pressure (bar)' },
+      '/Engine/0/Alternator/Voltage': { type: 'd', text: 'Engine 0 alternator voltage (V)' },
+      '/Engine/1/Alternator/Voltage': { type: 'd', text: 'Engine 1 alternator voltage (V)' },
+      '/Engine/0/GearPosition': { type: 'i', text: 'Engine 0 gear position' },
+      '/Engine/1/GearPosition': { type: 'i', text: 'Engine 1 gear position' }
+    },
+    pathMappings: {
+      '/Engine/0/RPM': 'Engine 0 RPM',
+      '/Engine/1/RPM': 'Engine 1 RPM',
+      '/Engine/0/Temperature': 'Engine 0 temperature',
+      '/Engine/1/Temperature': 'Engine 1 temperature',
+      '/Engine/0/OilPressure': 'Engine 0 oil pressure',
+      '/Engine/1/OilPressure': 'Engine 1 oil pressure',
+      '/Engine/0/Alternator/Voltage': 'Engine 0 alternator voltage',
+      '/Engine/1/Alternator/Voltage': 'Engine 1 alternator voltage',
+      '/Engine/0/GearPosition': 'Engine 0 gear position',
+      '/Engine/1/GearPosition': 'Engine 1 gear position'
+    },
+    pathTypes: {
+      '/Engine/0/RPM': 'd',
+      '/Engine/1/RPM': 'd',
+      '/Engine/0/Temperature': 'd',
+      '/Engine/1/Temperature': 'd',
+      '/Engine/0/OilPressure': 'd',
+      '/Engine/1/OilPressure': 'd',
+      '/Engine/0/Alternator/Voltage': 'd',
+      '/Engine/1/Alternator/Voltage': 'd',
+      '/Engine/0/GearPosition': 'i',
+      '/Engine/1/GearPosition': 'i'
+    }
+  },
+
+  system: {
+    serviceType: 'system',
+    processName: 'signalk-virtual-device',
+    productName: 'SignalK Virtual System',
+    serviceDescription: 'SignalK Virtual System Service',
+    additionalProperties: {
+      '/Speed': { type: 'd', text: 'Speed over ground (knots)' },
+      '/Heading/True': { type: 'd', text: 'True heading (deg)' },
+      '/Depth/Depth': { type: 'd', text: 'Depth (m)' }
+    },
+    pathMappings: {
+      '/Speed': 'Speed',
+      '/Heading/True': 'Heading True',
+      '/Depth/Depth': 'Depth'
+    },
+    pathTypes: {
+      '/Speed': 'd',
+      '/Heading/True': 'd',
+      '/Depth/Depth': 'd'
+    }
   }
 };
