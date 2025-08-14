@@ -770,6 +770,12 @@ describe('VenusClient - Battery', () => {
       await client.handleSignalKUpdate('electrical.batteries.main.voltage', 12.0);
       await client.handleSignalKUpdate('electrical.batteries.main.current', 50.0);
       
+      // Reset the charged energy to start fresh for this test
+      const existingHistory = client.historyData.get('electrical.batteries.main');
+      if (existingHistory) {
+        existingHistory.chargedEnergy = 0;
+      }
+      
       // Mock realistic time (5 minutes)
       const mockNow = Date.now();
       const fiveMinutesLater = mockNow + 300000; // 5 minutes
