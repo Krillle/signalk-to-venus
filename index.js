@@ -7,31 +7,8 @@ export default function(app) {
   // Dynamic tracking of discovered Signal K paths
   let discoveredPaths = {
     batteries: new Map(),
-    tanks: new Map(), 
-              update.values.forEach(async pathValue => {
-                try {
-                  // Check if pathValue exists and has required properties
-                  if (!pathValue || typeof pathValue !== 'object') {
-                    return;
-                  }
-                  
-                  if (!pathValue.path) {
-                    return;
-                  }
-                  
-                  // Skip null/undefined values - this should be rare if streambundle filtering works
-                  if (pathValue.value === undefined || pathValue.value === null) {
-                    return;
-                  }
-                  
-                  // Log all paths for debugging new device types
-                  if (pathValue.path.startsWith('propulsion.') || 
-                      pathValue.path.startsWith('navigation.') || 
-                      pathValue.path.startsWith('environment.depth.')) {
-                    console.log(`[DEBUG] Signal K path available: ${pathValue.path} = ${pathValue.value}`);
-                  }
-                
-                const deviceType = identifyDeviceType(pathValue.path); Map(),
+    tanks: new Map(),
+    environment: new Map(),
     switches: new Map(),
     engines: new Map(),
     system: new Map()
