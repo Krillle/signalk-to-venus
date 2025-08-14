@@ -765,15 +765,7 @@ describe('VenusClient - Battery', () => {
       dateNowSpy.mockRestore();
     });
 
-    it('should handle real-world charging scenario with debug logging', async () => {
-      // Mock console.log to capture debug messages
-      const originalDebug = client.logger.debug;
-      const debugMessages = [];
-      client.logger.debug = (msg) => {
-        debugMessages.push(msg);
-        originalDebug.call(client.logger, msg);
-      };
-      
+    it('should handle real-world charging scenario correctly', async () => {
       // Create device with critical data first
       await client.handleSignalKUpdate('electrical.batteries.main.voltage', 12.0);
       await client.handleSignalKUpdate('electrical.batteries.main.current', 50.0);
@@ -792,15 +784,11 @@ describe('VenusClient - Battery', () => {
       expect(history).toBeDefined();
       expect(history.chargedEnergy).toBeGreaterThan(0);
       
-      // Check debug messages for energy calculation
-      const energyMessages = debugMessages.filter(msg => msg.includes('Energy calculation'));
-      expect(energyMessages.length).toBeGreaterThan(0);
-      
-      const chargingMessages = debugMessages.filter(msg => msg.includes('Battery charging'));
-      expect(chargingMessages.length).toBeGreaterThan(0);
+      // Calculate expected: 12V * 50A * (5/60)h / 1000 = 0.05 kWh
+      expect(history.chargedEnergy).toBeCloseTo(0.05, 3);
+      expect(history.dischargedEnergy).toBeCloseTo(0, 6);
       
       // Restore
-      client.logger.debug = originalDebug;
       dateNowSpy.mockRestore();
     });
   });
