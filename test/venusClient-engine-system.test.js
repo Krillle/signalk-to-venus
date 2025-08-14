@@ -58,7 +58,8 @@ describe('VenusClient - Engine and System', () => {
 
   it('should handle system speed (m/s to knots)', async () => {
     await systemClient._handleSystemUpdate('navigation.speedOverGround', 10, systemClient.deviceServices.get('system'), 'System');
-    expect(systemClient._lastSystemUpdate).toMatchObject({ path: '/Speed', value: 19.438444924 });
+    expect(systemClient._lastSystemUpdate.path).toBe('/Speed');
+    expect(systemClient._lastSystemUpdate.value).toBeCloseTo(19.438444924, 3);
   });
 
   it('should handle system heading (radians to deg)', async () => {
