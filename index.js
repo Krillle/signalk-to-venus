@@ -525,11 +525,24 @@ export default function(app) {
       return null;
     }
     
-    // Debug logging for engine and system paths
-    if (path.startsWith('propulsion.') || path.startsWith('navigation.') || path.startsWith('environment.depth.')) {
-      console.log(`[DEBUG] Checking path: ${path}`);
+    // Debug logging for potential engine paths
+    if (path.includes('engine') || path.includes('propulsion') || path.includes('revolutions') || path.includes('rpm')) {
+      console.log(`[DEBUG] POTENTIAL ENGINE PATH: ${path}`);
       console.log(`[DEBUG] Engine regex test: ${settings.engineRegex.test(path)}`);
+    }
+    
+    // Debug logging for system paths
+    if (path.startsWith('navigation.') || path.startsWith('environment.depth.')) {
+      console.log(`[DEBUG] System path: ${path}`);
       console.log(`[DEBUG] System regex test: ${settings.systemRegex.test(path)}`);
+    }
+    
+    // Log all unique top-level paths to understand data structure
+    const topLevel = path.split('.')[0];
+    if (!this._loggedTopLevelPaths) this._loggedTopLevelPaths = new Set();
+    if (!this._loggedTopLevelPaths.has(topLevel)) {
+      this._loggedTopLevelPaths.add(topLevel);
+      console.log(`[DEBUG] New top-level path discovered: ${topLevel}`);
     }
     
     if (settings.batteryRegex.test(path)) return 'batteries';
