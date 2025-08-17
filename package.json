@@ -1,6 +1,6 @@
 {
   "name": "signalk-to-venus",
-  "version": "1.1.0",
+  "version": "1.0.18",
   "description": "Injects batteries, tanks, environment sensors, and switches as virtual devices and battery monitor into the Victron Cerbo GX Venus OS.",
   "keywords": [
     "signalk-node-server-plugin",

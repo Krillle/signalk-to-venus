@@ -458,7 +458,7 @@ MIT © Christian Wegerhoff
 
 ## Change Log
 
-### v1.1.0 (2025/08/08 14:30)
+### v1.0.18 (2025/08/17 17:00)
 - History for VRM and Remote Console of energy consumption, charged and discharged energy 
 - Removed 20-second startup delay (Still at first start devices might be missing. Restart plugin.)
 
