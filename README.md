@@ -139,13 +139,9 @@ The plugin automatically detects and supports:
 
 ## Output (Venus OS D-Bus Paths)
 
-**🎉 COMPLETE BMV BATTERY MONITOR IMPLEMENTATION**
-
-This plugin provides a **comprehensive BMV (Battery Monitor) interface** that is 100% compatible with Victron's BMV-700 series and fully integrates with VRM Portal and Cerbo GX displays. All standard battery monitor paths are implemented, making this a complete virtual battery monitoring solution.
-
 **Batteries (Battery Monitor):**
 ```
-# Core Battery Data (✅ IMPLEMENTED)
+# Core Battery Data
 /Dc/0/Voltage              # Battery voltage (Volts)
 /Dc/0/Current              # Battery current (Amps, + charging, - discharging)  
 /Dc/0/Power                # Battery power (Watts)
@@ -156,50 +152,50 @@ This plugin provides a **comprehensive BMV (Battery Monitor) interface** that is
 /Capacity                  # Battery capacity (Ah)
 /State                     # Battery state (0=Offline, 1=Online, 2=Error, 3=Unavailable)
 
-# Computed/Calculated Values (✅ IMPLEMENTED) - Smart Battery Monitor Features!
+# Computed/Calculated Values - Smart Battery Monitor Features!
 /ConsumedAmphours          # Consumed Ah calculated from SOC: capacity × (100 - SOC) / 100
 /Dc/0/Power                # Battery power calculated as: voltage × current (Watts)
 
-# Advanced Consumption Tracking with S+L-A Formula (✅ IMPLEMENTED)
+# Advanced Consumption Tracking with S+L-A Formula
 # When solar/alternator devices are configured, consumption is calculated using:
 # Consumption = Solar Current + Alternator Current - Battery Current
 # This provides accurate house load calculation by accounting for all energy sources
 /History/TotalAhDrawn      # Accumulated consumption using S+L-A formula or battery current integration
 
-# Time Calculations (✅ IMPLEMENTED)
+# Time Calculations
 /TimeToGo                  # Intelligent time remaining calculation:
-                          # - During discharge: Based on current consumption rate and remaining capacity
-                          # - During charge: Time to reach 100% SOC based on charging current
-                          # - Uses Signal K timeRemaining if available, otherwise calculated
+                           # - During discharge: Based on current consumption rate and remaining capacity
+                           # - During charge: Time to reach 100% SOC based on charging current
+                           # - Uses Signal K timeRemaining if available, otherwise calculated
 
-# Historical Energy Tracking (✅ IMPLEMENTED) - Major Feature for VRM Charts!
+# Historical Energy Tracking - Major Feature for VRM Charts!
 /History/DischargedEnergy  # Total discharged energy (kWh)
 /History/ChargedEnergy     # Total charged energy (kWh)
 /History/TotalAhDrawn      # Total Ah drawn (consumption tracking)
 /History/MinimumVoltage    # Historical minimum voltage
 /History/MaximumVoltage    # Historical maximum voltage
 
-# Device Identification (✅ IMPLEMENTED)
+# Device Identification
 /ProductId                 # Product ID
 /ProductName               # Product name
 /Serial                    # Device serial number
 /DeviceInstance            # Device instance ID
 /CustomName                # Device custom name
 
-# Battery Monitor Features (✅ IMPLEMENTED)
+# Battery Monitor Features
 /Relay/0/State             # Battery relay state (0=Open, 1=Closed)
 /ErrorCode                 # Error code (0=No error)
 /Connected                 # Connection status (1=Connected)
 /DeviceType                # Device type (512=BMV Battery Monitor)
 
-# Battery Monitor System Properties (✅ IMPLEMENTED)
+# Battery Monitor System Properties
 /System/HasBatteryMonitor  # Has battery monitor flag (1=Yes)
 /System/BatteryService     # Battery service active (1=Active)
 /System/NrOfBatteries      # Number of batteries (1)
 /System/MinCellVoltage     # Minimum cell voltage (array, empty for virtual devices)
 /System/MaxCellVoltage     # Maximum cell voltage (array, empty for virtual devices)
 
-# Battery Monitor Alarms (✅ IMPLEMENTED)
+# Battery Monitor Alarms
 /Alarms/LowVoltage         # Low voltage alarm (0=No alarm, 1=Warning, 2=Alarm)
 /Alarms/HighVoltage        # High voltage alarm (0=No alarm, 1=Warning, 2=Alarm)
 /Alarms/LowSoc             # Low SOC alarm (0=No alarm, 1=Warning, 2=Alarm)
@@ -207,13 +203,13 @@ This plugin provides a **comprehensive BMV (Battery Monitor) interface** that is
 /Alarms/HighTemperature    # High temperature alarm (0=No alarm, 1=Warning, 2=Alarm)
 /Alarms/LowTemperature     # Low temperature alarm (0=No alarm, 1=Warning, 2=Alarm)
 
-# Battery Monitor Info (✅ IMPLEMENTED)
+# Battery Monitor Info
 /Info/BatteryLowVoltage    # Battery low voltage info (0=Default)
 /Info/MaxChargeCurrent     # Max charge current (array, empty for virtual devices)
 /Info/MaxDischargeCurrent  # Max discharge current (array, empty for virtual devices)
 /Info/MaxChargeVoltage     # Max charge voltage (array, empty for virtual devices)
 
-# Battery Monitor Control (✅ IMPLEMENTED)
+# Battery Monitor Control
 /Balancer                  # Balancer active (0=Inactive, 1=Active)
 /Io/AllowToCharge          # Allow to charge (1=Allowed, 0=Blocked)
 /Io/AllowToDischarge       # Allow to discharge (1=Allowed, 0=Blocked)
@@ -222,7 +218,7 @@ This plugin provides a **comprehensive BMV (Battery Monitor) interface** that is
 
 **Tanks:**
 ```
-# Tank Data (✅ IMPLEMENTED)
+# Tank Data
 /Level                     # Tank level (0-100%)
 /Capacity                  # Tank capacity (liters/gallons)
 /Remaining                 # Remaining volume (liters/gallons)
@@ -230,7 +226,7 @@ This plugin provides a **comprehensive BMV (Battery Monitor) interface** that is
 /Status                    # Tank status
 /CustomName                # Tank name for VRM display
 
-# Tank Features (❌ NOT YET IMPLEMENTED)
+# Tank Features NOT IMPLEMENTED
 /Volume                    # Tank volume (liters/gallons)
 /RawUnit                   # Raw sensor unit (e.g., 'V' for voltage)
 /RawValue                  # Raw sensor value
@@ -238,17 +234,14 @@ This plugin provides a **comprehensive BMV (Battery Monitor) interface** that is
 
 **Environment:**
 ```
-# Environment Data (✅ IMPLEMENTED)
+# Environment Data
 /Temperature               # Temperature (°C)
 /Humidity                  # Humidity (0-100%)
-
-# Environment Features (❌ NOT YET IMPLEMENTED)
-/Status                    # Sensor status
 ```
 
 **Switches & Dimmers:**
 ```
-# Switch/Dimmer Data (✅ IMPLEMENTED)
+# Switch/Dimmer Data
 /State                     # Switch state (0=Off, 1=On)
 /Position                  # Switch position
 /DimmingLevel              # Dimming level (0-100%)
