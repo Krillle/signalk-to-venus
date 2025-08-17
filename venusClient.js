@@ -64,6 +64,9 @@ export class VenusClient extends EventEmitter {
     this._lastDataUpdateLog = new Map(); // Map of deviceInstance.basePath -> last log timestamp
     this._dataUpdateLogInterval = 10000; // Log every 10 seconds per device
     
+    // Device update logging throttle
+    this._lastDeviceValues = new Map(); // Map of basePath+path -> last value to detect significant changes
+    
     // History tracking for VRM consumption calculations
     this.historyData = new Map(); // Map of devicePath -> history tracking object
     this.lastUpdateTime = new Map(); // Map of devicePath -> last update timestamp
@@ -77,6 +80,42 @@ export class VenusClient extends EventEmitter {
   // Set Signal K app reference for getting current values
   setSignalKApp(app) {
     this.signalKApp = app;
+  }
+
+  // Helper method to determine if device update should be logged (reduce noise)
+  _shouldLogDeviceUpdate(basePath, path, value) {
+    const key = `${basePath}:${path}`;
+    const lastValue = this._lastDeviceValues.get(key);
+    
+    // Always log the first value for each path
+    if (lastValue === undefined) {
+      this._lastDeviceValues.set(key, value);
+      return true;
+    }
+    
+    // Determine significant change thresholds based on path type
+    let threshold = 0;
+    if (path.includes('voltage')) {
+      threshold = 0.1; // 0.1V change
+    } else if (path.includes('current')) {
+      threshold = 1.0; // 1A change
+    } else if (path.includes('stateOfCharge')) {
+      threshold = 0.01; // 1% change
+    } else if (path.includes('timeRemaining')) {
+      threshold = 300; // 5 minute change
+    } else {
+      threshold = 0; // Log all other changes
+    }
+    
+    // Check if change is significant
+    const isSignificant = Math.abs(value - lastValue) >= threshold;
+    
+    if (isSignificant) {
+      this._lastDeviceValues.set(key, value);
+      return true;
+    }
+    
+    return false;
   }
 
   // Load history data from persistent storage
@@ -342,7 +381,10 @@ export class VenusClient extends EventEmitter {
     if (accumulator && validCurrent !== null && validVoltage !== null) {
       const deltaTimeHours = (now - lastTime) / (1000 * 3600); // Convert to hours
       
-      this.logger.debug(`Time calculation for ${devicePath}: now=${now}, lastTime=${lastTime}, deltaHours=${deltaTimeHours.toFixed(6)}`);
+      // Only log time calculation if deltaTimeHours is suspiciously large (> 0.1h = 6 minutes)
+      if (deltaTimeHours > 0.1) {
+        this.logger.debug(`Large time gap for ${devicePath}: deltaHours=${deltaTimeHours.toFixed(3)}h`);
+      }
       
       if (deltaTimeHours > 0 && deltaTimeHours < 1) { // Sanity check: less than 1 hour
         // Get solar and alternator currents for the new calculation method
@@ -354,24 +396,15 @@ export class VenusClient extends EventEmitter {
         // Discharged energy: If A < 0 then use A (battery current itself)
         // Charged energy: If A > 0 then use A (battery current itself)
         
-        this.logger.debug(`Energy calculation for ${devicePath}: Solar=${solarCurrent.toFixed(1)}A, Alt=${alternatorCurrent.toFixed(1)}A, Battery=${validCurrent.toFixed(1)}A, ΔT=${deltaTimeHours.toFixed(6)}h`);
-        
-        // Debug: Log what solar paths we're checking
-        this.logger.debug(`Solar current check - app exists: ${!!this.signalKApp}, getSelfPath exists: ${!!(this.signalKApp && this.signalKApp.getSelfPath)}`);
-        
         // Calculate discharge consumption using S + L - A formula
         const dischargeConsumption = solarCurrent + alternatorCurrent - validCurrent;
         
         // Clamp discharge consumption to 0 if negative (prevents false values)
         const clampedDischargeConsumption = Math.max(0, dischargeConsumption);
         
-        this.logger.debug(`Discharge consumption calculation: S(${solarCurrent.toFixed(1)}) + L(${alternatorCurrent.toFixed(1)}) - A(${validCurrent.toFixed(1)}) = ${dischargeConsumption.toFixed(1)}A, clamped to ${clampedDischargeConsumption.toFixed(1)}A`);
-        
         // Accumulate total Ah drawn using the clamped consumption
         if (clampedDischargeConsumption > 0) {
           const consumptionDelta = clampedDischargeConsumption * deltaTimeHours;
-          
-          this.logger.debug(`Consumption delta calculation: ${clampedDischargeConsumption.toFixed(1)}A × ${deltaTimeHours.toFixed(6)}h = ${consumptionDelta.toFixed(6)}Ah`);
           
           if (!isNaN(history.totalAhDrawn)) {
             history.totalAhDrawn += consumptionDelta;
@@ -379,7 +412,10 @@ export class VenusClient extends EventEmitter {
             history.totalAhDrawn = consumptionDelta;
           }
           
-          this.logger.debug(`Total Ah drawn updated: +${consumptionDelta.toFixed(6)}Ah, total: ${history.totalAhDrawn.toFixed(6)}Ah`);
+          // Only log large consumption changes to reduce noise
+          if (consumptionDelta > 0.01) { // > 0.01Ah = 10mAh
+            this.logger.debug(`Total Ah drawn: +${consumptionDelta.toFixed(3)}Ah (total: ${history.totalAhDrawn.toFixed(1)}Ah)`);
+          }
         }
         
         if (validCurrent < 0) {
@@ -392,7 +428,10 @@ export class VenusClient extends EventEmitter {
             history.dischargedEnergy = dischargeEnergyDelta;
           }
           
-          this.logger.debug(`Battery discharging: ${validCurrent.toFixed(1)}A → +${dischargeEnergyDelta.toFixed(6)}kWh discharged (total: ${history.dischargedEnergy.toFixed(6)}kWh)`);
+          // Only log significant discharge energy changes
+          if (dischargeEnergyDelta > 0.001) { // > 1Wh
+            this.logger.debug(`Battery discharging: ${validCurrent.toFixed(1)}A → +${dischargeEnergyDelta.toFixed(3)}kWh discharged (total: ${history.dischargedEnergy.toFixed(3)}kWh)`);
+          }
           
         } else if (validCurrent > 0) {
           // Battery is charging - use battery current (A) for charged energy  
@@ -404,17 +443,21 @@ export class VenusClient extends EventEmitter {
             history.chargedEnergy = chargeEnergyDelta;
           }
           
-          this.logger.debug(`Battery charging: ${validCurrent.toFixed(1)}A → +${chargeEnergyDelta.toFixed(6)}kWh charged (total: ${history.chargedEnergy.toFixed(6)}kWh)`);
+          // Only log significant charge energy changes
+          if (chargeEnergyDelta > 0.001) { // > 1Wh
+            this.logger.debug(`Battery charging: ${validCurrent.toFixed(1)}A → +${chargeEnergyDelta.toFixed(3)}kWh charged (total: ${history.chargedEnergy.toFixed(3)}kWh)`);
+          }
         }
         
         // Update lastUpdateTime only when energy calculations were performed
         this.lastUpdateTime.set(devicePath, now);
-        this.logger.debug(`Updated lastUpdateTime for ${devicePath} after energy calculation`);
-      } else {
-        // Even if energy calculation conditions weren't met, we still need to update lastUpdateTime
-        // to ensure the next update can calculate deltaTimeHours properly
+      } else if (deltaTimeHours >= 1) {
+        // Log if deltaTime is suspiciously large (≥ 1 hour)
+        this.logger.debug(`Large deltaTime for ${devicePath}: ${deltaTimeHours.toFixed(2)}h - updating timestamp only`);
         this.lastUpdateTime.set(devicePath, now);
-        this.logger.debug(`Updated lastUpdateTime for ${devicePath} (no energy calc - deltaTime: ${deltaTimeHours.toFixed(6)}h)`);
+      } else {
+        // Normal case: update timestamp without logging
+        this.lastUpdateTime.set(devicePath, now);
       }
     }
     
@@ -449,17 +492,23 @@ export class VenusClient extends EventEmitter {
       // Get solar devices from configuration
       const solarDevices = this.settings.batteryMonitor?.directDcDevices?.filter(device => device.type === 'solar') || [];
       
-      this.logger.debug(`Solar devices configured: ${solarDevices.length}`);
+      // Only log solar device count if it's > 0 to reduce noise
+      if (solarDevices.length > 0) {
+        this.logger.debug(`Solar devices configured: ${solarDevices.length}`);
+      }
       
       for (const device of solarDevices) {
         const currentPath = device.currentPath;
         if (currentPath) {
           const value = this._getCurrentSignalKValue(currentPath);
-          this.logger.debug(`Checking solar path '${currentPath}': value=${value} (type=${typeof value})`);
           if (value !== null && typeof value === 'number' && !isNaN(value) && value >= 0) {
             totalSolarCurrent += value;
-            this.logger.debug(`Solar device ${device.basePath}: ${value.toFixed(1)}A`);
+            // Only log individual device currents if > 0.1A to reduce noise
+            if (value > 0.1) {
+              this.logger.debug(`Solar device ${device.basePath}: ${value.toFixed(1)}A`);
+            }
           } else {
+            // Only log invalid values for debugging
             this.logger.debug(`Solar device ${device.basePath}: invalid value ${value} at path ${currentPath}`);
           }
         }
@@ -467,7 +516,6 @@ export class VenusClient extends EventEmitter {
       
       // If no configured devices found any current, try to detect common solar paths
       if (totalSolarCurrent === 0 && solarDevices.length > 0) {
-        this.logger.debug('No solar current from configured devices, trying common paths...');
         
         // First, specifically test the user's confirmed path
         const userSolarPath = 'electrical.solar.278.current';
@@ -491,7 +539,10 @@ export class VenusClient extends EventEmitter {
         }
       }
       
-      this.logger.debug(`Total solar current: ${totalSolarCurrent.toFixed(1)}A from ${solarDevices.length} devices`);
+      // Only log total solar current if > 0 to reduce noise
+      if (totalSolarCurrent > 0.1) {
+        this.logger.debug(`Total solar current: ${totalSolarCurrent.toFixed(1)}A from ${solarDevices.length} devices`);
+      }
       return totalSolarCurrent;
     } catch (err) {
       this.logger.debug(`Error getting solar current: ${err.message}`);
@@ -508,17 +559,23 @@ export class VenusClient extends EventEmitter {
       // Get alternator devices from configuration
       const alternatorDevices = this.settings.batteryMonitor?.directDcDevices?.filter(device => device.type === 'alternator') || [];
       
-      this.logger.debug(`Alternator devices configured: ${alternatorDevices.length}`);
+      // Only log alternator device count if it's > 0 to reduce noise
+      if (alternatorDevices.length > 0) {
+        this.logger.debug(`Alternator devices configured: ${alternatorDevices.length}`);
+      }
       
       for (const device of alternatorDevices) {
         const currentPath = device.currentPath;
         if (currentPath) {
           const value = this._getCurrentSignalKValue(currentPath);
-          this.logger.debug(`Checking alternator path '${currentPath}': value=${value} (type=${typeof value})`);
           if (value !== null && typeof value === 'number' && !isNaN(value) && value >= 0) {
             totalAlternatorCurrent += value;
-            this.logger.debug(`Alternator device ${device.basePath}: ${value.toFixed(1)}A`);
+            // Only log individual device currents if > 0.1A to reduce noise
+            if (value > 0.1) {
+              this.logger.debug(`Alternator device ${device.basePath}: ${value.toFixed(1)}A`);
+            }
           } else {
+            // Only log invalid values for debugging
             this.logger.debug(`Alternator device ${device.basePath}: invalid value ${value} at path ${currentPath}`);
           }
         }
@@ -546,7 +603,10 @@ export class VenusClient extends EventEmitter {
         }
       }
       
-      this.logger.debug(`Total alternator current: ${totalAlternatorCurrent.toFixed(1)}A from ${alternatorDevices.length} devices`);
+      // Only log total alternator current if > 0 to reduce noise
+      if (totalAlternatorCurrent > 0.1) {
+        this.logger.debug(`Total alternator current: ${totalAlternatorCurrent.toFixed(1)}A from ${alternatorDevices.length} devices`);
+      }
       return totalAlternatorCurrent;
     } catch (err) {
       this.logger.debug(`Error getting alternator current: ${err.message}`);
@@ -686,12 +746,14 @@ export class VenusClient extends EventEmitter {
     if (this.signalKApp && this.signalKApp.getSelfPath) {
       try {
         const rawValue = this.signalKApp.getSelfPath(path);
-        this.logger.debug(`SignalK getSelfPath('${path}') returned: ${rawValue} (type: ${typeof rawValue})`);
+        // Only log if rawValue is undefined/null to help debug missing data
+        if (rawValue === undefined || rawValue === null) {
+          this.logger.debug(`SignalK getSelfPath('${path}') returned: ${rawValue} (type: ${typeof rawValue})`);
+        }
         
         // Handle SignalK value objects that have nested .value property
         if (rawValue && typeof rawValue === 'object' && rawValue.value !== undefined) {
           const extractedValue = rawValue.value;
-          this.logger.debug(`Extracted value from SignalK object: ${extractedValue} (type: ${typeof extractedValue})`);
           return extractedValue;
         }
         
@@ -1206,9 +1268,12 @@ export class VenusClient extends EventEmitter {
       
       if (existingDeviceService) {
         // We have an existing device - update it with any valid data
-        // Only log battery updates to reduce noise
+        // Only log battery updates for significant changes (voltage changes > 0.1V, current changes > 1A)
         if (basePath.includes('electrical.batteries')) {
-          this.logger.debug(`Updating battery device ${basePath} with ${path} = ${value}`);
+          const shouldLog = this._shouldLogDeviceUpdate(basePath, path, value);
+          if (shouldLog) {
+            this.logger.debug(`Updating battery device ${basePath} with ${path} = ${value}`);
+          }
         }
         
         // Check if device service is connected and ready for data updates
