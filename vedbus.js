@@ -44,7 +44,6 @@ export class VEDBusService extends EventEmitter {
     this.maxReconnectDelay = settings.maxReconnectDelay || 60000; // Configurable max delay
     
     // Generate unique serial number like dbus-serialbattery - combine serviceType and instance
-    // const uniqueSerial = `SK_${deviceConfig.serviceType}_${serviceName}_${this.vrmInstanceId}`;
     const uniqueSerial = `SK${deviceConfig.serviceType}${serviceName}`.toUpperCase();
     
     // Management properties that are common to all devices
