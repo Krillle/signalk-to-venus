@@ -49,6 +49,10 @@ export class VenusClient extends EventEmitter {
     // Store the internal config device type for logic operations
     this._internalDeviceType = configDeviceType;
     
+    // Configuration timeouts to prevent connection leaks
+    this.settings.connectionTimeout = this.settings.connectionTimeout || 3000; // Fast timeout
+    this.settings.maxReconnectAttempts = this.settings.maxReconnectAttempts || 5; // Fewer reconnect attempts
+    
     this.bus = null;
     this.deviceIndex = 0; // For unique device indexing
     this.deviceCounts = {}; // Track how many devices of each type we have

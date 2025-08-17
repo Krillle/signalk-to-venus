@@ -244,11 +244,12 @@ export class VEDBusService extends EventEmitter {
         };
         this.isConnected = true; // CRITICAL: Set connected state for test mode
       } else {
-        // Create individual D-Bus connection for this service
+        // Create individual D-Bus connection for this service with shorter timeout
         this.bus = dbusNative.createClient({
           host: this.settings.venusHost,
           port: this.settings.port || 78,
-          authMethods: ['ANONYMOUS']
+          authMethods: ['ANONYMOUS'],
+          timeout: 3000 // Shorter timeout to fail fast on problematic connections
         });
 
         // Set up connection monitoring
@@ -274,6 +275,9 @@ export class VEDBusService extends EventEmitter {
               console.error(`D-Bus connection error for ${this.dbusServiceName}:`, err);
               this.isConnected = false;
               
+              // Immediately close failed connection to prevent leak
+              this._forceCloseConnection();
+              
               // Enhanced error handling for different types of connection failures
               if (err.code === 'ENOTFOUND') {
                 console.warn(`DNS resolution failed for ${this.settings.venusHost} - will retry with exponential backoff`);
@@ -284,6 +288,16 @@ export class VEDBusService extends EventEmitter {
               }
               
               reject(err);
+            });
+
+            this.bus.on('disconnect', () => {
+              this.isConnected = false;
+              this._forceCloseConnection();
+            });
+
+            this.bus.on('close', () => {
+              this.isConnected = false;
+              this._forceCloseConnection();
             });
           });
         } else {
@@ -1337,6 +1351,35 @@ export class VEDBusService extends EventEmitter {
     return [type, value];
   }
 
+  /**
+   * Force close connection to prevent leaks
+   */
+  _forceCloseConnection() {
+    if (this.bus) {
+      try {
+        // Try multiple close methods aggressively
+        if (typeof this.bus.end === 'function') {
+          this.bus.end();
+        }
+        if (typeof this.bus.close === 'function') {
+          this.bus.close();
+        }
+        if (typeof this.bus.disconnect === 'function') {
+          this.bus.disconnect();
+        }
+        if (this.bus.connection && typeof this.bus.connection.end === 'function') {
+          this.bus.connection.end();
+        }
+        if (this.bus.connection && typeof this.bus.connection.destroy === 'function') {
+          this.bus.connection.destroy();
+        }
+      } catch (err) {
+        // Ignore errors during force close
+      }
+      this.bus = null;
+    }
+  }
+
   disconnect() {
     // Stop all timers
     if (this.heartbeatTimer) {
@@ -1361,24 +1404,9 @@ export class VEDBusService extends EventEmitter {
     
     this.isConnected = false;
     
-    // Close the individual D-Bus connection
+    // Close the individual D-Bus connection aggressively
     if (this.bus) {
-      try {
-        // Try different methods to close the connection
-        if (typeof this.bus.end === 'function') {
-          this.bus.end();
-        } else if (typeof this.bus.close === 'function') {
-          this.bus.close();
-        } else if (typeof this.bus.disconnect === 'function') {
-          this.bus.disconnect();
-        } else if (typeof this.bus.connection && typeof this.bus.connection.end === 'function') {
-          this.bus.connection.end();
-        }
-        // If none of the above work, just set to null
-      } catch (err) {
-        console.error(`Error disconnecting ${this.deviceConfig.serviceType} service ${this.serviceName}:`, err);
-      }
-      this.bus = null;
+      this._forceCloseConnection();
     }
     
     // Clear data
