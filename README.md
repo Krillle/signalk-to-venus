@@ -1,5 +1,8 @@
 # Signal K to Victron Venus OS Bridge
 
+> [!NOTE]  
+> This plugin requires Signal K Server 2.15 or higher for ES Module support.
+
 This plugin for Signal K Server injects batteries, tanks, environment sensors, and switches as virtual devices and battery monitor into the Venus OS (D-Bus), enabling full integration with the Cerbo GX, GX Touch, and VRM.
 
 ## Requirements
@@ -62,6 +65,9 @@ curl -O https://raw.githubusercontent.com/sbender9/signalk-venus-plugin/31f52684
 ```
 
 **3. Install the plugin**
+
+> [!NOTE]  
+> This plugin requires Signal K Server 2.15 or higher for ES Module support.
 
 Look for `signalk-to-venus` in the Signal K App Store and install it directly.
 
