@@ -196,10 +196,21 @@ export default function(app) {
           
           return false;
         } finally {
-          // Always disconnect the test bus
+          // Always disconnect the test bus - must destroy underlying TCP socket
           if (testBus) {
             try {
-              testBus.end();
+              // The dbus-native library end() does not close the TCP socket
+              // Must destroy the underlying connection to prevent leak
+              if (testBus.connection) {
+                if (typeof testBus.connection.destroy === 'function') {
+                  testBus.connection.destroy();
+                } else if (typeof testBus.connection.end === 'function') {
+                  testBus.connection.end();
+                }
+              }
+              if (typeof testBus.end === 'function') {
+                testBus.end();
+              }
             } catch (disconnectErr) {
               // Silent disconnect error handling
             }
