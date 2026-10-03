@@ -1057,6 +1057,8 @@ export class VenusClient extends EventEmitter {
         basePath = path.replace(/\.(state|dimmingLevel|position|name)$/, '');
         break;
       case 'environment':
+        // Strip only the trailing measurement, keeping the full sensor path:
+        // 'environment.inside.refrigerator.temperature' -> 'environment.inside.refrigerator'
         basePath = path.replace(/\.(temperature|humidity|relativeHumidity)$/, '');
         break;
       default:
@@ -1232,14 +1234,21 @@ export class VenusClient extends EventEmitter {
   _getEnvironmentName(path) {
     const parts = path.split('.');
     if (parts.length >= 3) {
-      const environmentType = parts[1]; // e.g., 'water', 'air', 'inside', 'outside'
-      
-      // Remove camel case and capitalize first letter
-      let sensor = environmentType.replace(/([A-Z])/g, ' $1').trim();
-      sensor = sensor.charAt(0).toUpperCase() + sensor.slice(1).toLowerCase();
-      
-      // Return just the location name - Venus OS will show the measurement types separately
-      return sensor;
+      // Support environment.<zone>.<identifier>...<measurement> (multiple dots), e.g.
+      // 'environment.inside.refrigerator.temperature'. Use every segment between the
+      // prefix and the trailing measurement so sensors in the same zone stay distinct.
+      const sensorParts = parts.slice(1, -1);
+      if (sensorParts.length > 0) {
+        // Return just the location/identifier name - Venus OS will show the
+        // measurement types separately
+        return sensorParts
+          .map(part => {
+            // Remove camel case and capitalize first letter
+            const spaced = part.replace(/([A-Z])/g, ' $1').trim();
+            return spaced.charAt(0).toUpperCase() + spaced.slice(1).toLowerCase();
+          })
+          .join(' ');
+      }
     }
     return 'Environment sensor';
   }

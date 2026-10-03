@@ -32,12 +32,16 @@ describe('Settings Configuration', () => {
     
     // Test temperature regex
     expect(temperatureRegex.test('environment.outside.temperature')).toBe(true);
+    expect(temperatureRegex.test('environment.inside.refrigerator.temperature')).toBe(true);
+    expect(temperatureRegex.test('environment.outside.refrigerator.temperature')).toBe(true);
     expect(temperatureRegex.test('propulsion.main.temperature')).toBe(true);
     expect(temperatureRegex.test('environment.outside.humidity')).toBe(false);
     
     // Test humidity regex
     expect(humidityRegex.test('environment.outside.humidity')).toBe(true);
     expect(humidityRegex.test('environment.inside.relativeHumidity')).toBe(true);
+    expect(humidityRegex.test('environment.inside.refrigerator.humidity')).toBe(true);
+    expect(humidityRegex.test('environment.inside.refrigerator.relativeHumidity')).toBe(true);
     expect(humidityRegex.test('environment.outside.temperature')).toBe(false);
     
     // Test switch regex

@@ -137,9 +137,11 @@ The plugin automatically detects and supports:
 
 - **Batteries**: `electrical.batteries.*` (voltage, current, SoC, consumed Ah, time remaining, temperature)
 - **Tanks**: `tanks.*` (current level, capacity, name)  
-- **Temperature**: `environment.*.temperature`, `propulsion.*.temperature`
-- **Humidity**: `environment.*.humidity` or `environment.*.relativeHumidity`
+- **Temperature**: `environment.*.temperature`, `environment.<zone>.<identifier>.temperature`, `propulsion.*.temperature`
+- **Humidity**: `environment.*.humidity`, `environment.*.relativeHumidity`, `environment.<zone>.<identifier>.humidity`
 - **Switches/Dimmers**: `electrical.switches.*` (state, dimming level)
+
+**Note**: Environment sensor paths support arbitrarily deep zone/identifier nesting, e.g. `environment.inside.refrigerator.temperature` and `environment.outside.refrigerator.temperature`. Each unique path is exposed as its own Venus OS sensor and named by joining the path segments with spaces (e.g. "Inside Refrigerator").
 
 **Note**: The plugin automatically excludes devices directly connected to the Cerbo GX and its internal relay switches to prevent feedback loops.
 
