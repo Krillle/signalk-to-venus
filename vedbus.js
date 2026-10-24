@@ -1011,15 +1011,16 @@ export class VEDBusService extends EventEmitter {
     });
   }
 
-  _exportProperty(path, config) {
+  _exportProperty(path, config, emit = true) {
     // Only set/update the value in deviceData if it has a defined value
     if (config.value !== undefined) {
       this.deviceData[path] = config.value;
     }
 
-    // If already exported, update only if we have a value
+    // If already exported, update only if we have a value. `emit` is false when
+    // the caller emits its own signal, so a change is not signalled twice.
     if (path in this.exportedInterfaces) {
-      if (config.value !== undefined) {
+      if (config.value !== undefined && emit) {
         const changes = [];
         changes.push([path, [
           ["Value", this._wrapValue(config.type, config.value)],
@@ -1180,14 +1181,20 @@ export class VEDBusService extends EventEmitter {
 
     // Update device data first
     this.deviceData[path] = value;
-    
-    // Ensure the interface is exported
+
+    // First sight of this property: export it (which publishes its initial
+    // value). Otherwise an unchanged value needs no work at all — re-exporting
+    // it emitted an ItemsChanged signal every tick even when nothing changed.
     if (!this.exportedInterfaces[path]) {
       this._exportProperty(path, { value, type, text });
-    } else {
-      // Update existing exported property
-      this._exportProperty(path, { value, type, text });
+      return;
     }
+    if (!valueChanged) {
+      return;
+    }
+    // Keep the exported value current without a second signal; the block below
+    // emits exactly one for this change.
+    this._exportProperty(path, { value, type, text }, false);
     
     // Emit D-Bus signals only if value changed and bus is ready
     if (this.bus && this.isConnected && valueChanged) {
