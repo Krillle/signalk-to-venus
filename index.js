@@ -694,9 +694,12 @@ export default function(app) {
         
       case 'environment':
         // environment.water.temperature -> environment.water
+        // environment.inside.refrigerator.temperature -> environment.inside.refrigerator
         // propulsion.main.temperature -> propulsion.main
-        // Group by sensor location, not individual property
-        const envMatch = fullPath.match(/^(environment\.[^.]+|propulsion\.[^.]+)/);
+        // Group by sensor (zone + identifier), not individual property.
+        // The measurement is always the trailing segment, so keep everything before it.
+        // This supports arbitrarily deep environment.<zone>.<identifier>...<measurement> paths.
+        const envMatch = fullPath.match(/^((?:environment|propulsion)\..+)\.(?:temperature|humidity|relativeHumidity)$/);
         return envMatch ? envMatch[1] : null;
         
       case 'switches':
@@ -769,19 +772,26 @@ export default function(app) {
         }
         break;
         
-      case 'environment':
+      case 'environment': {
         // environment.water -> Water
-        // propulsion.main -> Main  
+        // propulsion.main -> Main
         // environment.outside -> Outside
-        const envMatch = devicePath.match(/environment\.([^.]+)|propulsion\.([^.]+)/);
+        // environment.inside.refrigerator -> Inside Refrigerator
+        const envMatch = devicePath.match(/^(?:environment|propulsion)\.(.+)$/);
         if (envMatch) {
-          let sensor = envMatch[1] || envMatch[2];
-          // Remove camel case and capitalize first letter
-          sensor = sensor.replace(/([A-Z])/g, ' $1').trim();
-          sensor = sensor.charAt(0).toUpperCase() + sensor.slice(1).toLowerCase();
-          return sensor;
+          // Join all location/identifier segments so multiple sensors within the
+          // same zone remain distinguishable
+          return envMatch[1]
+            .split('.')
+            .map(part => {
+              // Remove camel case and capitalize first letter
+              const spaced = part.replace(/([A-Z])/g, ' $1').trim();
+              return spaced.charAt(0).toUpperCase() + spaced.slice(1).toLowerCase();
+            })
+            .join(' ');
         }
         break;
+      }
         
       case 'switches':
         // electrical.switches.nav -> Nav (if functional name)

@@ -53,6 +53,14 @@ describe('VenusClient - Environment', () => {
       expect(client._extractBasePath('environment.water.temperature')).toBe('environment.water');
     });
 
+    it('should extract base path for multi-level environment paths', () => {
+      expect(client._extractBasePath('environment.inside.refrigerator.temperature')).toBe('environment.inside.refrigerator');
+      expect(client._extractBasePath('environment.outside.refrigerator.temperature')).toBe('environment.outside.refrigerator');
+      expect(client._extractBasePath('environment.inside.refrigerator.humidity')).toBe('environment.inside.refrigerator');
+      expect(client._extractBasePath('environment.inside.freezer.relativeHumidity')).toBe('environment.inside.freezer');
+      expect(client._extractBasePath('environment.engineRoom.exhaust.temperature')).toBe('environment.engineRoom.exhaust');
+    });
+
     it('should generate stable device indices', () => {
       const path1 = 'environment.inside';
       const path2 = 'environment.outside';
@@ -85,6 +93,14 @@ describe('VenusClient - Environment', () => {
       expect(client._getEnvironmentName('environment.unknown.temperature')).toBe('Unknown');
       expect(client._getEnvironmentName('environment.custom.customSensor')).toBe('Custom');
       expect(client._getEnvironmentName('invalid.path')).toBe('Environment sensor');
+    });
+
+    it('should include sensor identifiers for multi-level environment paths', () => {
+      expect(client._getEnvironmentName('environment.inside.refrigerator.temperature')).toBe('Inside Refrigerator');
+      expect(client._getEnvironmentName('environment.outside.refrigerator.temperature')).toBe('Outside Refrigerator');
+      expect(client._getEnvironmentName('environment.inside.refrigerator.humidity')).toBe('Inside Refrigerator');
+      expect(client._getEnvironmentName('environment.inside.freezer.relativeHumidity')).toBe('Inside Freezer');
+      expect(client._getEnvironmentName('environment.engineRoom.exhaust.temperature')).toBe('Engine room Exhaust');
     });
   });
 
@@ -183,6 +199,34 @@ describe('VenusClient - Environment', () => {
       expect(client.deviceInstances.size).toBe(1); // Only one instance for inside
       expect(client.deviceServices.size).toBe(1);
       expect(emitSpy).toHaveBeenCalledTimes(2);
+    });
+
+    it('should handle multi-level environment paths and keep sensors distinct', async () => {
+      const emitSpy = vi.spyOn(client, 'emit');
+
+      await client.handleSignalKUpdate('environment.inside.refrigerator.temperature', 4.5);
+      await client.handleSignalKUpdate('environment.inside.freezer.temperature', -18.0);
+      await client.handleSignalKUpdate('environment.outside.refrigerator.temperature', 22.0);
+
+      expect(client.deviceInstances.size).toBe(3);
+      expect(client.deviceServices.size).toBe(3);
+      expect(client.deviceInstances.has('environment.inside.refrigerator')).toBe(true);
+      expect(client.deviceInstances.has('environment.inside.freezer')).toBe(true);
+      expect(client.deviceInstances.has('environment.outside.refrigerator')).toBe(true);
+
+      expect(client.deviceInstances.get('environment.inside.refrigerator').name).toBe('Inside Refrigerator');
+      expect(client.deviceInstances.get('environment.outside.refrigerator').name).toBe('Outside Refrigerator');
+
+      expect(emitSpy).toHaveBeenCalledWith('dataUpdated', 'Environment Temperature', 'Inside Refrigerator: 4.5°C');
+    });
+
+    it('should group multi-level properties of the same sensor', async () => {
+      await client.handleSignalKUpdate('environment.inside.refrigerator.temperature', 4.5);
+      await client.handleSignalKUpdate('environment.inside.refrigerator.humidity', 0.55);
+
+      expect(client.deviceInstances.size).toBe(1);
+      expect(client.deviceServices.size).toBe(1);
+      expect(client.deviceInstances.has('environment.inside.refrigerator')).toBe(true);
     });
   });
 
